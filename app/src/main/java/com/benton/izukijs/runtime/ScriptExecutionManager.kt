@@ -3,6 +3,8 @@ package com.benton.izukijs.runtime
 import android.content.Context
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.data.ScriptEnvRepository
+import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
@@ -27,6 +29,8 @@ class ScriptExecutionManager(
     private val logBus: LogBus,
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
+    private val scriptEnvRepository: ScriptEnvRepository,
+    private val moduleSourceProvider: (String) -> String?,
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -42,11 +46,20 @@ class ScriptExecutionManager(
     @Volatile
     private var engine: JsEngine? = null
 
-    fun run(scriptName: String, source: String) {
+    fun run(scriptName: String, source: String, values: Map<String, String> = emptyMap()) {
         if (!_running.compareAndSet(expect = false, update = true)) {
             logBus.warn("已有脚本正在运行，请先停止")
             return
         }
+        // 解析脚本头部声明的运行参数，合并（默认值 < 上次保存值 < 本次传入值）。
+        val spec = ScriptEnvSpec.parse(source)
+        val resolved = spec.defaults() + scriptEnvRepository.values(scriptName) + values
+        if (values.isNotEmpty()) scriptEnvRepository.saveValues(scriptName, resolved)
+        val scriptEnv = ScriptEnv(scriptName, resolved, scriptEnvRepository)
+        if (resolved.isNotEmpty()) {
+            logBus.info("⚙ 运行参数: " + resolved.entries.joinToString(", ") { "${it.key}=${it.value}" })
+        }
+
         _runningScript.value = scriptName
         logBus.info("▶ 开始运行: $scriptName")
         ScriptForegroundService.start(appContext, scriptName)
@@ -60,6 +73,8 @@ class ScriptExecutionManager(
                 logBus,
                 aiConfigRepository,
                 captureSettingsRepository,
+                scriptEnv,
+                moduleSourceProvider,
             )
             engine = jsEngine
             var failure: Throwable? = null

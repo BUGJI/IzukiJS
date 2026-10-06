@@ -11,13 +11,16 @@ import com.benton.izukijs.runtime.api.AiApi
 import com.benton.izukijs.runtime.api.AppApi
 import com.benton.izukijs.runtime.api.ConsoleApi
 import com.benton.izukijs.runtime.api.DeviceApi
+import com.benton.izukijs.runtime.api.EnvApi
 import com.benton.izukijs.runtime.api.GlobalApi
 import com.benton.izukijs.runtime.api.ImageApi
 import com.benton.izukijs.runtime.api.InputApi
+import com.benton.izukijs.runtime.api.ModuleApi
 import com.benton.izukijs.runtime.api.OcrApi
 import com.benton.izukijs.runtime.api.PermissionsApi
 import com.benton.izukijs.runtime.api.SelectorApi
 import com.benton.izukijs.runtime.api.ShellApi
+import com.benton.izukijs.runtime.api.StateApi
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
 import com.quickjs.JSContext
@@ -35,6 +38,8 @@ class JsEngine(
     private val logBus: LogBus,
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
+    private val scriptEnv: ScriptEnv,
+    private val moduleSourceProvider: (String) -> String?,
 ) : Closeable {
 
     private var runtime: QuickJS? = null
@@ -89,6 +94,9 @@ class JsEngine(
         ctx.addJavascriptInterface(ocrApi, "ocr")
         ctx.addJavascriptInterface(PermissionsApi(context, controllers, screenCapture), "permissions")
         ctx.addJavascriptInterface(selectorApi, "selector")
+        ctx.addJavascriptInterface(EnvApi(scriptEnv), "env")
+        ctx.addJavascriptInterface(StateApi(scriptEnv), "state")
+        ctx.addJavascriptInterface(ModuleApi(moduleSourceProvider), "modules")
         ctx.addJavascriptInterface(
             AiApi(
                 configRepository = aiConfigRepository,
@@ -117,7 +125,31 @@ class JsEngine(
     private companion object {
         /** 把原生的 primitive 返回方法包装成对脚本更友好的对象。 */
         val PRELUDE = """
-            (function () {
+            (function (global) {
+              var __modules = {};
+              var __loading = {};
+              global.require = function (name) {
+                var key = String(name);
+                if (Object.prototype.hasOwnProperty.call(__modules, key)) return __modules[key].exports;
+                if (__loading[key]) throw new Error("检测到循环依赖: " + key);
+                var src = (typeof modules !== 'undefined' && modules.source) ? modules.source(key) : null;
+                if (src == null) throw new Error("找不到脚本模块: " + key);
+                __loading[key] = true;
+                var mod = { exports: {} };
+                __modules[key] = mod;
+                try {
+                  var factory;
+                  try {
+                    factory = new Function("module", "exports", "require", src);
+                  } catch (e) {
+                    factory = function (module, exports, require) { eval(src); };
+                  }
+                  factory(mod, mod.exports, global.require);
+                } finally {
+                  delete __loading[key];
+                }
+                return mod.exports;
+              };
               if (typeof images !== 'undefined') {
                 images.findImage = function (template, threshold) {
                   var raw = images.findImageRaw(template, (threshold == null ? 0.8 : threshold));
@@ -145,7 +177,21 @@ class JsEngine(
                   };
                 };
               }
-            })();
+              if (typeof env !== 'undefined' && env.allRaw) {
+                env.get = function (key, fallback) {
+                  if (fallback === undefined || fallback === null) return env.getRaw(key);
+                  return env.getOrRaw(key, String(fallback));
+                };
+                env.all = function () { return JSON.parse(env.allRaw()); };
+              }
+              if (typeof state !== 'undefined' && state.allRaw) {
+                state.get = function (key, fallback) {
+                  if (fallback === undefined || fallback === null) return state.getRaw(key);
+                  return state.getOrRaw(key, String(fallback));
+                };
+                state.all = function () { return JSON.parse(state.allRaw()); };
+              }
+            })(typeof globalThis !== 'undefined' ? globalThis : this);
         """.trimIndent()
     }
 }

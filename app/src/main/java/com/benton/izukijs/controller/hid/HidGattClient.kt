@@ -74,6 +74,23 @@ class HidGattClient(
 
     private val scanTimeout = Runnable { stopScan() }
 
+    /** 按地址去重的扫描结果，仅在节流窗口结束后发布，避免每个广播包都重建并排序列表。 */
+    private val discovered = LinkedHashMap<String, HidDevice>()
+
+    @Volatile
+    private var publishScheduled = false
+
+    private val publishDevices = Runnable {
+        publishScheduled = false
+        _devices.value = synchronized(discovered) {
+            discovered.values.sortedByDescending { it.rssi }
+        }
+    }
+
+    /** 断开后仅记录一次，避免自动重连失败时反复刷屏。 */
+    @Volatile
+    private var disconnectLogged = false
+
     private var lastAddress: String? = null
 
     val isReady: Boolean get() = _state.value == HidConnectionState.READY
@@ -101,6 +118,9 @@ class HidGattClient(
             logBus.warn("无法扫描：蓝牙未开启或缺权限")
             return
         }
+        handler.removeCallbacks(publishDevices)
+        publishScheduled = false
+        synchronized(discovered) { discovered.clear() }
         _devices.value = emptyList()
         addBondedDevices()
         _state.value = HidConnectionState.SCANNING
@@ -132,15 +152,18 @@ class HidGattClient(
     private fun addBondedDevices() {
         if (!hasPermissions()) return
         val bonded = runCatching { adapter?.bondedDevices }.getOrNull() ?: return
-        val current = _devices.value.toMutableList()
-        for (device in bonded) {
-            val name = runCatching { device.name }.getOrNull() ?: continue
-            if (!name.startsWith(DEVICE_NAME_PREFIX, ignoreCase = true)) continue
-            if (current.none { it.address == device.address }) {
-                current.add(HidDevice(name, device.address, 0))
+        synchronized(discovered) {
+            for (device in bonded) {
+                val name = runCatching { device.name }.getOrNull() ?: continue
+                if (!name.startsWith(DEVICE_NAME_PREFIX, ignoreCase = true)) continue
+                if (!discovered.containsKey(device.address)) {
+                    discovered[device.address] = HidDevice(name, device.address, 0)
+                }
             }
         }
-        _devices.value = current
+        handler.removeCallbacks(publishDevices)
+        publishScheduled = false
+        publishDevices.run()
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -153,11 +176,10 @@ class HidGattClient(
                 ?.any { it.uuid == HidProtocol.SERVICE_UUID } == true
             val nameMatch = name.startsWith(DEVICE_NAME_PREFIX, ignoreCase = true)
             if (!uuidMatch && !nameMatch) return
-            val entry = HidDevice(name, device.address, result.rssi)
-            val current = _devices.value.toMutableList()
-            val index = current.indexOfFirst { it.address == entry.address }
-            if (index >= 0) current[index] = entry else current.add(entry)
-            _devices.value = current.sortedByDescending { it.rssi }
+            synchronized(discovered) {
+                discovered[device.address] = HidDevice(name, device.address, result.rssi)
+            }
+            schedulePublish()
         }
 
         override fun onScanFailed(errorCode: Int) {
@@ -166,6 +188,12 @@ class HidGattClient(
             userScanning = false
             _state.value = HidConnectionState.IDLE
         }
+    }
+
+    private fun schedulePublish() {
+        if (publishScheduled) return
+        publishScheduled = true
+        handler.postDelayed(publishDevices, PUBLISH_THROTTLE_MS)
     }
 
     // ---- 连接 ----
@@ -235,6 +263,7 @@ class HidGattClient(
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
+                    disconnectLogged = false
                     _state.value = HidConnectionState.CONNECTED
                     _connectedAddress.value = gatt.device.address
                     synchronized(pendingWrites) {
@@ -248,7 +277,10 @@ class HidGattClient(
                 }
 
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    logBus.warn("HID 狗连接断开")
+                    if (!disconnectLogged) {
+                        logBus.warn("HID 狗连接断开")
+                        disconnectLogged = true
+                    }
                     closeGatt()
                     _connectedAddress.value = null
                     if (autoReconnect && lastAddress != null) {
@@ -424,6 +456,7 @@ class HidGattClient(
             UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         private const val RECONNECT_DELAY_MS = 2000L
         private const val SCAN_TIMEOUT_MS = 20_000L
+        private const val PUBLISH_THROTTLE_MS = 400L
         private const val DEVICE_NAME_PREFIX = "Izuki"
         private const val WRITE_RETRY_DELAY_MS = 20L
         private const val MAX_PENDING_WRITES = 256

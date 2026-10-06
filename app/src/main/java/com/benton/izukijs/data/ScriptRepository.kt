@@ -22,6 +22,27 @@ class ScriptRepository(private val context: Context) {
 
     fun find(id: String): ScriptInfo? = list().firstOrNull { it.id == id }
 
+    /**
+     * 首次运行时把打包在 assets/scripts 下的内置脚本释放到脚本目录，供其他脚本 `require`。
+     * 用标志位保证只做一次：用户删除内置脚本后不会再次被写回。
+     */
+    fun seedBundledScripts() {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_SEEDED, false)) return
+        runCatching {
+            context.assets.list(BUNDLED_DIR).orEmpty()
+                .filter { it.endsWith(EXTENSION) }
+                .forEach { fileName ->
+                    val target = File(scriptsDir, fileName)
+                    if (target.exists()) return@forEach
+                    context.assets.open("$BUNDLED_DIR/$fileName").use { input ->
+                        target.outputStream().use { output -> input.copyTo(output) }
+                    }
+                }
+        }
+        prefs.edit().putBoolean(KEY_SEEDED, true).apply()
+    }
+
     fun create(name: String, content: String = DEFAULT_SCRIPT): ScriptInfo {
         val id = uniqueId(sanitize(name))
         val file = File(scriptsDir, id + EXTENSION)
@@ -90,6 +111,10 @@ class ScriptRepository(private val context: Context) {
 
     companion object {
         const val EXTENSION = ".js"
+
+        private const val BUNDLED_DIR = "scripts"
+        private const val PREFS = "izukijs_scripts"
+        private const val KEY_SEEDED = "bundled_seeded"
 
         val DEFAULT_SCRIPT = """
             // Izuki JS 脚本示例

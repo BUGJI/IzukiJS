@@ -51,7 +51,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.model.EnvField
+import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.NonCancellable
@@ -70,6 +73,9 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var savedCode by remember(scriptId) { mutableStateOf("") }
     var loaded by remember(scriptId) { mutableStateOf(false) }
     var consoleCollapsed by remember(scriptId) { mutableStateOf(true) }
+    var envSource by remember(scriptId) { mutableStateOf<String?>(null) }
+    var envFields by remember(scriptId) { mutableStateOf<List<EnvField>>(emptyList()) }
+    var envInitial by remember(scriptId) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
     val logs by container.logBus.entries.collectAsStateWithLifecycle()
@@ -169,7 +175,15 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                     container.scriptRepository.writeAsync(current, snapshot)
                                 }
                                 savedCode = snapshot
-                                container.scriptExecutionManager.run(current.name, snapshot)
+                                val spec = ScriptEnvSpec.parse(snapshot)
+                                val stored = container.scriptEnvRepository.values(current.id)
+                                if (spec.isEmpty && stored.isEmpty()) {
+                                    container.scriptExecutionManager.run(current.name, snapshot)
+                                } else {
+                                    envFields = spec.fields
+                                    envInitial = spec.defaults() + stored
+                                    envSource = snapshot
+                                }
                             }
                         }) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = "运行")
@@ -253,6 +267,20 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    envSource?.let { source ->
+        ScriptEnvDialog(
+            scriptName = current.name,
+            fields = envFields,
+            initial = envInitial,
+            onDismiss = { envSource = null },
+            onConfirm = { values ->
+                container.scriptEnvRepository.saveValues(current.id, values)
+                container.scriptExecutionManager.run(current.name, source, values)
+                envSource = null
+            },
+        )
     }
 }
 

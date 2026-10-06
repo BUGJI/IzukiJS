@@ -50,6 +50,30 @@ class ScreenCapture(private val logBus: LogBus) {
 
     private val captureLock = Any()
 
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    @Volatile
+    private var displayManager: DisplayManager? = null
+
+    /** 屏幕旋转 / 折叠变化时重建虚拟显示器，取代每帧查询屏幕尺寸。 */
+    private val displayListener = object : DisplayManager.DisplayListener {
+        override fun onDisplayAdded(displayId: Int) = Unit
+
+        override fun onDisplayRemoved(displayId: Int) = Unit
+
+        override fun onDisplayChanged(displayId: Int) {
+            if (displayId != Display.DEFAULT_DISPLAY) return
+            val context = appContext ?: return
+            val projection = projection ?: return
+            synchronized(captureLock) {
+                val size = screenSize(context)
+                if (size[0] != width || size[1] != height) {
+                    resize(projection, size)
+                }
+            }
+        }
+    }
+
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active.asStateFlow()
 
@@ -80,6 +104,10 @@ class ScreenCapture(private val logBus: LogBus) {
                 Handler(Looper.getMainLooper()),
             )
 
+            displayManager = appCtx.getSystemService(DisplayManager::class.java)?.also {
+                it.registerDisplayListener(displayListener, mainHandler)
+            }
+
             _active.value = true
             logBus.success("持续录屏已启动（$width x $height）")
         }.onFailure {
@@ -89,32 +117,26 @@ class ScreenCapture(private val logBus: LogBus) {
     }
 
     /** 抓取最近一帧屏幕位图（调用方负责 recycle）。 */
-    fun capture(): Bitmap? {
-        val projection = projection ?: return null
-        val context = appContext ?: return null
-        synchronized(captureLock) {
-            val size = screenSize(context)
-            if (size[0] != width || size[1] != height) {
-                resize(projection, size)
-            }
-            val reader = imageReader ?: return null
-            val image = acquireLatest(reader) ?: return null
-            return try {
-                imageToBitmap(image)
-            } catch (t: Throwable) {
-                null
-            } finally {
-                runCatching { image.close() }
-            }
+    fun capture(): Bitmap? = synchronized(captureLock) {
+        val reader = imageReader ?: return@synchronized null
+        val image = acquireLatest(reader) ?: return@synchronized null
+        try {
+            imageToBitmap(image)
+        } catch (t: Throwable) {
+            null
+        } finally {
+            runCatching { image.close() }
         }
     }
 
     fun stop() {
         synchronized(captureLock) {
             _active.value = false
+            runCatching { displayManager?.unregisterDisplayListener(displayListener) }
             runCatching { virtualDisplay?.release() }
             runCatching { imageReader?.close() }
             runCatching { projection?.stop() }
+            displayManager = null
             virtualDisplay = null
             imageReader = null
             projection = null

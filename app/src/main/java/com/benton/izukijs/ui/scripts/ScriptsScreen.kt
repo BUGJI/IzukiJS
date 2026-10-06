@@ -249,7 +249,8 @@ fun ScriptsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
-                        container.scriptRepository.renameAsync(target, renameName)
+                        val renamed = container.scriptRepository.renameAsync(target, renameName)
+                        container.scriptEnvRepository.move(target.id, renamed.id)
                         refresh()
                         renameTarget = null
                     }
@@ -270,6 +271,7 @@ fun ScriptsScreen(
                 TextButton(onClick = {
                     scope.launch {
                         container.scriptRepository.deleteAsync(target)
+                        container.scriptEnvRepository.remove(target.id)
                         deleteTarget = null
                         refresh()
                     }

@@ -117,6 +117,87 @@ if (!permissions.canScreenshot()) {
 }
 ```
 
+## `env`（运行参数）
+
+运行前的输入参数，类似环境变量，用于切换脚本运行模式。在脚本头部用注释声明，运行脚本时 App
+会自动生成输入表单，用户填写后写入并随脚本保存。
+
+声明语法：`// @env KEY=默认值  说明`（说明可省略，用两个及以上空格或 ` # ` 分隔）。
+
+```js
+// @env MODE=auto    运行模式
+// @env TARGET=      目标包名
+```
+
+| 方法 | 说明 |
+|---|---|
+| `env.get(key)` | 读取参数，不存在返回 `null` |
+| `env.get(key, fallback)` | 带默认值读取 |
+| `env.has(key)` | 是否存在 |
+| `env.mode()` | 便捷读取 `MODE` / `mode` |
+| `env.all()` | 全部参数对象 |
+
+## `state`（运行状态）
+
+脚本运行中可写回的状态。与 `env` 不同，`state` 由脚本主动修改，并会持久化，下次运行或定时任务
+仍可读到，适合断点续跑、进度记忆等。
+
+| 方法 | 说明 |
+|---|---|
+| `state.get(key)` / `state.get(key, fallback)` | 读取状态 |
+| `state.set(key, value)` | 写入并立即持久化 |
+| `state.has(key)` | 是否存在 |
+| `state.remove(key)` / `state.clear()` | 删除单项 / 清空 |
+| `state.all()` | 全部状态对象 |
+
+```js
+// @env MODE=auto
+log("模式: " + env.get("MODE", "auto"));
+
+var step = parseInt(state.get("step", "0"), 10);
+log("第 " + (step + 1) + " 次运行");
+state.set("step", String(step + 1));
+```
+
+## 模块复用 `require`
+
+用 `require(name)` 引入脚本中心里的另一个脚本（同一运行时内执行，带缓存与循环依赖检测）。
+`name` 为脚本名，可省略结尾的 `.js`；模块用 `module.exports` / `exports` 导出。
+
+```js
+// common.js
+module.exports = {
+  greet: function (name) { log("hi " + name); }
+};
+
+// main.js
+var lib = require("common");
+lib.greet("izuki");
+```
+
+- 模块与主脚本共享同一 QuickJS 环境，可直接使用 `log` / `click` / `env` / `state` 等全部 API。
+- 首次 `require` 执行一次并缓存，重复引入返回同一份 `exports`。
+- 找不到模块或存在循环依赖时抛出错误。
+
+内置基础操作库 `basic_ops`，首次安装时自动写入脚本中心，其他脚本可直接复用：
+
+```js
+var ops = require("basic_ops");
+ops.backToHome();
+ops.cleanJunk();
+ops.goBack();
+```
+
+| 导出 | 说明 |
+|---|---|
+| `backToHome()` | 底部中间上滑返回桌面 |
+| `cleanJunk()` | 上滑停顿打开最近任务并清理 |
+| `goBack()` | 右侧滑到中间返回上一级 |
+| `main()` | 依次执行上面三个操作 |
+| `width` / `height` | 加载时记录的屏幕像素宽高 |
+
+`basic_ops` 同时也是可直接运行的脚本（单独运行会执行一遍 `main()`）。
+
 ## `ai`（AI Agent）
 
 脚本卡住或遇到棘手界面时，交给大模型观察屏幕并操作设备脱困。每次调用都是**无状态**的：

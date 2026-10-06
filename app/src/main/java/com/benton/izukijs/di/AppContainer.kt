@@ -11,6 +11,7 @@ import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
 import com.benton.izukijs.data.ConfigBackupManager
 import com.benton.izukijs.data.EditorSettingsRepository
+import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
@@ -48,6 +49,8 @@ class AppContainer(private val application: Application) {
 
     val scriptRepository = ScriptRepository(application)
 
+    val scriptEnvRepository = ScriptEnvRepository(application)
+
     val screenCapture = ScreenCapture(logBus)
 
     val ocrConfigRepository = OcrConfigRepository(application)
@@ -75,6 +78,11 @@ class AppContainer(private val application: Application) {
         logBus,
         aiConfigRepository,
         captureSettingsRepository,
+        scriptEnvRepository,
+        moduleSourceProvider = { raw ->
+            val id = raw.trim().removePrefix("./").removeSuffix(".js")
+            scriptRepository.find(id)?.let { scriptRepository.read(it) }
+        },
     )
 
     val shizukuManager = ShizukuManager(application, controllerManager, logBus)
@@ -90,6 +98,7 @@ class AppContainer(private val application: Application) {
     /** 初始化控制后端。会注册 Shizuku 监听并异步探测 Root。 */
     fun init() {
         logBus.setSink { logFileStore.append(it) }
+        appScope.launch { scriptRepository.seedBundledScripts() }
         shizukuManager.init()
         rootManager.init()
         hidManager.init()

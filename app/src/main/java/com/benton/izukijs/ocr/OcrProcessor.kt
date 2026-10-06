@@ -2,6 +2,7 @@ package com.benton.izukijs.ocr
 
 import android.graphics.Bitmap
 import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.service.CaptureSettings
 import com.benton.izukijs.service.CaptureSettingsRepository
 
 /**
@@ -16,14 +17,19 @@ class OcrProcessor(
 
     private val local = LocalOcrEngine()
 
+    /** 在线引擎只依赖配置，配置不变时复用，避免每次识别都重新构造。 */
+    private var onlineEngine: OnlineOcrEngine? = null
+    private var onlineKey: Pair<OcrConfig, CaptureSettings>? = null
+
     fun recognize(bitmap: Bitmap): OcrResult? {
         val config = configRepository.current()
         return when (config.mode) {
             OcrMode.LOCAL -> local.recognize(bitmap)
 
             OcrMode.ONLINE -> {
+                val capture = captureSettingsRepository.current()
                 val online = runCatching {
-                    OnlineOcrEngine(config, captureSettingsRepository.current(), logBus).recognize(bitmap)
+                    engine(config, capture).recognize(bitmap)
                 }.getOrNull()
                 if (online != null) {
                     online
@@ -32,6 +38,17 @@ class OcrProcessor(
                     local.recognize(bitmap)
                 }
             }
+        }
+    }
+
+    private fun engine(config: OcrConfig, capture: CaptureSettings): OnlineOcrEngine {
+        val key = config to capture
+        if (onlineKey == key) {
+            onlineEngine?.let { return it }
+        }
+        return OnlineOcrEngine(config, capture, logBus).also {
+            onlineEngine = it
+            onlineKey = key
         }
     }
 }

@@ -41,7 +41,10 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.model.EnvField
+import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
@@ -60,13 +63,26 @@ fun RunScreen(
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
     val runningScript by container.scriptExecutionManager.runningScript.collectAsStateWithLifecycle()
     val logs by container.logBus.entries.collectAsStateWithLifecycle()
+    val envData by container.scriptEnvRepository.data.collectAsStateWithLifecycle()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
+    var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    fun runScript(script: ScriptInfo) {
+    fun requestRun(script: ScriptInfo) {
         scope.launch {
             val source = container.scriptRepository.readAsync(script)
-            container.scriptExecutionManager.run(script.name, source)
+            val spec = ScriptEnvSpec.parse(source)
+            val stored = container.scriptEnvRepository.values(script.id)
+            if (spec.isEmpty && stored.isEmpty()) {
+                container.scriptExecutionManager.run(script.name, source)
+            } else {
+                envDialog = EnvDialogState(
+                    script = script,
+                    source = source,
+                    fields = spec.fields,
+                    initial = spec.defaults() + stored,
+                )
+            }
         }
     }
 
@@ -121,7 +137,7 @@ fun RunScreen(
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
-                            onClick = { scripts.firstOrNull()?.let { runScript(it) } },
+                            onClick = { scripts.firstOrNull()?.let { requestRun(it) } },
                             enabled = !running && scripts.isNotEmpty(),
                         ) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = null)
@@ -132,6 +148,21 @@ fun RunScreen(
                             onClick = { container.scriptExecutionManager.requestStop() },
                             enabled = running,
                         ) { Text("停止") }
+                    }
+                    val runState = runningScript?.let { envData[it]?.state }.orEmpty()
+                    if (running && runState.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("运行状态", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(4.dp))
+                        runState.forEach { (key, value) ->
+                            Text(
+                                "$key = $value",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     if (scripts.isEmpty()) {
                         TextButton(onClick = onOpenScripts) { Text("还没有脚本，去脚本中心新建") }
@@ -193,7 +224,28 @@ fun RunScreen(
             )
         }
     }
+
+    envDialog?.let { state ->
+        ScriptEnvDialog(
+            scriptName = state.script.name,
+            fields = state.fields,
+            initial = state.initial,
+            onDismiss = { envDialog = null },
+            onConfirm = { values ->
+                container.scriptEnvRepository.saveValues(state.script.id, values)
+                container.scriptExecutionManager.run(state.script.name, state.source, values)
+                envDialog = null
+            },
+        )
+    }
 }
+
+private data class EnvDialogState(
+    val script: ScriptInfo,
+    val source: String,
+    val fields: List<EnvField>,
+    val initial: Map<String, String>,
+)
 
 @Composable
 private fun ModeStatus(label: String, ready: Boolean, modifier: Modifier = Modifier) {

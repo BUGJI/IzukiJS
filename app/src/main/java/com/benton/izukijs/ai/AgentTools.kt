@@ -30,7 +30,20 @@ class AgentTools(
 
     private val shellAvailable: Boolean get() = allowShell && shellApi.available()
 
-    fun specs(): List<ToolSpec> = buildList {
+    private var cachedShellAvailable: Boolean? = null
+    private var cachedSpecs: List<ToolSpec> = emptyList()
+
+    /** 工具 schema 只随 shell 可用性变化，缓存避免每步都重建整份 JSON。 */
+    fun specs(): List<ToolSpec> {
+        val shell = shellAvailable
+        if (cachedShellAvailable == shell) return cachedSpecs
+        return buildSpecs(shell).also {
+            cachedShellAvailable = shell
+            cachedSpecs = it
+        }
+    }
+
+    private fun buildSpecs(shellAvailable: Boolean): List<ToolSpec> = buildList {
         add(
             ToolSpec(
                 "ocr_screen",

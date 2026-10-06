@@ -5,6 +5,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 /**
  * 日志文件存储。支持按最大体积与保留天数自动清理。
@@ -20,18 +22,37 @@ class LogFileStore(
     private val logFile = File(logDir, "app.log")
     private val lock = Any()
 
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
+    private val scheduler: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "izuki-log-io").apply { isDaemon = true }
     }
 
+    /** 待写入的日志按窗口聚合，减少打开/写入文件的次数与自动清理时的 stat 调用。 */
+    private val pending = StringBuilder()
+    private var flushScheduled = false
+
     fun append(entry: LogEntry) {
-        executor.execute { appendLocked(entry) }
+        val schedule: Boolean
+        synchronized(lock) {
+            pending.append(entry.timeMillis)
+                .append('|').append(entry.level.name).append('|')
+                .append(entry.message).append('\n')
+            schedule = !flushScheduled
+            if (schedule) flushScheduled = true
+        }
+        if (schedule) {
+            scheduler.schedule(
+                { synchronized(lock) { flushLocked() } },
+                FLUSH_INTERVAL_MS,
+                TimeUnit.MILLISECONDS,
+            )
+        }
     }
 
     fun sizeBytes(): Long = if (logFile.exists()) logFile.length() else 0L
 
     /** 将当前日志复制到 [destination]，用于分享/导出。 */
     fun exportTo(destination: File): Boolean = synchronized(lock) {
+        flushLocked()
         runCatching {
             destination.parentFile?.mkdirs()
             if (logFile.exists()) {
@@ -44,28 +65,33 @@ class LogFileStore(
     }
 
     fun clear() {
-        executor.execute {
-            synchronized(lock) { runCatching { logFile.writeText("") } }
+        synchronized(lock) {
+            pending.setLength(0)
+            flushScheduled = false
+            runCatching { logFile.writeText("") }
         }
     }
 
     /** 主动清理（启动或进入设置页时调用）。 */
     fun trim() {
-        executor.execute {
-            synchronized(lock) {
-                val settings = settingsRepository.current()
-                runCatching {
-                    enforceSizeLocked(settings)
-                    enforceRetentionLocked(settings)
-                }
+        synchronized(lock) {
+            flushLocked()
+            val settings = settingsRepository.current()
+            runCatching {
+                enforceSizeLocked(settings)
+                enforceRetentionLocked(settings)
             }
         }
     }
 
-    private fun appendLocked(entry: LogEntry) = synchronized(lock) {
+    private fun flushLocked() {
+        flushScheduled = false
+        if (pending.isEmpty()) return
+        val data = pending.toString().toByteArray()
+        pending.setLength(0)
         runCatching {
             logDir.mkdirs()
-            logFile.appendText("${entry.timeMillis}|${entry.level.name}|${entry.message}\n")
+            FileOutputStream(logFile, true).use { it.write(data) }
             val settings = settingsRepository.current()
             if (settings.autoClean) enforceSizeLocked(settings)
         }
@@ -106,5 +132,9 @@ class LogFileStore(
             timestamp == null || timestamp >= cutoff
         }
         logFile.writeText(kept.joinToString("\n"))
+    }
+
+    private companion object {
+        const val FLUSH_INTERVAL_MS = 200L
     }
 }
