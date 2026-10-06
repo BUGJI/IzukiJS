@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Izuki JS</string>
+    <string name="accessibility_service_description">开启后，Izuki JS 可注入手势、读取屏幕控件树以执行自动化脚本。</string>
+    <string name="accessibility_service_summary">Izuki JS 自动化控制服务</string>
+</resources>
