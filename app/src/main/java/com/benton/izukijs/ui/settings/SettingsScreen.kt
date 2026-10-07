@@ -1,10 +1,6 @@
 package com.benton.izukijs.ui.settings
 
-import android.app.Activity
 import android.content.Intent
-import android.media.projection.MediaProjectionManager
-import android.net.Uri
-import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -23,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -49,8 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,9 +58,11 @@ import com.benton.izukijs.ocr.OcrMode
 import com.benton.izukijs.ocr.OcrProvider
 import com.benton.izukijs.runtime.LogLevel
 import com.benton.izukijs.service.CaptureSettings
-import com.benton.izukijs.service.DebugOverlayService
-import com.benton.izukijs.service.FloatingWindowService
-import com.benton.izukijs.service.ScreenCaptureService
+import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.PageColumn
+import com.benton.izukijs.ui.common.SecretField
+import com.benton.izukijs.ui.common.SectionCard
+import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.formatFileSize
 import com.benton.izukijs.ui.rememberAppContainer
 import java.io.File
@@ -76,8 +72,7 @@ import kotlinx.coroutines.withContext
 
 /** 设置分组。key 用于二级页面路由参数。 */
 enum class SettingsCategory(val key: String, val title: String) {
-    CONTROL("control", "运行与控制"),
-    VISION("vision", "视觉与识别"),
+    CONTROL("control", "控制与视觉"),
     EDITOR("editor", "编辑器"),
     STORAGE("storage", "存储与日志"),
     BACKUP("backup", "备份与恢复"),
@@ -108,25 +103,14 @@ fun SettingsScreen(
             TopAppBar(title = { Text("设置") })
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
+        PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
             CategoryCard {
                 CategoryRow(
                     title = SettingsCategory.CONTROL.title,
-                    summary = "优先 ${controllerSettings.preferredMode?.displayName ?: "自动"}",
+                    summary = "优先 ${controllerSettings.preferredMode?.displayName ?: "自动"} · 录屏${
+                        if (screenCaptureActive) "开" else "关"
+                    } · OCR ${if (ocrConfig.mode == OcrMode.LOCAL) "本地" else "在线"}",
                 ) { onOpenCategory(SettingsCategory.CONTROL) }
-                CategoryDivider()
-                CategoryRow(
-                    title = SettingsCategory.VISION.title,
-                    summary = "录屏${if (screenCaptureActive) "开" else "关"} · OCR ${
-                        if (ocrConfig.mode == OcrMode.LOCAL) "本地" else "在线"
-                    }",
-                ) { onOpenCategory(SettingsCategory.VISION) }
                 CategoryDivider()
                 CategoryRow(
                     title = SettingsCategory.EDITOR.title,
@@ -165,8 +149,7 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
     val category = SettingsCategory.fromKey(categoryKey)
     SettingsDetailScaffold(title = category?.title ?: "设置", onBack = onBack) {
         when (category) {
-            SettingsCategory.CONTROL -> ControlSettings()
-            SettingsCategory.VISION -> VisionSettings()
+            SettingsCategory.CONTROL -> ControlVisionSettings()
             SettingsCategory.EDITOR -> EditorSettingsScreen()
             SettingsCategory.STORAGE -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()
@@ -180,45 +163,17 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
 }
 
 @Composable
-private fun ControlSettings() {
+private fun ControlVisionSettings() {
     val container = rememberAppContainer()
-    val context = LocalContext.current
 
     val controllerSettings by container.controllerSettingsRepository.settings.collectAsStateWithLifecycle()
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
-    var floatingEnabled by remember { mutableStateOf(FloatingWindowService.isActive) }
-    var debugOverlayEnabled by remember { mutableStateOf(DebugOverlayService.isActive) }
-    var canDrawOverlays by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    val ocrConfig by container.ocrConfigRepository.config.collectAsStateWithLifecycle()
+    val captureSettings by container.captureSettingsRepository.settings.collectAsStateWithLifecycle()
 
     fun saveController(new: ControllerSettings) = container.controllerSettingsRepository.save(new)
-
-    var pendingGrant by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val overlayPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        if (Settings.canDrawOverlays(context)) {
-            canDrawOverlays = true
-            val action = pendingGrant
-            pendingGrant = null
-            action?.invoke()
-        }
-    }
-
-    fun withOverlay(onGranted: () -> Unit) {
-        if (Settings.canDrawOverlays(context)) {
-            onGranted()
-            return
-        }
-        pendingGrant = onGranted
-        runCatching {
-            overlayPermissionLauncher.launch(
-                Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:${context.packageName}"),
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-        }
-    }
+    fun updateOcr(new: OcrConfig) = container.ocrConfigRepository.save(new)
+    fun updateCapture(new: CaptureSettings) = container.captureSettingsRepository.save(new)
 
     SectionCard("控制模式优先级") {
         Text(
@@ -335,117 +290,6 @@ private fun ControlSettings() {
     }
 
     Spacer(Modifier.height(12.dp))
-    SectionCard("悬浮窗") {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("显示悬浮控制条", modifier = Modifier.weight(1f))
-            Switch(
-                checked = floatingEnabled,
-                onCheckedChange = { checked ->
-                    if (checked) {
-                        withOverlay {
-                            FloatingWindowService.start(context)
-                            floatingEnabled = true
-                        }
-                    } else {
-                        FloatingWindowService.stop(context)
-                        floatingEnabled = false
-                    }
-                },
-            )
-        }
-        if (!canDrawOverlays) {
-            Text(
-                "需要在系统设置中授予「显示在其他应用上层」权限。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-
-    Spacer(Modifier.height(12.dp))
-    SectionCard("调试悬浮窗") {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("显示布局 / OCR 调试面板", modifier = Modifier.weight(1f))
-            Switch(
-                checked = debugOverlayEnabled,
-                onCheckedChange = { checked ->
-                    if (checked) {
-                        withOverlay {
-                            DebugOverlayService.start(context)
-                            debugOverlayEnabled = true
-                        }
-                    } else {
-                        DebugOverlayService.stop(context)
-                        debugOverlayEnabled = false
-                    }
-                },
-            )
-        }
-        Text(
-            "调试面板在抓取布局 / OCR 时会自动隐藏，避免被截入画面。",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun VisionSettings() {
-    val container = rememberAppContainer()
-    val context = LocalContext.current
-
-    val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
-    val ocrConfig by container.ocrConfigRepository.config.collectAsStateWithLifecycle()
-    val captureSettings by container.captureSettingsRepository.settings.collectAsStateWithLifecycle()
-
-    fun updateOcr(new: OcrConfig) = container.ocrConfigRepository.save(new)
-
-    fun updateCapture(new: CaptureSettings) = container.captureSettingsRepository.save(new)
-
-    val capturePermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        val data = result.data
-        if (result.resultCode == Activity.RESULT_OK && data != null) {
-            ScreenCaptureService.start(context, result.resultCode, data)
-        }
-    }
-
-    SectionCard("持续录屏（截图）") {
-        Text(
-            if (screenCaptureActive) {
-                "录屏已开启：截图/找图/OCR 将直接使用屏幕帧，无需反复授权。"
-            } else {
-                "授权一次后持续录制，为截图/找图/OCR 提供无限量的屏幕帧。"
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-                onClick = {
-                    val manager = context.getSystemService(MediaProjectionManager::class.java)
-                    runCatching { capturePermissionLauncher.launch(manager.createScreenCaptureIntent()) }
-                },
-                enabled = !screenCaptureActive,
-            ) { Text(if (screenCaptureActive) "录制中" else "授权并开始") }
-            if (screenCaptureActive) {
-                OutlinedButton(onClick = {
-                    ScreenCaptureService.stop(context)
-                    container.screenCapture.stop()
-                }) { Text("停止录制") }
-            }
-        }
-    }
-
-    Spacer(Modifier.height(12.dp))
     SectionCard("截图压缩") {
         Text(
             "影响「保存截图」的文件大小与在线 OCR 的上传流量；图像匹配、找色与本地识别仍使用原始分辨率，坐标不受影响。",
@@ -524,28 +368,28 @@ private fun VisionSettings() {
             Spacer(Modifier.height(12.dp))
             when (ocrConfig.provider) {
                 OcrProvider.BAIDU -> {
-                    OcrField("API Key", ocrConfig.apiKey, isSecret = true) {
+                    SecretField("API Key", ocrConfig.apiKey) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
-                    OcrField("Secret Key", ocrConfig.secretKey, isSecret = true) {
+                    SecretField("Secret Key", ocrConfig.secretKey) {
                         updateOcr(ocrConfig.copy(secretKey = it))
                     }
                 }
 
                 OcrProvider.GOOGLE_VISION -> {
-                    OcrField("API Key", ocrConfig.apiKey, isSecret = true) {
+                    SecretField("API Key", ocrConfig.apiKey) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
                 }
 
                 OcrProvider.CUSTOM -> {
-                    OcrField("请求地址 (POST)", ocrConfig.endpoint) {
+                    LabeledField("请求地址 (POST)", ocrConfig.endpoint) {
                         updateOcr(ocrConfig.copy(endpoint = it))
                     }
-                    OcrField("鉴权 Header 名", ocrConfig.headerName) {
+                    LabeledField("鉴权 Header 名", ocrConfig.headerName) {
                         updateOcr(ocrConfig.copy(headerName = it))
                     }
-                    OcrField("鉴权 Header 值", ocrConfig.headerValue, isSecret = true) {
+                    SecretField("鉴权 Header 值", ocrConfig.headerValue) {
                         updateOcr(ocrConfig.copy(headerValue = it))
                     }
                 }
@@ -571,19 +415,13 @@ private fun StorageSettings() {
     LaunchedEffect(Unit) { refreshLogSize() }
 
     SectionCard("日志存储") {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+        SwitchRow(
+            label = "自动清理",
+            checked = logSettings.autoClean,
         ) {
-            Text("自动清理", modifier = Modifier.weight(1f))
-            Switch(
-                checked = logSettings.autoClean,
-                onCheckedChange = {
-                    container.logSettingsRepository.save(logSettings.copy(autoClean = it))
-                    container.logFileStore.trim()
-                    refreshLogSize()
-                },
-            )
+            container.logSettingsRepository.save(logSettings.copy(autoClean = it))
+            container.logFileStore.trim()
+            refreshLogSize()
         }
         Spacer(Modifier.height(12.dp))
 
@@ -876,7 +714,11 @@ private fun CategoryRow(title: String, summary: String, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Text("›", style = MaterialTheme.typography.titleLarge)
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -906,26 +748,9 @@ private fun SettingsDetailScaffold(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
+        PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
             content()
             Spacer(Modifier.height(24.dp))
-        }
-    }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            content()
         }
     }
 }
@@ -942,32 +767,4 @@ private fun PreferenceRow(label: String, selected: Boolean, onSelect: () -> Unit
         RadioButton(selected = selected, onClick = onSelect)
         Text(label)
     }
-}
-
-@Composable
-private fun OcrField(
-    label: String,
-    value: String,
-    isSecret: Boolean = false,
-    onChange: (String) -> Unit,
-) {
-    var visible by remember { mutableStateOf(!isSecret) }
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        visualTransformation = if (isSecret && !visible) {
-            PasswordVisualTransformation()
-        } else {
-            VisualTransformation.None
-        },
-        trailingIcon = if (isSecret) {
-            { TextButton(onClick = { visible = !visible }) { Text(if (visible) "隐藏" else "显示") } }
-        } else {
-            null
-        },
-    )
 }

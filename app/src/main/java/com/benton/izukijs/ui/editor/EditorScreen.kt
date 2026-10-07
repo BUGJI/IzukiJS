@@ -57,6 +57,7 @@ import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
+import kotlin.math.roundToInt
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -197,7 +198,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             val density = LocalDensity.current
             val minExpanded = 140.dp
             val maxExpanded = (maxHeight * 0.8f).coerceAtLeast(minExpanded)
-            var consoleHeight by remember(scriptId) { mutableStateOf(240.dp) }
+            var consoleHeight by remember(scriptId) { mutableStateOf(editorSettings.consoleHeightDp.dp) }
             val drawerHeight = consoleHeight.coerceIn(minExpanded, maxExpanded)
 
             Column(modifier = Modifier.fillMaxSize()) {
@@ -228,6 +229,13 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                 val dyDp = with(density) { dy.toDp() }
                                 consoleHeight = (consoleHeight - dyDp).coerceIn(minExpanded, maxExpanded)
                                 if (consoleCollapsed && dy < 0f) consoleCollapsed = false
+                            },
+                            onDragStopped = {
+                                val clamped = consoleHeight.coerceIn(minExpanded, maxExpanded)
+                                consoleHeight = clamped
+                                container.editorSettingsRepository.save(
+                                    editorSettings.copy(consoleHeightDp = clamped.value.roundToInt()),
+                                )
                             },
                         )
                         .clickable {

@@ -22,6 +22,7 @@ import com.benton.izukijs.runtime.api.SelectorApi
 import com.benton.izukijs.runtime.api.ShellApi
 import com.benton.izukijs.runtime.api.StateApi
 import com.benton.izukijs.service.CaptureSettingsRepository
+import com.benton.izukijs.service.OverlayCoordinator
 import com.benton.izukijs.service.ScreenCapture
 import com.quickjs.JSContext
 import com.quickjs.QuickJS
@@ -65,7 +66,9 @@ class JsEngine(
 
     private fun bindApis(ctx: JSContext) {
         val screenshotProvider: () -> Bitmap? = {
-            screenCapture.capture() ?: controllers.controllerFor(Capability.SCREENSHOT)?.screenshot()
+            OverlayCoordinator.withoutOverlay {
+                screenCapture.capture() ?: controllers.controllerFor(Capability.SCREENSHOT)?.screenshot()
+            }
         }
         val globalApi = GlobalApi(
             context = context,
@@ -75,12 +78,12 @@ class JsEngine(
             onExit = { exitRequested = true },
             isExitRequested = { exitRequested },
         )
-        val inputApi = InputApi(controllers)
+        val inputApi = InputApi(controllers, logBus)
         val deviceApi = DeviceApi(context)
-        val appApi = AppApi(context)
-        val shellApi = ShellApi(controllers)
+        val appApi = AppApi(context, logBus)
+        val shellApi = ShellApi(controllers, logBus)
         val ocrApi = OcrApi(ocrProcessor, screenshotProvider)
-        val selectorApi = SelectorApi {
+        val selectorApi = SelectorApi(logBus) {
             controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
         }
 
@@ -162,6 +165,13 @@ class JsEngine(
                   if (!raw) return null;
                   var p = raw.split(',');
                   return { x: parseInt(p[0], 10), y: parseInt(p[1], 10) };
+                };
+              }
+              if (typeof gestureRaw === 'function') {
+                global.gesture = function (strokes) {
+                  if (strokes == null) return false;
+                  try { return gestureRaw(JSON.stringify(strokes)); }
+                  catch (e) { return false; }
                 };
               }
               if (typeof ocr !== 'undefined') {

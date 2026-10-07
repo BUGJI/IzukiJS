@@ -49,6 +49,8 @@ class AccessibilityController(
         durationMs: Long,
     ): Boolean = service?.swipeFromTo(x1, y1, x2, y2, durationMs) ?: false
 
+    override fun supportsGesture(): Boolean = true
+
     override fun gesture(strokes: List<GestureStroke>): Boolean =
         service?.performStrokes(strokes) ?: false
 

@@ -19,6 +19,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.runtime.LogBus
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,8 +52,20 @@ class HidGattClient(
     private val _connectedAddress = MutableStateFlow<String?>(null)
     val connectedAddress: StateFlow<String?> = _connectedAddress.asStateFlow()
 
+    /** 固件回报的 HID 通道是否真正可用（链路已连 + 已加密）。 */
+    private val _hidReady = MutableStateFlow(false)
+    val hidReady: StateFlow<Boolean> = _hidReady.asStateFlow()
+
     private val _dongleResolution = MutableStateFlow<Pair<Int, Int>?>(null)
     val dongleResolution: StateFlow<Pair<Int, Int>?> = _dongleResolution.asStateFlow()
+
+    /** 固件协议版本（来自 HANDSHAKE_ACK）；未握手为 0。 */
+    @Volatile
+    private var _protocolVersion = 0
+    val protocolVersion: Int get() = _protocolVersion
+
+    /** 固件是否支持 CMD_GESTURE（复杂轨迹 / 停顿）。 */
+    fun supportsGesture(): Boolean = _protocolVersion >= HidProtocol.MIN_GESTURE_VERSION
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -64,6 +77,37 @@ class HidGattClient(
     private val pendingWrites = ArrayDeque<ByteArray>()
     private var writeInFlight = false
     private var cccdWriteInFlight = false
+
+    /** Event CCCD 是否已订阅成功（决定能否收到固件的 STATUS / HANDSHAKE_ACK）。 */
+    @Volatile
+    private var eventSubscribed = false
+
+    /** 最近一次尝试订阅 Event 的时刻，用于失败后的重试节流。 */
+    @Volatile
+    private var lastSubscribeTry = 0L
+
+    /** 服务发现是否已完成一次；用于忽略重复/缓存触发的 discoverServices 回调。 */
+    @Volatile
+    private var servicesDiscovered = false
+
+    /** 是否有一次服务发现正在进行，避免重复 discoverServices 造成 GATT 命令冲突。 */
+    @Volatile
+    private var discoveryInFlight = false
+
+    /** 连续订阅失败次数；超过阈值就彻底重连，避免本地 GATT 客户端卡死。 */
+    private var subscribeFailures = 0
+
+    /** 订阅 Event 的延迟任务（放到服务发现回调之外执行，避开栈内待处理命令冲突）。 */
+    private val subscribeRunnable = Runnable { subscribeEvent() }
+
+    /** 订阅超时兜底：若 CCCD 写入回调始终不返回，主动失败重试或重连。 */
+    private val subscribeTimeout = Runnable {
+        if (!eventSubscribed) {
+            logBus.warn("HID 事件订阅超时，重试")
+            synchronized(pendingWrites) { cccdWriteInFlight = false }
+            onSubscribeFailed()
+        }
+    }
 
     @Volatile
     private var autoReconnect = false
@@ -93,7 +137,12 @@ class HidGattClient(
 
     private var lastAddress: String? = null
 
-    val isReady: Boolean get() = _state.value == HidConnectionState.READY
+    /** 最近一次发起连接的时刻，用于连接超时重试。 */
+    @Volatile
+    private var connectingSince = 0L
+
+    val isReady: Boolean get() =
+        _state.value == HidConnectionState.READY && _hidReady.value
 
     // ---- 权限 ----
 
@@ -208,7 +257,13 @@ class HidGattClient(
         autoReconnect = true
         lastAddress = address
         stopScan()
+        connectingSince = SystemClock.elapsedRealtime()
         _state.value = HidConnectionState.CONNECTING
+        handler.removeCallbacks(subscribeRunnable)
+        handler.removeCallbacks(subscribeTimeout)
+        eventSubscribed = false
+        servicesDiscovered = false
+        discoveryInFlight = false
         runCatching {
             bluetoothGatt?.close()
             bluetoothGatt = device.connectGatt(
@@ -245,12 +300,127 @@ class HidGattClient(
         if (address != null) autoReconnect = true
     }
 
+    /**
+     * 看门狗调用：确保已记忆的设备保持连接。狗刚通电、或连接回调丢失时，
+     * 主动发起/重试连接；连接长时间卡住则强制重连。
+     */
+    fun ensureConnected() {
+        val address = lastAddress ?: return
+        if (!autoReconnect || userScanning || !hasPermissions()) return
+        when (_state.value) {
+            HidConnectionState.IDLE, HidConnectionState.ERROR -> connect(address)
+            HidConnectionState.CONNECTING -> {
+                val elapsed = SystemClock.elapsedRealtime() - connectingSince
+                if (elapsed > CONNECT_TIMEOUT_MS) {
+                    logBus.warn("HID 连接超时，重新连接")
+                    closeGatt()
+                    connect(address)
+                }
+            }
+            HidConnectionState.READY, HidConnectionState.CONNECTED -> ensureSubscribed()
+            else -> Unit
+        }
+    }
+
+    /** 看门狗调用：服务发现完成后若仍未订阅 Event，补订阅一次（失败会自行重试）。 */
+    private fun ensureSubscribed() {
+        if (eventSubscribed || !servicesDiscovered) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastSubscribeTry < SUBSCRIBE_RETRY_MS) return
+        lastSubscribeTry = now
+        scheduleSubscribe(0L)
+    }
+
+    /** 把订阅动作延迟到当前回调之外（下一主线程 tick 或指定延时），避开栈内待处理命令。 */
+    private fun scheduleSubscribe(delayMs: Long) {
+        handler.removeCallbacks(subscribeRunnable)
+        if (delayMs <= 0L) handler.post(subscribeRunnable)
+        else handler.postDelayed(subscribeRunnable, delayMs)
+    }
+
+    /**
+     * 订阅 Event 的 CCCD。Android GATT 同一时刻只允许一个操作在途，因此写入 CCCD 前
+     * 必须确认没有控制帧写入在进行；启动后由 [onDescriptorWrite] 或 [subscribeTimeout]
+     * 决定成功还是重试/重连。
+     */
+    @SuppressLint("MissingPermission")
+    private fun subscribeEvent() {
+        if (eventSubscribed) return
+        val gatt = bluetoothGatt ?: return
+        val event = eventChar ?: return
+        if (!hasPermissions()) return
+        synchronized(pendingWrites) {
+            if (writeInFlight || cccdWriteInFlight) {
+                // 控制帧占用着 GATT 操作槽，稍后再订阅。
+                scheduleSubscribe(SUBSCRIBE_RETRY_MS)
+                return
+            }
+            cccdWriteInFlight = true
+        }
+        val started = runCatching {
+            gatt.setCharacteristicNotification(event, true)
+            val cccd = event.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
+            if (cccd == null) {
+                false
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
+                    BluetoothStatusCodes.SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                gatt.writeDescriptor(cccd)
+            }
+        }.getOrDefault(false)
+        if (!started) {
+            synchronized(pendingWrites) { cccdWriteInFlight = false }
+            onSubscribeFailed()
+        } else {
+            handler.removeCallbacks(subscribeTimeout)
+            handler.postDelayed(subscribeTimeout, SUBSCRIBE_TIMEOUT_MS)
+        }
+    }
+
+    /** 订阅失败：小步重试，连续失败多次则彻底重连以清掉卡死的本地 GATT 客户端。 */
+    private fun onSubscribeFailed() {
+        if (eventSubscribed) return
+        subscribeFailures++
+        if (subscribeFailures >= MAX_SUBSCRIBE_FAILURES) {
+            logBus.warn("HID 事件订阅多次失败，重连设备")
+            forceReconnect()
+        } else {
+            scheduleSubscribe(SUBSCRIBE_RETRY_MS)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun forceReconnect() {
+        val address = lastAddress ?: return
+        subscribeFailures = 0
+        closeGatt()
+        _connectedAddress.value = null
+        if (!autoReconnect) {
+            _state.value = HidConnectionState.IDLE
+            return
+        }
+        _state.value = HidConnectionState.CONNECTING
+        connectingSince = SystemClock.elapsedRealtime()
+        handler.postDelayed({ if (autoReconnect) connect(address) }, RECONNECT_DELAY_MS)
+    }
+
     private fun closeGatt() {
+        handler.removeCallbacks(subscribeRunnable)
+        handler.removeCallbacks(subscribeTimeout)
         runCatching { bluetoothGatt?.disconnect() }
         runCatching { bluetoothGatt?.close() }
         bluetoothGatt = null
         controlChar = null
         eventChar = null
+        eventSubscribed = false
+        servicesDiscovered = false
+        discoveryInFlight = false
+        _hidReady.value = false
+        _protocolVersion = 0
         synchronized(pendingWrites) {
             pendingWrites.clear()
             writeInFlight = false
@@ -266,6 +436,15 @@ class HidGattClient(
                     disconnectLogged = false
                     _state.value = HidConnectionState.CONNECTED
                     _connectedAddress.value = gatt.device.address
+                    _hidReady.value = false
+                    _protocolVersion = 0
+                    eventSubscribed = false
+                    lastSubscribeTry = 0L
+                    servicesDiscovered = false
+                    discoveryInFlight = false
+                    subscribeFailures = 0
+                    handler.removeCallbacks(subscribeRunnable)
+                    handler.removeCallbacks(subscribeTimeout)
                     synchronized(pendingWrites) {
                         pendingWrites.clear()
                         writeInFlight = false
@@ -294,6 +473,14 @@ class HidGattClient(
         }
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+            discoveryInFlight = false
+            // 已连接的设备服务来自缓存，discoverServices 可能被重复触发；只处理第一次。
+            if (servicesDiscovered) return
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                logBus.error("服务发现失败: $status")
+                _state.value = HidConnectionState.ERROR
+                return
+            }
             val service = gatt.getService(HidProtocol.SERVICE_UUID)
             if (service == null) {
                 logBus.error("未找到 HID 控制服务")
@@ -307,10 +494,14 @@ class HidGattClient(
                 _state.value = HidConnectionState.ERROR
                 return
             }
-            enableNotifications(gatt, eventChar!!)
-            send(HidProtocol.handshake())
+            servicesDiscovered = true
             _state.value = HidConnectionState.READY
-            logBus.success("HID 狗就绪")
+            logBus.success("HID 狗已连接，订阅事件通道…")
+            // 关键：不要在 discoverServices 的回调栈内立刻写 CCCD。重连时服务来自缓存，
+            // 发现回调几乎与请求同步返回，此时蓝牙栈内仍有未清理的发现命令，直接写
+            // CCCD 会被拒绝（bta_gattc_enqueue: already has a pending command），
+            // 之后回调不再返回，Event 永远订阅不上 → HID 一直"未就绪"。
+            scheduleSubscribe(SUBSCRIBE_DELAY_MS)
         }
 
         @Deprecated("Deprecated in Java")
@@ -332,7 +523,14 @@ class HidGattClient(
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            // 部分机型会重复回调 onMtuChanged；只发起一次服务发现，避免 GATT 命令冲突。
+            if (servicesDiscovered || discoveryInFlight) return
+            discoveryInFlight = true
             runCatching { gatt.discoverServices() }
+                .onFailure {
+                    discoveryInFlight = false
+                    logBus.error("服务发现失败: ${it.message}")
+                }
         }
 
         override fun onCharacteristicWrite(
@@ -349,7 +547,20 @@ class HidGattClient(
             descriptor: BluetoothGattDescriptor,
             status: Int,
         ) {
+            handler.removeCallbacks(subscribeTimeout)
             synchronized(pendingWrites) { cccdWriteInFlight = false }
+            if (descriptor.uuid == CLIENT_CHARACTERISTIC_CONFIG) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    eventSubscribed = true
+                    subscribeFailures = 0
+                    logBus.info("HID 事件通道已订阅")
+                    // 订阅成功后再握手，确保 HANDSHAKE_ACK / STATUS 能被收到。
+                    send(HidProtocol.handshake())
+                } else {
+                    logBus.warn("HID 事件订阅被拒: $status")
+                    onSubscribeFailed()
+                }
+            }
             drainWrites()
         }
     }
@@ -358,6 +569,7 @@ class HidGattClient(
         when (HidProtocol.kind(data)) {
             HidProtocol.EVT_HANDSHAKE_ACK -> {
                 HidProtocol.parseHandshakeAck(data)?.let {
+                    _protocolVersion = it.version
                     _dongleResolution.value = it.width to it.height
                     logBus.info("HID 狗 v${it.version}，数位板 ${it.width}x${it.height}")
                 }
@@ -365,33 +577,19 @@ class HidGattClient(
 
             HidProtocol.EVT_STATUS -> {
                 HidProtocol.parseStatus(data)?.let {
-                    logBus.debug("HID 狗状态: 电量 ${it.battery}%，模式 ${it.mode}")
+                    _hidReady.value = it.hidReady
+                    logBus.info(
+                        "HID 状态: 链路=${it.linkUp} 加密=${it.encrypted} " +
+                            "HID就绪=${it.hidReady} App=${it.appReady}",
+                    )
                 }
             }
 
-            HidProtocol.EVT_ERROR -> logBus.warn("HID 狗返回错误")
+            HidProtocol.EVT_ERROR -> {
+                val code = HidProtocol.parseError(data)
+                logBus.warn("HID 狗返回错误: ${code?.let { HidProtocol.errorText(it) } ?: "未知"}")
+            }
             else -> Unit
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun enableNotifications(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-        runCatching {
-            gatt.setCharacteristicNotification(characteristic, true)
-            val cccd = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG) ?: return
-            synchronized(pendingWrites) { cccdWriteInFlight = true }
-            val ok = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                gatt.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
-                    BluetoothStatusCodes.SUCCESS
-            } else {
-                @Suppress("DEPRECATION")
-                cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                @Suppress("DEPRECATION")
-                gatt.writeDescriptor(cccd)
-            }
-            if (!ok) {
-                synchronized(pendingWrites) { cccdWriteInFlight = false }
-            }
         }
     }
 
@@ -455,6 +653,11 @@ class HidGattClient(
         private val CLIENT_CHARACTERISTIC_CONFIG: UUID =
             UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         private const val RECONNECT_DELAY_MS = 2000L
+        private const val CONNECT_TIMEOUT_MS = 15_000L
+        private const val SUBSCRIBE_RETRY_MS = 2000L
+        private const val SUBSCRIBE_DELAY_MS = 150L
+        private const val SUBSCRIBE_TIMEOUT_MS = 1500L
+        private const val MAX_SUBSCRIBE_FAILURES = 3
         private const val SCAN_TIMEOUT_MS = 20_000L
         private const val PUBLISH_THROTTLE_MS = 400L
         private const val DEVICE_NAME_PREFIX = "Izuki"

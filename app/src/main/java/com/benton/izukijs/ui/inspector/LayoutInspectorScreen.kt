@@ -151,6 +151,7 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
                 BoxWithConstraints(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .weight(1f)
                         .verticalScroll(rememberScrollState()),
                 ) {
                     val density = LocalDensity.current
@@ -201,7 +202,7 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
                     }
                 }
             } else if (nodes.isNotEmpty()) {
-                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
+                LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
                     items(nodes, key = { it.index }) { node ->
                         ListItem(
                             headlineContent = { Text(node.label, style = MaterialTheme.typography.bodyMedium) },

@@ -204,6 +204,7 @@ class ConfigBackupManager(
     private fun editorToJson(c: EditorSettings): JSONObject = JSONObject().apply {
         put("fontSizeSp", c.fontSizeSp)
         put("autoSave", c.autoSave)
+        put("consoleHeightDp", c.consoleHeightDp)
     }
 
     private fun editorFromJson(o: JSONObject): EditorSettings {
@@ -211,6 +212,7 @@ class ConfigBackupManager(
         return EditorSettings(
             fontSizeSp = o.optInt("fontSizeSp", base.fontSizeSp),
             autoSave = o.optBoolean("autoSave", base.autoSave),
+            consoleHeightDp = o.optInt("consoleHeightDp", base.consoleHeightDp),
         )
     }
 

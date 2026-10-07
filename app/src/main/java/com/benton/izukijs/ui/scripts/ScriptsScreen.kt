@@ -44,6 +44,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -173,22 +174,9 @@ fun ScriptsScreen(
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when {
-                    loaded && scripts.isEmpty() -> Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text("还没有脚本，点击右下角新建", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    loaded && scripts.isEmpty() -> EmptyState("还没有脚本，点击右下角新建")
 
-                    filtered.isEmpty() -> Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "没有匹配「${query.trim()}」的脚本",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    filtered.isEmpty() -> EmptyState("没有匹配「${query.trim()}」的脚本")
 
                     else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(filtered, key = { it.id }) { script ->

@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.schedule.Schedule
+import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -86,11 +87,7 @@ fun ScheduleScreen(onBack: () -> Unit) {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (schedules.isEmpty()) {
-                Text(
-                    "还没有定时任务。点击右下角新建，可设置每日固定时间或按间隔重复运行脚本。",
-                    modifier = Modifier.padding(24.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                EmptyState("还没有定时任务。点击右下角新建，可设置每日固定时间或按间隔重复运行脚本。")
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(schedules, key = { it.id }) { schedule ->

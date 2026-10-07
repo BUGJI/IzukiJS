@@ -53,6 +53,12 @@ interface DeviceController {
         durationMs: Long = 300L,
     ): Boolean = false
 
+    /**
+     * 是否支持带时间戳的复杂轨迹（曲线 / 多段 / 多指 / 按住停顿）。
+     * 目前仅无障碍后端支持；其余后端 [gesture] 恒为 false。
+     */
+    fun supportsGesture(): Boolean = false
+
     fun gesture(strokes: List<GestureStroke>): Boolean = false
 
     fun pressKey(keyCode: Int): Boolean = false

@@ -19,7 +19,7 @@ class RootManager(
 ) {
 
     private val shell = RootShell(context)
-    private val controller = RootController(context, shell)
+    private val controller = RootController(context, shell, logBus)
 
     fun init() {
         scope.launch(Dispatchers.IO) {

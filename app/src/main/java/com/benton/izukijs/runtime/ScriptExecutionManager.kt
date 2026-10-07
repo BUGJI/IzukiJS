@@ -7,6 +7,7 @@ import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.service.CaptureSettingsRepository
+import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.ScriptForegroundService
 import kotlinx.coroutines.CoroutineScope
@@ -63,6 +64,7 @@ class ScriptExecutionManager(
         _runningScript.value = scriptName
         logBus.info("▶ 开始运行: $scriptName")
         ScriptForegroundService.start(appContext, scriptName)
+        FloatingWindowService.showForRun(appContext)
 
         job = scope.launch {
             val jsEngine = JsEngine(
@@ -94,6 +96,7 @@ class ScriptExecutionManager(
                 _running.value = false
                 _runningScript.value = null
                 ScriptForegroundService.stop(appContext)
+                FloatingWindowService.onScriptFinished(appContext)
             }
         }
     }

@@ -1,19 +1,12 @@
 package com.benton.izukijs.ui.ai
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,9 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -31,16 +22,19 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.ai.AiClient
 import com.benton.izukijs.ai.AiConfig
 import com.benton.izukijs.ai.AiPrompts
 import com.benton.izukijs.ai.ChatMessage
+import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.PageColumn
+import com.benton.izukijs.ui.common.SecretField
+import com.benton.izukijs.ui.common.SectionCard
+import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,15 +64,15 @@ fun AiAgentScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
+        PageColumn(
+            modifier = Modifier.padding(padding).padding(16.dp),
         ) {
             SectionCard("总开关") {
-                SwitchRow("启用 AI Agent", "关闭后脚本的 ai.* 调用会直接返回 null。", config.enabled) {
+                SwitchRow(
+                    label = "启用 AI Agent",
+                    checked = config.enabled,
+                    description = "关闭后脚本的 ai.* 调用会直接返回 null。",
+                ) {
                     update(config.copy(enabled = it))
                 }
             }
@@ -91,16 +85,24 @@ fun AiAgentScreen(onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                Field("Base URL", config.baseUrl, placeholder = AiConfig.DEFAULT_BASE_URL) {
+                LabeledField(
+                    label = "Base URL",
+                    value = config.baseUrl,
+                    placeholder = AiConfig.DEFAULT_BASE_URL,
+                ) {
                     update(config.copy(baseUrl = it))
                 }
                 SecretField("API Key", config.apiKey) { update(config.copy(apiKey = it)) }
-                Field("模型", config.model, placeholder = AiConfig.DEFAULT_MODEL) {
+                LabeledField(
+                    label = "模型",
+                    value = config.model,
+                    placeholder = AiConfig.DEFAULT_MODEL,
+                ) {
                     update(config.copy(model = it))
                 }
-                Field(
-                    "自定义鉴权 Header 名",
-                    config.extraHeaderName,
+                LabeledField(
+                    label = "自定义鉴权 Header 名",
+                    value = config.extraHeaderName,
                     placeholder = "可选，如 api-key（Azure）",
                 ) { update(config.copy(extraHeaderName = it)) }
                 SecretField("自定义鉴权 Header 值", config.extraHeaderValue) {
@@ -110,17 +112,33 @@ fun AiAgentScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(12.dp))
             SectionCard("生成参数") {
-                SwitchRow("流式返回", "开启后通过 onDelta 回调逐段返回文本。", config.stream) {
+                SwitchRow(
+                    label = "流式返回",
+                    checked = config.stream,
+                    description = "开启后通过 onDelta 回调逐段返回文本。",
+                ) {
                     update(config.copy(stream = it))
                 }
                 Spacer(Modifier.height(8.dp))
-                NumberField("Temperature（0–2）", config.temperature.toString()) { text ->
+                LabeledField(
+                    label = "Temperature（0–2）",
+                    value = config.temperature.toString(),
+                    keyboardType = KeyboardType.Decimal,
+                ) { text ->
                     text.toDoubleOrNull()?.let { update(config.copy(temperature = it.coerceIn(0.0, 2.0))) }
                 }
-                NumberField("最大 Token", config.maxTokens.toString()) { text ->
+                LabeledField(
+                    label = "最大 Token",
+                    value = config.maxTokens.toString(),
+                    keyboardType = KeyboardType.Number,
+                ) { text ->
                     text.toIntOrNull()?.let { update(config.copy(maxTokens = it.coerceIn(1, 32000))) }
                 }
-                NumberField("超时（秒）", config.timeoutSec.toString()) { text ->
+                LabeledField(
+                    label = "超时（秒）",
+                    value = config.timeoutSec.toString(),
+                    keyboardType = KeyboardType.Number,
+                ) { text ->
                     text.toIntOrNull()?.let { update(config.copy(timeoutSec = it.coerceIn(5, 600))) }
                 }
             }
@@ -128,18 +146,22 @@ fun AiAgentScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             SectionCard("Agent 工具") {
                 SwitchRow(
-                    "启用工具调用",
-                    "允许模型自己点击 / 滑动 / OCR / 启动应用等。关闭则仅做纯对话。",
-                    config.toolsEnabled,
+                    label = "启用工具调用",
+                    checked = config.toolsEnabled,
+                    description = "允许模型自己点击 / 滑动 / OCR / 启动应用等。关闭则仅做纯对话。",
                 ) { update(config.copy(toolsEnabled = it)) }
                 Spacer(Modifier.height(8.dp))
                 SwitchRow(
-                    "允许 Shell",
-                    "允许模型执行 Shell 命令，需要 Shizuku 或 Root，权限较大，默认关闭。",
-                    config.allowShell,
+                    label = "允许 Shell",
+                    checked = config.allowShell,
+                    description = "允许模型执行 Shell 命令，需要 Shizuku 或 Root，权限较大，默认关闭。",
                 ) { update(config.copy(allowShell = it)) }
                 Spacer(Modifier.height(8.dp))
-                NumberField("最大步数", config.maxSteps.toString()) { text ->
+                LabeledField(
+                    label = "最大步数",
+                    value = config.maxSteps.toString(),
+                    keyboardType = KeyboardType.Number,
+                ) { text ->
                     text.toIntOrNull()?.let { update(config.copy(maxSteps = it.coerceIn(1, 50))) }
                 }
                 Text(
@@ -210,85 +232,4 @@ fun AiAgentScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
         }
     }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SwitchRow(
-    label: String,
-    description: String,
-    checked: Boolean,
-    onChange: (Boolean) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label)
-            Text(
-                description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
-
-@Composable
-private fun Field(
-    label: String,
-    value: String,
-    placeholder: String = "",
-    onChange: (String) -> Unit,
-) {
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        placeholder = { Text(placeholder) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun NumberField(label: String, value: String, onChange: (String) -> Unit) {
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun SecretField(label: String, value: String, onChange: (String) -> Unit) {
-    var visible by remember { mutableStateOf(false) }
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = {
-            TextButton(onClick = { visible = !visible }) { Text(if (visible) "隐藏" else "显示") }
-        },
-    )
 }

@@ -3,6 +3,7 @@ package com.benton.izukijs.ui.run
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,7 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
@@ -45,7 +48,6 @@ import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.ScriptEnvDialog
-import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
 import kotlinx.coroutines.launch
@@ -60,9 +62,9 @@ fun RunScreen(
     val scope = rememberCoroutineScope()
     val extra = LocalIzukiExtraColors.current
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
+    val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
     val runningScript by container.scriptExecutionManager.runningScript.collectAsStateWithLifecycle()
-    val logs by container.logBus.entries.collectAsStateWithLifecycle()
     val envData by container.scriptEnvRepository.data.collectAsStateWithLifecycle()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
@@ -99,7 +101,12 @@ fun RunScreen(
     Scaffold(
         topBar = { TopAppBar(title = { Text("运行") }) },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+        ) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
@@ -178,50 +185,62 @@ fun RunScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("控制模式", style = MaterialTheme.typography.titleMedium)
+                        Text("权限与能力", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = onOpenSetup) { Text("配置") }
                     }
                     Spacer(Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ModeStatus(
-                            label = "无障碍",
-                            ready = ControlMode.ACCESSIBILITY in readyModes,
-                            modifier = Modifier.weight(1f),
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier
+                                .size(8.dp)
+                                .background(
+                                    if (screenCaptureActive) {
+                                        extra.success
+                                    } else {
+                                        MaterialTheme.colorScheme.error
+                                    },
+                                    CircleShape,
+                                ),
                         )
-                        ModeStatus(
-                            label = "Shizuku",
-                            ready = ControlMode.SHIZUKU in readyModes,
-                            modifier = Modifier.weight(1f),
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            if (screenCaptureActive) "屏幕捕获：录制中" else "屏幕捕获：未开启",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        ModeStatus(
-                            label = "Root",
-                            ready = ControlMode.ROOT in readyModes,
-                            modifier = Modifier.weight(1f),
-                        )
-                        ModeStatus(
-                            label = "蓝牙 HID",
-                            ready = ControlMode.HID in readyModes,
-                            modifier = Modifier.weight(1f),
-                        )
+                    Spacer(Modifier.height(8.dp))
+                    val modes = listOf(
+                        "无障碍" to (ControlMode.ACCESSIBILITY in readyModes),
+                        "Shizuku" to (ControlMode.SHIZUKU in readyModes),
+                        "Root" to (ControlMode.ROOT in readyModes),
+                        "蓝牙 HID" to (ControlMode.HID in readyModes),
+                    )
+                    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                        val columns = if (maxWidth >= 480.dp) 4 else 2
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            modes.chunked(columns).forEach { rowModes ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    rowModes.forEach { (label, ready) ->
+                                        ModeStatus(
+                                            label = label,
+                                            ready = ready,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    repeat(columns - rowModes.size) {
+                                        Spacer(Modifier.weight(1f))
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
-
-            ConsolePanel(
-                entries = logs,
-                onClear = { container.logBus.clear() },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-            )
         }
     }
 

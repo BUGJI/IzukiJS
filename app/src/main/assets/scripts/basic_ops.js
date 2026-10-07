@@ -10,9 +10,21 @@ function backToHome() {
   sleep(800);
 }
 
-// 清理垃圾：底部正中间上滑并停顿 1 秒（打开最近任务），再点击中下位置
+// 清理垃圾：底部正中间上滑并在终点按住停顿（打开最近任务），再点击中下位置
 function cleanJunk() {
-  swipe(w / 2, h * 0.99, w / 2, h * 0.6, 1000);
+  var holdY = h * 0.6;
+  if (typeof gesture === "function") {
+    // 260ms 滑到 holdY，再原地按住 700ms 后抬手
+    gesture([
+      [
+        { x: w / 2, y: h * 0.99, t: 0 },
+        { x: w / 2, y: holdY, t: 260 },
+        { x: w / 2, y: holdY, t: 960 }
+      ]
+    ]);
+  } else {
+    swipe(w / 2, h * 0.99, w / 2, holdY, 1000);
+  }
   sleep(1000);
   click(w / 2, h * 0.82);
   sleep(800);

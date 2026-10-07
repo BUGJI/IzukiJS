@@ -6,16 +6,19 @@ import android.graphics.BitmapFactory
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.ShellResult
 import com.benton.izukijs.model.Capability
+import com.benton.izukijs.runtime.LogBus
 
 /**
  * 基于 Shell 命令的控制后端。通过 `input` / `screencap` 等命令实现手势、按键、文本与截图，
  * 避免直接反射隐藏 API，跨 Android 版本更稳。
  *
- * Shizuku 与 Root 都复用本类，仅 [ShellRunner] 不同。
+ * Shizuku 与 Root 都复用本类，仅 [ShellRunner] 不同。每条实际下发的命令都会以
+ * DEBUG 级别写入 [logBus]。
  */
 abstract class CommandDeviceController(
     protected val context: Context,
     protected val shell: ShellRunner,
+    protected val logBus: LogBus,
 ) : DeviceController {
 
     protected open val supportedCapabilities: Set<Capability> = setOf(
@@ -64,7 +67,12 @@ abstract class CommandDeviceController(
     override fun shell(cmd: String): ShellResult? = shell.run(cmd)
 
     protected fun exec(command: String): Boolean {
-        val result = shell.run(command) ?: return false
+        val result = shell.run(command)
+        if (result == null) {
+            logBus.debug("${mode.displayName}> $command (未执行) ✗")
+            return false
+        }
+        logBus.debug("${mode.displayName}> $command (exit=${result.exitCode})")
         return result.exitCode == 0
     }
 

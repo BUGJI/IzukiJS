@@ -11,6 +11,7 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
 import com.benton.izukijs.IzukiApp
+import com.benton.izukijs.controller.GesturePoint
 import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.model.ControlMode
@@ -59,22 +60,84 @@ class IzukiAccessibilityService : AccessibilityService() {
     fun performStrokes(strokes: List<GestureStroke>): Boolean {
         if (strokes.isEmpty()) return false
         val builder = GestureDescription.Builder()
+        var strokeCount = 0
         for (stroke in strokes) {
-            if (stroke.points.size < 2) continue
-            val path = Path()
-            val first = stroke.points.first()
-            path.moveTo(first.x, first.y)
-            for (point in stroke.points.drop(1)) {
-                path.lineTo(point.x, point.y)
-            }
-            val duration = (stroke.points.last().timeMs - first.timeMs).coerceAtLeast(1L)
-            builder.addStroke(GestureDescription.StrokeDescription(path, first.timeMs, duration))
+            strokeCount += appendStroke(builder, stroke)
         }
+        if (strokeCount == 0) return false
         return try {
             dispatchGesture(builder.build(), null, null)
         } catch (t: Throwable) {
             false
         }
+    }
+
+    /**
+     * 把一条笔画拆成「移动段 + 停顿段」，用 willContinue / continueStroke 串联到同一根手指，
+     * 从而支持中途或终点按住停顿。返回实际加入的 Stroke 数。
+     *
+     * 关键：同一次手势内，后继 Stroke 的 startTime 必须等于前一段的结束时间（累加），
+     * 否则各段会在时间轴上重叠，整条手势会退化成在终点长按。
+     */
+    private fun appendStroke(
+        builder: GestureDescription.Builder,
+        stroke: GestureStroke,
+    ): Int {
+        val points = stroke.points
+        if (points.size < 2) return 0
+        val segments = buildSegments(points)
+        var previous: GestureDescription.StrokeDescription? = null
+        var startTime = 0L
+        for ((index, segment) in segments.withIndex()) {
+            val (path, durationMs) = segment
+            val willContinue = index < segments.lastIndex
+            val duration = durationMs.coerceAtLeast(1L)
+            val description = previous?.continueStroke(path, startTime, duration, willContinue)
+                ?: GestureDescription.StrokeDescription(path, startTime, duration, willContinue)
+            builder.addStroke(description)
+            previous = description
+            startTime += duration
+        }
+        return segments.size
+    }
+
+    /**
+     * 将带时间戳的点序列切成移动段（折线）与停顿段（原地停留）。
+     * 相邻移动段合并为一条折线，避免超过系统 Stroke 数量上限；相邻停顿段合并时长。
+     */
+    private fun buildSegments(points: List<GesturePoint>): List<Pair<Path, Long>> {
+        val segments = ArrayList<Pair<Path, Long>>()
+        var runPath = Path().apply { moveTo(points[0].x, points[0].y) }
+        var runDuration = 0L
+        var runIsHold = true
+        for (i in 1 until points.size) {
+            val previous = points[i - 1]
+            val current = points[i]
+            val delta = (current.timeMs - previous.timeMs).coerceAtLeast(0L)
+            val holding = previous.x == current.x && previous.y == current.y
+            if (holding) {
+                if (!runIsHold) {
+                    segments.add(runPath to runDuration.coerceAtLeast(1L))
+                    runPath = Path().apply { moveTo(previous.x, previous.y) }
+                    runDuration = 0L
+                    runIsHold = true
+                }
+                runDuration += delta
+            } else {
+                if (runIsHold && runDuration > 0L) {
+                    segments.add(runPath to runDuration.coerceAtLeast(1L))
+                    runPath = Path().apply { moveTo(previous.x, previous.y) }
+                    runDuration = 0L
+                }
+                runPath.lineTo(current.x, current.y)
+                runDuration += delta
+                runIsHold = false
+            }
+        }
+        if (runDuration > 0L || !runIsHold) {
+            segments.add(runPath to runDuration.coerceAtLeast(1L))
+        }
+        return segments
     }
 
     fun tapAt(x: Float, y: Float, durationMs: Long): Boolean {

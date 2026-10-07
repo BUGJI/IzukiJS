@@ -6,14 +6,17 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.controller.accessibility.releaseNode
+import com.benton.izukijs.runtime.LogBus
 
 /**
  * 控件选择 API。挂在全局 `selector` 命名空间。
  *
  * 出于稳定性考虑，这里全部返回原始类型（Boolean/String/Int），避免 JS 与 Java 对象互转。
  * 每个从无障碍服务获取的节点都会在返回前回收，防止节点池泄漏。
+ * 控件点击 / 长按 / 设值会以 DEBUG 级别写入 [logBus]。
  */
 class SelectorApi(
+    private val logBus: LogBus,
     private val controllerProvider: () -> AccessibilityController?,
 ) {
 
@@ -37,24 +40,29 @@ class SelectorApi(
     }
 
     @JavascriptInterface
-    fun clickById(viewId: String): Boolean = clickNode(findById(viewId))
+    fun clickById(viewId: String): Boolean =
+        trace("点击 #$viewId") { clickNode(findById(viewId)) }
 
     @JavascriptInterface
-    fun clickByText(text: String): Boolean = clickNode(findByText(text))
+    fun clickByText(text: String): Boolean =
+        trace("点击文本 \"$text\"") { clickNode(findByText(text)) }
 
     @JavascriptInterface
-    fun clickByDesc(desc: String): Boolean = clickNode(findByDesc(desc))
+    fun clickByDesc(desc: String): Boolean =
+        trace("点击描述 \"$desc\"") { clickNode(findByDesc(desc)) }
 
     @JavascriptInterface
-    fun longClickById(viewId: String): Boolean = longClickNode(findById(viewId))
+    fun longClickById(viewId: String): Boolean =
+        trace("长按 #$viewId") { longClickNode(findById(viewId)) }
 
     @JavascriptInterface
-    fun longClickByText(text: String): Boolean = longClickNode(findByText(text))
+    fun longClickByText(text: String): Boolean =
+        trace("长按文本 \"$text\"") { longClickNode(findByText(text)) }
 
     @JavascriptInterface
-    fun setTextById(viewId: String, text: String): Boolean {
-        val node = findById(viewId) ?: return false
-        return try {
+    fun setTextById(viewId: String, text: String): Boolean = trace("设置 #$viewId 文本") {
+        val node = findById(viewId) ?: return@trace false
+        try {
             val args = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }
@@ -62,6 +70,12 @@ class SelectorApi(
         } finally {
             node.releaseNode()
         }
+    }
+
+    private inline fun trace(label: String, block: () -> Boolean): Boolean {
+        val ok = block()
+        logBus.debug("$label → 无障碍 ${if (ok) "✓" else "✗"}")
+        return ok
     }
 
     @JavascriptInterface

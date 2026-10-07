@@ -17,7 +17,7 @@ class ShizukuManager(
 ) {
 
     private val shell = ShizukuShell()
-    private val controller = ShizukuController(context, shell)
+    private val controller = ShizukuController(context, shell, logBus)
 
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
         if (grantResult == PackageManager.PERMISSION_GRANTED) {
