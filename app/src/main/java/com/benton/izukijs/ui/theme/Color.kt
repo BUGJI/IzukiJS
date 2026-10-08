@@ -5,6 +5,8 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 // 品牌主色：偏冷的钴蓝，贴合「控制台 / 自动化」的调性，替代默认紫色。
+// 色板覆盖 Material 3 的完整角色集合（含 surfaceContainer 系列与 outlineVariant），
+// 避免未定义角色回退到 baseline 的紫色中性色，导致卡片 / 菜单 / 分隔线与品牌色冲突。
 val IzukiLightColors = lightColorScheme(
     primary = Color(0xFF1B5E9E),
     onPrimary = Color(0xFFFFFFFF),
@@ -29,6 +31,18 @@ val IzukiLightColors = lightColorScheme(
     surfaceVariant = Color(0xFFDFE2EB),
     onSurfaceVariant = Color(0xFF43474E),
     outline = Color(0xFF73777F),
+    outlineVariant = Color(0xFFC3C6CF),
+    scrim = Color(0xFF000000),
+    inverseSurface = Color(0xFF2F3033),
+    inverseOnSurface = Color(0xFFF1F0F4),
+    inversePrimary = Color(0xFFA6C8FF),
+    surfaceDim = Color(0xFFDBDADE),
+    surfaceBright = Color(0xFFFAF9FC),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF4F3F7),
+    surfaceContainer = Color(0xFFEEEDF1),
+    surfaceContainerHigh = Color(0xFFE8E7EB),
+    surfaceContainerHighest = Color(0xFFE2E1E6),
 )
 
 val IzukiDarkColors = darkColorScheme(
@@ -55,4 +69,16 @@ val IzukiDarkColors = darkColorScheme(
     surfaceVariant = Color(0xFF43474E),
     onSurfaceVariant = Color(0xFFC3C6CF),
     outline = Color(0xFF8D9199),
+    outlineVariant = Color(0xFF43474E),
+    scrim = Color(0xFF000000),
+    inverseSurface = Color(0xFFE3E2E6),
+    inverseOnSurface = Color(0xFF1A1C1E),
+    inversePrimary = Color(0xFF1B5E9E),
+    surfaceDim = Color(0xFF1A1C1E),
+    surfaceBright = Color(0xFF4A4C50),
+    surfaceContainerLowest = Color(0xFF0F1113),
+    surfaceContainerLow = Color(0xFF1E2022),
+    surfaceContainer = Color(0xFF232528),
+    surfaceContainerHigh = Color(0xFF2D2F33),
+    surfaceContainerHighest = Color(0xFF383A3E),
 )

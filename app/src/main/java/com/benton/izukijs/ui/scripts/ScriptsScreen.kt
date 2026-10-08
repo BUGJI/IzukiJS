@@ -32,6 +32,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -48,6 +50,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.formatDateTime
+import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,6 +77,7 @@ fun ScriptsScreen(
     var exportTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var deleteTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var query by remember { mutableStateOf("") }
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     val filtered = remember(query, scripts) {
         if (query.isBlank()) scripts
@@ -132,9 +136,12 @@ fun ScriptsScreen(
     }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.scripts_title)) },
+                scrollBehavior = scrollBehavior,
+                colors = stableTopAppBarColors(),
                 actions = {
                     IconButton(onClick = onOpenInspector) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.scripts_inspector))

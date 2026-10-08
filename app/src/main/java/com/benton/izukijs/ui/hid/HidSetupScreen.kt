@@ -49,9 +49,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -59,6 +61,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.hid.HidConnectionState
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -80,6 +83,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
     var targetCenter by remember { mutableStateOf<IntOffset?>(null) }
     var hit by remember { mutableStateOf(false) }
     var verifyState by remember { mutableStateOf(VerifyState.IDLE) }
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -106,9 +110,12 @@ fun HidSetupScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.control_hid)) },
+                scrollBehavior = scrollBehavior,
+                colors = stableTopAppBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))

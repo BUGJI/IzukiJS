@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -34,6 +35,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,6 +51,7 @@ import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.common.localizedName
+import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
 import kotlinx.coroutines.launch
@@ -70,6 +73,7 @@ fun RunScreen(
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     fun requestRun(script: ScriptInfo) {
         scope.launch {
@@ -100,11 +104,21 @@ fun RunScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.nav_run)) }) },
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.nav_run)) },
+                scrollBehavior = scrollBehavior,
+                colors = stableTopAppBarColors(),
+            )
+        },
     ) { padding ->
-        PageColumn(modifier = Modifier.padding(padding)) {
+        PageColumn(
+            modifier = Modifier.padding(padding).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(stringResource(R.string.run_status_title), style = MaterialTheme.typography.titleMedium)
@@ -174,7 +188,7 @@ fun RunScreen(
             }
 
             Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(

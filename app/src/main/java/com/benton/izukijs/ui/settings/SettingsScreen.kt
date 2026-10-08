@@ -33,6 +33,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,6 +70,7 @@ import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.common.formatFileSize
 import com.benton.izukijs.ui.common.localizedName
+import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -102,15 +105,22 @@ fun SettingsScreen(
     val aiConfig by container.aiConfigRepository.config.collectAsStateWithLifecycle()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
 
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.settings_title)) })
+            TopAppBar(
+                title = { Text(stringResource(R.string.settings_title)) },
+                scrollBehavior = scrollBehavior,
+                colors = stableTopAppBarColors(),
+            )
         },
     ) { padding ->
-        PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
+        PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             LanguageSettings()
             Spacer(Modifier.height(12.dp))
-            CategoryCard {
+            CategoryGroup {
                 CategoryRow(
                     title = stringResource(SettingsCategory.CONTROL.titleRes),
                     summary = stringResource(
@@ -120,7 +130,6 @@ fun SettingsScreen(
                         stringResource(if (ocrConfig.mode == OcrMode.LOCAL) R.string.settings_local else R.string.settings_online),
                     ),
                 ) { onOpenCategory(SettingsCategory.CONTROL) }
-                CategoryDivider()
                 CategoryRow(
                     title = stringResource(SettingsCategory.EDITOR.titleRes),
                     summary = stringResource(
@@ -129,14 +138,12 @@ fun SettingsScreen(
                         stringResource(if (editorSettings.autoSave) R.string.common_on else R.string.common_off),
                     ),
                 ) { onOpenCategory(SettingsCategory.EDITOR) }
-                CategoryDivider()
                 CategoryRow(
                     title = stringResource(R.string.settings_ai_agent),
                     summary = stringResource(
                         if (aiConfig.isConfigured) R.string.settings_ai_configured else R.string.settings_ai_not_configured,
                     ),
                 ) { onOpenAi() }
-                CategoryDivider()
                 CategoryRow(
                     title = stringResource(SettingsCategory.STORAGE.titleRes),
                     summary = stringResource(
@@ -145,17 +152,16 @@ fun SettingsScreen(
                         logSettings.retentionDays,
                     ),
                 ) { onOpenCategory(SettingsCategory.STORAGE) }
-                CategoryDivider()
                 CategoryRow(
                     title = stringResource(SettingsCategory.BACKUP.titleRes),
                     summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
-                CategoryDivider()
                 CategoryRow(
                     title = stringResource(SettingsCategory.ABOUT.titleRes),
                     summary = stringResource(R.string.settings_version_short, BuildConfig.VERSION_NAME),
                 ) { onOpenCategory(SettingsCategory.ABOUT) }
             }
+            Spacer(Modifier.height(16.dp))
         }
     }
 }
@@ -722,43 +728,42 @@ private fun BackupSettingsScreen() {
     }
 }
 
+/**
+ * 分组容器：每一项各自一张卡片，靠间距区分，不使用卡片内部分隔线。
+ * 参照 LSPosed Manager 的设置列表，避免细线在深色卡片上形成明显「隔断」。
+ */
 @Composable
-private fun CategoryCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column { content() }
-    }
+private fun CategoryGroup(content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
 }
 
 @Composable
 private fun CategoryRow(title: String, summary: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Icon(
-            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
-}
-
-@Composable
-private fun CategoryDivider() {
-    androidx.compose.material3.HorizontalDivider(
-        modifier = Modifier.padding(horizontal = 16.dp),
-    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -768,10 +773,14 @@ private fun SettingsDetailScaffold(
     onBack: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(title) },
+                scrollBehavior = scrollBehavior,
+                colors = stableTopAppBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
@@ -780,9 +789,9 @@ private fun SettingsDetailScaffold(
             )
         },
     ) { padding ->
-        PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
+        PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             content()
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
         }
     }
 }

@@ -30,6 +30,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
@@ -45,6 +47,7 @@ import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.schedule.Schedule
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.formatMonthDayTime
+import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -58,6 +61,7 @@ fun ScheduleScreen(onBack: () -> Unit) {
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var schedules by remember { mutableStateOf<List<Schedule>>(emptyList()) }
     var showAdd by remember { mutableStateOf(false) }
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     LaunchedEffect(Unit) {
         scripts = container.scriptRepository.listAsync()
@@ -69,9 +73,12 @@ fun ScheduleScreen(onBack: () -> Unit) {
     }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.schedule_title)) },
+                scrollBehavior = scrollBehavior,
+                colors = stableTopAppBarColors(),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))

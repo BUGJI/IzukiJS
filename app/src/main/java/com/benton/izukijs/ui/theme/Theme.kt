@@ -12,8 +12,9 @@ import androidx.compose.ui.platform.LocalContext
 @Composable
 fun IzukiJSTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
-    // 关闭动态取色以保持品牌配色一致；如需跟随系统壁纸可改为 true。
-    dynamicColor: Boolean = false,
+    // 跟随系统壁纸取色（Material You），与 LSPosed 等应用保持一致；
+    // 低版本系统自动回退到下方品牌配色。
+    dynamicColor: Boolean = true,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
