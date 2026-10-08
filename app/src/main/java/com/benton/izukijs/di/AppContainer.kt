@@ -2,6 +2,7 @@ package com.benton.izukijs.di
 
 import android.app.Application
 import android.content.Context
+import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
@@ -17,12 +18,17 @@ import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.i18n.LanguageRepository
+import com.benton.izukijs.mcp.McpConfigRepository
+import com.benton.izukijs.mcp.McpServerController
+import com.benton.izukijs.mcp.resources.McpResources
+import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.LogBus
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.runtime.ScriptExecutionManager
+import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.schedule.ScheduleManager
 import com.benton.izukijs.schedule.ScheduleRepository
 import com.benton.izukijs.service.CaptureSettingsRepository
@@ -97,6 +103,39 @@ class AppContainer(private val application: Application) {
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
             scriptRepository.find(id)?.let { scriptRepository.read(it) }
         },
+    )
+
+    val mcpConfigRepository = McpConfigRepository(application)
+
+    /** 脚本与 MCP 共用的设备 API 集合；懒加载，首次使用时组装。 */
+    private val deviceApiBundle: DeviceApiBundle by lazy {
+        DeviceApiBundle.create(application, controllerManager, screenCapture, ocrProcessor, logBus)
+    }
+
+    val mcpServerController = McpServerController(
+        logBus = logBus,
+        configProvider = { mcpConfigRepository.current() },
+        registryFactory = { config ->
+            McpToolRegistry(
+                bundle = deviceApiBundle,
+                controllers = controllerManager,
+                captureSettingsRepository = captureSettingsRepository,
+                scriptRepository = scriptRepository,
+                executionManager = scriptExecutionManager,
+                allowShell = config.allowShell,
+                allowScripts = config.allowScripts,
+            )
+        },
+        resourcesFactory = {
+            McpResources(
+                bundle = deviceApiBundle,
+                controllers = controllerManager,
+                scriptRepository = scriptRepository,
+                executionManager = scriptExecutionManager,
+                logFileStore = logFileStore,
+            )
+        },
+        serverVersion = BuildConfig.VERSION_NAME,
     )
 
     val shizukuManager = ShizukuManager(application, controllerManager, logBus)

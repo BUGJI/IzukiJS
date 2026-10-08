@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.LanguagePreferences
+import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.navigation.IzukiNavHost
 import com.benton.izukijs.ui.theme.IzukiJSTheme
 
@@ -27,6 +28,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val container = (application as IzukiApp).container
+        // 应用在前台启动时，若此前已启用 MCP 服务则恢复运行（前台服务需用户可见时启动）。
+        if (container.mcpConfigRepository.current().enabled) {
+            McpServerService.start(this)
+        }
         setContent {
             val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
             val darkTheme = when (appearance.themeMode) {

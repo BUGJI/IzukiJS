@@ -55,6 +55,28 @@ class LogFileStore(
 
     fun sizeBytes(): Long = if (logFile.exists()) logFile.length() else 0L
 
+    /**
+     * 返回日志尾部最近 [maxLines] 行，供 MCP 资源读取。最多读取尾部 64KB，
+     * 避免大日志整文件载入内存。
+     */
+    fun tail(maxLines: Int = 200): String = synchronized(lock) {
+        flushLocked()
+        if (!logFile.exists()) return ""
+        runCatching {
+            RandomAccessFile(logFile, "r").use { raf ->
+                val length = raf.length()
+                val chunk = minOf(length, TAIL_MAX_BYTES).toInt()
+                val start = (length - chunk).coerceAtLeast(0L)
+                raf.seek(start)
+                val bytes = ByteArray((length - start).toInt())
+                raf.readFully(bytes)
+                var lines = String(bytes, Charsets.UTF_8).split('\n')
+                if (start > 0L && lines.size > 1) lines = lines.drop(1)
+                lines.takeLast(maxLines).joinToString("\n").trimEnd()
+            }
+        }.getOrDefault("")
+    }
+
     /** 将当前日志复制到 [destination]，用于分享/导出。 */
     fun exportTo(destination: File): Boolean = synchronized(lock) {
         flushLocked()
@@ -162,5 +184,8 @@ class LogFileStore(
 
     private companion object {
         const val FLUSH_INTERVAL_MS = 200L
+
+        /** 资源读取日志尾部时的最大读取字节数。 */
+        const val TAIL_MAX_BYTES = 64L * 1024L
     }
 }

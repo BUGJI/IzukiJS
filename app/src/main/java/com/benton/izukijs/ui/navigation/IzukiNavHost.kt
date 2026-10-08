@@ -56,6 +56,7 @@ import com.benton.izukijs.ui.editor.EditorScreen
 import com.benton.izukijs.ui.hid.HidSetupScreen
 import com.benton.izukijs.ui.inspector.LayoutInspectorScreen
 import com.benton.izukijs.ui.logs.LogsScreen
+import com.benton.izukijs.ui.mcp.McpServerScreen
 import com.benton.izukijs.ui.permission.PermissionScreen
 import com.benton.izukijs.ui.run.RunScreen
 import com.benton.izukijs.ui.schedule.ScheduleScreen
@@ -78,6 +79,7 @@ object Routes {
     const val SCHEDULE = "schedule"
     const val HID = "hid"
     const val AI = "ai"
+    const val MCP = "mcp"
 
     fun editor(scriptId: String) = "editor/$scriptId"
 
@@ -300,6 +302,7 @@ private fun NavContent(
                     navController.navigate(Routes.settingsDetail(category))
                 },
                 onOpenAi = { navController.navigate(Routes.AI) },
+                onOpenMcp = { navController.navigate(Routes.MCP) },
             )
         }
         composable(
@@ -339,6 +342,9 @@ private fun NavContent(
         }
         composable(Routes.AI) {
             AiAgentScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.MCP) {
+            McpServerScreen(onBack = { navController.popBackStack() })
         }
     }
 }

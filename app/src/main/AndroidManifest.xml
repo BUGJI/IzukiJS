@@ -63,6 +63,15 @@
         </service>
 
         <service
+            android:name=".service.McpServerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="mcp_server" />
+        </service>
+
+        <service
             android:name=".service.FloatingWindowService"
             android:exported="false"
             android:foregroundServiceType="specialUse">

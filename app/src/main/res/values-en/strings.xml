@@ -401,6 +401,51 @@
     <string name="debug_ocr_element_count">%1$d elements in total\n\n</string>
     <string name="debug_close">Close debug panel</string>
 
+    <!-- MCP server -->
+    <string name="settings_mcp_server">MCP server</string>
+    <string name="settings_mcp_summary_running">Running · %1$s</string>
+    <string name="settings_mcp_summary_stopped">Stopped · let external AI read / control this device</string>
+    <string name="mcp_title">MCP server</string>
+    <string name="mcp_intro">Expose this device\'s screen-reading and control capabilities as MCP (Model Context Protocol) tools for external AI clients (e.g. Claude Desktop / Cursor / Cline).</string>
+    <string name="mcp_warning">Once enabled, any device holding the access token can read the screen and control this device. Use only on trusted networks and keep the token secret.</string>
+    <string name="mcp_master_title">Service</string>
+    <string name="mcp_enable">Enable MCP server</string>
+    <string name="mcp_enable_desc">Turning this off stops listening immediately.</string>
+    <string name="mcp_status_running">Running</string>
+    <string name="mcp_status_stopped">Stopped</string>
+    <string name="mcp_status_error">Failed to start: %1$s</string>
+    <string name="mcp_sessions">Client sessions: %1$d</string>
+    <string name="mcp_endpoint_title">Endpoint</string>
+    <string name="mcp_endpoint_desc">Enter this address in your MCP client (Streamable HTTP).</string>
+    <string name="mcp_token_title">Access token</string>
+    <string name="mcp_token_desc">Every request must carry `Authorization: Bearer &lt;token&gt;`.</string>
+    <string name="mcp_token_label">Token</string>
+    <string name="mcp_token_regenerate">Regenerate</string>
+    <string name="mcp_token_regenerated">New token generated, update your client config</string>
+    <string name="mcp_network_title">Network</string>
+    <string name="mcp_bind_mode">Listen scope</string>
+    <string name="mcp_bind_lan">LAN</string>
+    <string name="mcp_bind_localhost">Localhost only</string>
+    <string name="mcp_bind_lan_desc">Reachable by other devices on the LAN; make sure the network is trusted.</string>
+    <string name="mcp_bind_localhost_desc">Listens on 127.0.0.1 only; use with adb forward.</string>
+    <string name="mcp_port">Port</string>
+    <string name="mcp_localhost_hint">Localhost mode: run adb forward tcp:%1$d tcp:%1$d, then connect to http://127.0.0.1:%1$d/mcp.</string>
+    <string name="mcp_tools_title">Tool toggles</string>
+    <string name="mcp_tools_desc">Screen-reading and control tools are enabled by default; high-risk tools below are off.</string>
+    <string name="mcp_allow_shell">Allow Shell</string>
+    <string name="mcp_allow_shell_desc">Allow external AI to run Shell commands (needs Shizuku or Root); powerful.</string>
+    <string name="mcp_allow_scripts">Allow scripts</string>
+    <string name="mcp_allow_scripts_desc">Allow listing saved scripts and triggering run / stop.</string>
+    <string name="mcp_client_title">Client config example</string>
+    <string name="mcp_client_desc">stdio clients (e.g. Claude Desktop) can bridge to this server via mcp-remote.</string>
+    <string name="mcp_copy_endpoint">Copy endpoint</string>
+    <string name="mcp_copy_config">Copy config JSON</string>
+    <string name="mcp_copied">Copied</string>
+    <string name="mcp_notif_title">Izuki JS MCP server running</string>
+    <string name="mcp_notif_channel">MCP server</string>
+    <string name="mcp_notif_channel_desc">Persistent notification while the MCP server runs</string>
+    <string name="mcp_notif_starting">Starting…</string>
+
     <!-- Floating control bar -->
     <string name="floating_status_ready">● Ready</string>
     <string name="floating_status_running">● Running</string>

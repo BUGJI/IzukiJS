@@ -23,6 +23,8 @@
 - **持续录屏截图**：一次授权常驻，为截图 / 找图 / OCR 提供无限屏幕帧，绕开无障碍截图限制。
 - **AI Agent 脱困**：脚本卡住时交给 OpenAI 兼容模型观察屏幕并操作设备；支持原生 function calling，
   不支持时自动降级为提示词协议。
+- **MCP 服务器**：把设备读屏与控制能力以 Model Context Protocol 暴露给外部 AI 客户端
+  （Claude Desktop / Cursor / Cline），支持局域网 / 仅本机监听、令牌鉴权与工具级开关。
 - **蓝牙 HID 注入**：通过外部 HID 硬件（如 ESP32 数位板狗）以真实硬件事件控制设备，最难被检测。
 - **调试与工具**：布局分析器生成选择器代码、可拖动调试悬浮窗（布局 / OCR 坐标叠加）、
   悬浮控制条、定时任务、日志分文件存储与自动清理。
@@ -117,12 +119,14 @@ if (ai.available()) {
 | [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md) | 脚本 API 速查：全局函数、输入、选择器、找图、OCR、AI 等 |
 | [`docs/TOOLS.md`](docs/TOOLS.md) | 工具与权限说明：控制模式、持续录屏、调试悬浮窗、定时任务、日志 |
 | [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | 蓝牙 HID 控制协议：GATT 服务、帧格式、坐标映射、连接流程 |
+| [`docs/MCP.md`](docs/MCP.md) | MCP 服务器：启用、客户端配置、工具与资源、安全说明 |
 
 ## 项目结构
 
 ```
 app/src/main/java/com/benton/izukijs/
 ├── ai/            # AI Agent：配置、客户端、工具调用、提示词
+├── mcp/           # MCP 服务器：JSON-RPC 协议、HTTP 传输、工具与资源
 ├── controller/    # 控制抽象层与各后端实现
 │   ├── accessibility/  # 无障碍
 │   ├── shizuku/        # Shizuku

@@ -401,6 +401,51 @@
     <string name="debug_ocr_element_count">共 %1$d 个元素\n\n</string>
     <string name="debug_close">关闭调试面板</string>
 
+    <!-- MCP 服务 -->
+    <string name="settings_mcp_server">MCP 服务</string>
+    <string name="settings_mcp_summary_running">运行中 · %1$s</string>
+    <string name="settings_mcp_summary_stopped">未运行 · 供外部 AI 读取 / 控制本机</string>
+    <string name="mcp_title">MCP 服务</string>
+    <string name="mcp_intro">把本机的读屏与控制能力作为 MCP（Model Context Protocol）工具暴露给外部 AI 客户端（如 Claude Desktop / Cursor / Cline）。</string>
+    <string name="mcp_warning">开启后，任何持有访问令牌的设备都能读取屏幕并控制本机。请仅在可信网络使用，并妥善保管令牌。</string>
+    <string name="mcp_master_title">服务开关</string>
+    <string name="mcp_enable">启用 MCP 服务</string>
+    <string name="mcp_enable_desc">关闭会立即停止监听。</string>
+    <string name="mcp_status_running">运行中</string>
+    <string name="mcp_status_stopped">未运行</string>
+    <string name="mcp_status_error">启动失败：%1$s</string>
+    <string name="mcp_sessions">客户端会话：%1$d</string>
+    <string name="mcp_endpoint_title">连接地址</string>
+    <string name="mcp_endpoint_desc">在 MCP 客户端中填入以下地址（Streamable HTTP）。</string>
+    <string name="mcp_token_title">访问令牌</string>
+    <string name="mcp_token_desc">所有请求都必须携带 `Authorization: Bearer &lt;令牌&gt;`。</string>
+    <string name="mcp_token_label">令牌</string>
+    <string name="mcp_token_regenerate">重新生成</string>
+    <string name="mcp_token_regenerated">已生成新令牌，请更新客户端配置</string>
+    <string name="mcp_network_title">网络</string>
+    <string name="mcp_bind_mode">监听范围</string>
+    <string name="mcp_bind_lan">局域网</string>
+    <string name="mcp_bind_localhost">仅本机</string>
+    <string name="mcp_bind_lan_desc">局域网内其它设备可访问，请确保网络可信。</string>
+    <string name="mcp_bind_localhost_desc">仅监听 127.0.0.1，需配合 adb forward。</string>
+    <string name="mcp_port">端口</string>
+    <string name="mcp_localhost_hint">仅本机模式：先执行 adb forward tcp:%1$d tcp:%1$d，再连接 http://127.0.0.1:%1$d/mcp。</string>
+    <string name="mcp_tools_title">工具开关</string>
+    <string name="mcp_tools_desc">读屏与控制类工具默认可用；以下高风险工具默认关闭。</string>
+    <string name="mcp_allow_shell">允许 Shell</string>
+    <string name="mcp_allow_shell_desc">允许外部 AI 执行 Shell 命令（需 Shizuku 或 Root），权限较大。</string>
+    <string name="mcp_allow_scripts">允许运行脚本</string>
+    <string name="mcp_allow_scripts_desc">允许列出现有脚本并触发运行 / 停止。</string>
+    <string name="mcp_client_title">客户端配置示例</string>
+    <string name="mcp_client_desc">stdio 客户端（如 Claude Desktop）可通过 mcp-remote 桥接到本服务。</string>
+    <string name="mcp_copy_endpoint">复制地址</string>
+    <string name="mcp_copy_config">复制配置 JSON</string>
+    <string name="mcp_copied">已复制</string>
+    <string name="mcp_notif_title">Izuki JS MCP 服务运行中</string>
+    <string name="mcp_notif_channel">MCP 服务</string>
+    <string name="mcp_notif_channel_desc">MCP 服务运行期间常驻通知</string>
+    <string name="mcp_notif_starting">正在启动…</string>
+
     <!-- 悬浮控制条 -->
     <string name="floating_status_ready">● 就绪</string>
     <string name="floating_status_running">● 运行中</string>

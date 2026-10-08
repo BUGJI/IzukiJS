@@ -100,6 +100,7 @@ enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
 fun SettingsScreen(
     onOpenCategory: (SettingsCategory) -> Unit = {},
     onOpenAi: () -> Unit = {},
+    onOpenMcp: () -> Unit = {},
 ) {
     val container = rememberAppContainer()
     val controllerSettings by container.controllerSettingsRepository.settings.collectAsStateWithLifecycle()
@@ -107,6 +108,7 @@ fun SettingsScreen(
     val ocrConfig by container.ocrConfigRepository.config.collectAsStateWithLifecycle()
     val logSettings by container.logSettingsRepository.settings.collectAsStateWithLifecycle()
     val aiConfig by container.aiConfigRepository.config.collectAsStateWithLifecycle()
+    val mcpStatus by container.mcpServerController.status.collectAsStateWithLifecycle()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
     val language by container.languageRepository.language.collectAsStateWithLifecycle()
     val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
@@ -157,6 +159,17 @@ fun SettingsScreen(
                         if (aiConfig.isConfigured) R.string.settings_ai_configured else R.string.settings_ai_not_configured,
                     ),
                 ) { onOpenAi() }
+                CategoryRow(
+                    title = stringResource(R.string.settings_mcp_server),
+                    summary = if (mcpStatus.running) {
+                        stringResource(
+                            R.string.settings_mcp_summary_running,
+                            mcpStatus.addresses.firstOrNull().orEmpty(),
+                        )
+                    } else {
+                        stringResource(R.string.settings_mcp_summary_stopped)
+                    },
+                ) { onOpenMcp() }
                 CategoryRow(
                     title = stringResource(SettingsCategory.STORAGE.titleRes),
                     summary = stringResource(

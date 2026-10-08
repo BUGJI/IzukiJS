@@ -1,28 +1,20 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
-import android.graphics.Bitmap
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
-import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.api.AiApi
-import com.benton.izukijs.runtime.api.AppApi
 import com.benton.izukijs.runtime.api.ConsoleApi
-import com.benton.izukijs.runtime.api.DeviceApi
+import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.runtime.api.EnvApi
 import com.benton.izukijs.runtime.api.GlobalApi
 import com.benton.izukijs.runtime.api.ImageApi
-import com.benton.izukijs.runtime.api.InputApi
 import com.benton.izukijs.runtime.api.ModuleApi
-import com.benton.izukijs.runtime.api.OcrApi
 import com.benton.izukijs.runtime.api.PermissionsApi
-import com.benton.izukijs.runtime.api.SelectorApi
-import com.benton.izukijs.runtime.api.ShellApi
 import com.benton.izukijs.runtime.api.StateApi
 import com.benton.izukijs.service.CaptureSettingsRepository
-import com.benton.izukijs.service.OverlayCoordinator
 import com.benton.izukijs.service.ScreenCapture
 import com.quickjs.JSContext
 import com.quickjs.QuickJS
@@ -65,40 +57,27 @@ class JsEngine(
     }
 
     private fun bindApis(ctx: JSContext) {
-        val screenshotProvider: () -> Bitmap? = {
-            OverlayCoordinator.withoutOverlay {
-                val projected = screenCapture.capture()
-                if (projected != null) {
-                    logBus.debug("捕获屏幕 ${projected.width}×${projected.height} → 持续录屏")
-                    projected
-                } else {
-                    val controller = controllers.controllerFor(Capability.SCREENSHOT)
-                    val shot = controller?.screenshot()
-                    if (shot != null) {
-                        logBus.debug("捕获屏幕 ${shot.width}×${shot.height} → ${controller.mode.displayName}")
-                    } else {
-                        logBus.warn("捕获屏幕失败：无可用截图后端")
-                    }
-                    shot
-                }
-            }
-        }
+        val bundle = DeviceApiBundle.create(
+            context = context,
+            controllers = controllers,
+            screenCapture = screenCapture,
+            ocrProcessor = ocrProcessor,
+            logBus = logBus,
+        )
         val globalApi = GlobalApi(
             context = context,
             logBus = logBus,
-            screenshotProvider = screenshotProvider,
+            screenshotProvider = bundle.screenshotProvider,
             captureSettingsProvider = { captureSettingsRepository.current() },
             onExit = { exitRequested = true },
             isExitRequested = { exitRequested },
         )
-        val inputApi = InputApi(controllers, logBus)
-        val deviceApi = DeviceApi(context)
-        val appApi = AppApi(context, logBus)
-        val shellApi = ShellApi(controllers, logBus)
-        val ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus)
-        val selectorApi = SelectorApi(logBus) {
-            controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
-        }
+        val inputApi = bundle.inputApi
+        val deviceApi = bundle.deviceApi
+        val appApi = bundle.appApi
+        val shellApi = bundle.shellApi
+        val ocrApi = bundle.ocrApi
+        val selectorApi = bundle.selectorApi
 
         ctx.appendJavascriptInterface(globalApi)
         ctx.appendJavascriptInterface(inputApi)
@@ -106,7 +85,7 @@ class JsEngine(
         ctx.addJavascriptInterface(appApi, "app")
         ctx.addJavascriptInterface(ConsoleApi(logBus), "console")
         ctx.addJavascriptInterface(shellApi, "shell")
-        ctx.addJavascriptInterface(ImageApi(screenshotProvider, logBus), "images")
+        ctx.addJavascriptInterface(ImageApi(bundle.screenshotProvider, logBus), "images")
         ctx.addJavascriptInterface(ocrApi, "ocr")
         ctx.addJavascriptInterface(PermissionsApi(context, controllers, screenCapture), "permissions")
         ctx.addJavascriptInterface(selectorApi, "selector")
