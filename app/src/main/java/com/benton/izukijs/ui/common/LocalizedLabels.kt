@@ -3,6 +3,7 @@ package com.benton.izukijs.ui.common
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.benton.izukijs.R
+import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
@@ -66,5 +67,15 @@ fun AppLanguage.localizedName(): String = stringResource(
         AppLanguage.SYSTEM -> R.string.language_system
         AppLanguage.CHINESE -> R.string.language_chinese
         AppLanguage.ENGLISH -> R.string.language_english
+    },
+)
+
+/** 主题模式的本地化名称。 */
+@Composable
+fun ThemeMode.localizedName(): String = stringResource(
+    when (this) {
+        ThemeMode.SYSTEM -> R.string.theme_system
+        ThemeMode.LIGHT -> R.string.theme_light
+        ThemeMode.DARK -> R.string.theme_dark
     },
 )

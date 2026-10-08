@@ -9,9 +9,12 @@ import com.benton.izukijs.controller.ControllerSettingsRepository
 import com.benton.izukijs.controller.hid.HidManager
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
+import com.benton.izukijs.data.AppearanceRepository
 import com.benton.izukijs.data.ConfigBackupManager
 import com.benton.izukijs.data.EditorSettingsRepository
+import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
+import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.ocr.OcrConfigRepository
@@ -50,7 +53,11 @@ class AppContainer(private val application: Application) {
 
     val scriptRepository = ScriptRepository(application)
 
+    val scriptListPreferences = ScriptListPreferences(application)
+
     val scriptEnvRepository = ScriptEnvRepository(application)
+
+    val runHistoryRepository = RunHistoryRepository(application)
 
     val screenCapture = ScreenCapture(logBus)
 
@@ -64,6 +71,8 @@ class AppContainer(private val application: Application) {
 
     val languageRepository = LanguageRepository(application)
 
+    val appearanceRepository = AppearanceRepository(application)
+
     val configBackupManager = ConfigBackupManager(
         aiConfigRepository = aiConfigRepository,
         ocrConfigRepository = ocrConfigRepository,
@@ -71,6 +80,7 @@ class AppContainer(private val application: Application) {
         captureSettingsRepository = captureSettingsRepository,
         logSettingsRepository = logSettingsRepository,
         editorSettingsRepository = editorSettingsRepository,
+        appearanceRepository = appearanceRepository,
     )
 
     val scriptExecutionManager = ScriptExecutionManager(
@@ -82,6 +92,7 @@ class AppContainer(private val application: Application) {
         aiConfigRepository,
         captureSettingsRepository,
         scriptEnvRepository,
+        runHistoryRepository,
         moduleSourceProvider = { raw ->
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
             scriptRepository.find(id)?.let { scriptRepository.read(it) }

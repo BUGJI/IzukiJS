@@ -3,6 +3,7 @@ package com.benton.izukijs.runtime
 import android.content.Context
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.ocr.OcrProcessor
@@ -31,6 +32,7 @@ class ScriptExecutionManager(
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
     private val scriptEnvRepository: ScriptEnvRepository,
+    private val runHistoryRepository: RunHistoryRepository,
     private val moduleSourceProvider: (String) -> String?,
 ) {
 
@@ -62,6 +64,7 @@ class ScriptExecutionManager(
         }
 
         _runningScript.value = scriptName
+        runHistoryRepository.record(scriptName)
         logBus.info("▶ 开始运行: $scriptName")
         ScriptForegroundService.start(appContext, scriptName)
         FloatingWindowService.showForRun(appContext)

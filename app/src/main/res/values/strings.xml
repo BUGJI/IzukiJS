@@ -10,6 +10,7 @@
     <string name="common_confirm">确定</string>
     <string name="common_cancel">取消</string>
     <string name="common_delete">删除</string>
+    <string name="common_undo">撤销</string>
     <string name="common_run">运行</string>
     <string name="common_stop">停止</string>
     <string name="common_copy">复制</string>
@@ -29,12 +30,22 @@
     <string name="nav_logs">日志</string>
     <string name="nav_settings">设置</string>
 
-    <!-- 语言 -->
+    <!-- 语言 / 外观 -->
+    <string name="settings_general">常规</string>
+    <string name="settings_general_summary">%1$s · %2$s</string>
     <string name="settings_language">语言</string>
     <string name="settings_language_desc">选择界面语言；改动后界面会立即刷新。</string>
     <string name="language_system">跟随系统</string>
     <string name="language_chinese">中文</string>
     <string name="language_english">English</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_appearance_desc">选择界面主题；「跟随系统」会随系统的深色模式自动切换。</string>
+    <string name="settings_dynamic_color">动态取色</string>
+    <string name="settings_dynamic_color_desc">跟随系统壁纸取色（Material You）。</string>
+    <string name="settings_dynamic_color_unsupported">需要 Android 12 及以上系统。</string>
+    <string name="theme_system">跟随系统</string>
+    <string name="theme_light">浅色</string>
+    <string name="theme_dark">深色</string>
 
     <!-- 控制模式 / 能力 / OCR 服务商 -->
     <string name="control_accessibility">无障碍</string>
@@ -76,6 +87,10 @@
     <string name="run_capture_recording">屏幕捕获：录制中</string>
     <string name="run_capture_off">屏幕捕获：未开启</string>
     <string name="run_mode_disabled">未启用</string>
+    <string name="run_quick_title">快速启动</string>
+    <string name="run_quick_empty">运行过的脚本会出现在这里，点击即可再次运行。</string>
+    <string name="run_quick_clear">清空记录</string>
+    <string name="run_last_at">上次运行 %1$s</string>
 
     <!-- 脚本中心 -->
     <string name="scripts_title">脚本中心</string>
@@ -89,8 +104,13 @@
     <string name="scripts_name">名称</string>
     <string name="scripts_create">创建</string>
     <string name="scripts_rename">重命名</string>
+    <string name="scripts_pin">置顶</string>
+    <string name="scripts_unpin">取消置顶</string>
+    <string name="scripts_sort_updated">按更新时间排序</string>
+    <string name="scripts_sort_name">按名称排序</string>
     <string name="scripts_delete_title">删除脚本</string>
-    <string name="scripts_delete_message">确定删除「%1$s」吗？此操作无法撤销。</string>
+    <string name="scripts_delete_message">确定删除「%1$s」吗？删除后可在提示中撤销。</string>
+    <string name="scripts_deleted">已删除「%1$s」</string>
     <string name="scripts_exported">已导出 %1$s</string>
     <string name="scripts_export_failed">导出失败</string>
     <string name="scripts_imported">已导入 %1$s</string>
@@ -273,6 +293,19 @@
     <string name="editor_expand_console">展开控制台</string>
     <string name="editor_collapse_console">收起控制台</string>
     <string name="editor_placeholder">// 在此编写 JS 脚本</string>
+    <string name="editor_undo">撤销</string>
+    <string name="editor_redo">重做</string>
+    <string name="editor_find">查找</string>
+    <string name="editor_find_placeholder">输入要查找的内容</string>
+    <string name="editor_replace">替换为</string>
+    <string name="editor_replace_one">替换</string>
+    <string name="editor_replace_all">全部替换</string>
+    <string name="editor_match_of">%1$d/%2$d</string>
+    <string name="editor_match_none">无匹配</string>
+    <string name="editor_prev_match">上一个</string>
+    <string name="editor_next_match">下一个</string>
+    <string name="editor_close_find">关闭查找</string>
+    <string name="editor_run_selection">运行选中片段</string>
 
     <!-- 蓝牙 HID -->
     <string name="hid_scan">扫描</string>
@@ -328,6 +361,12 @@
     <string name="console_empty">暂无输出</string>
     <string name="console_filtered_empty">当前筛选下没有日志</string>
     <string name="console_back_to_latest">回到最新</string>
+    <string name="console_search">搜索日志</string>
+    <string name="console_clear_search">清除搜索</string>
+    <string name="console_wrap">换行</string>
+    <string name="console_follow">跟随</string>
+    <string name="console_copied">已复制该条日志</string>
+    <string name="console_copied_all">已复制全部日志</string>
 
     <!-- 运行参数对话框 -->
     <string name="env_title">运行参数 · %1$s</string>

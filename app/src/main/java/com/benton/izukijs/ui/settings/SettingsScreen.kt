@@ -1,6 +1,7 @@
 package com.benton.izukijs.ui.settings
 
 import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
@@ -52,7 +53,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.ControllerSettings
+import com.benton.izukijs.data.AppearanceSettings
 import com.benton.izukijs.data.EditorSettings
+import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
@@ -79,6 +82,7 @@ import kotlinx.coroutines.withContext
 
 /** 设置分组。key 用于二级页面路由参数。 */
 enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
+    GENERAL("general", R.string.settings_general),
     CONTROL("control", R.string.settings_control),
     EDITOR("editor", R.string.settings_editor),
     STORAGE("storage", R.string.settings_storage),
@@ -104,6 +108,8 @@ fun SettingsScreen(
     val logSettings by container.logSettingsRepository.settings.collectAsStateWithLifecycle()
     val aiConfig by container.aiConfigRepository.config.collectAsStateWithLifecycle()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
+    val language by container.languageRepository.language.collectAsStateWithLifecycle()
+    val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -118,9 +124,16 @@ fun SettingsScreen(
         },
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
-            LanguageSettings()
             Spacer(Modifier.height(12.dp))
             CategoryGroup {
+                CategoryRow(
+                    title = stringResource(SettingsCategory.GENERAL.titleRes),
+                    summary = stringResource(
+                        R.string.settings_general_summary,
+                        language.localizedName(),
+                        appearance.themeMode.localizedName(),
+                    ),
+                ) { onOpenCategory(SettingsCategory.GENERAL) }
                 CategoryRow(
                     title = stringResource(SettingsCategory.CONTROL.titleRes),
                     summary = stringResource(
@@ -167,6 +180,61 @@ fun SettingsScreen(
 }
 
 @Composable
+private fun GeneralSettings() {
+    val container = rememberAppContainer()
+    val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
+    val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    fun update(new: AppearanceSettings) = container.appearanceRepository.save(new)
+
+    SectionCard(stringResource(R.string.settings_appearance)) {
+        Text(
+            stringResource(R.string.settings_appearance_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ChipFlow {
+            ThemeMode.entries.forEach { mode ->
+                FilterChip(
+                    selected = appearance.themeMode == mode,
+                    onClick = { update(appearance.copy(themeMode = mode)) },
+                    label = { Text(mode.localizedName()) },
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.settings_dynamic_color))
+                Text(
+                    stringResource(
+                        if (dynamicColorSupported) {
+                            R.string.settings_dynamic_color_desc
+                        } else {
+                            R.string.settings_dynamic_color_unsupported
+                        },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = dynamicColorSupported && appearance.dynamicColor,
+                enabled = dynamicColorSupported,
+                onCheckedChange = { update(appearance.copy(dynamicColor = it)) },
+            )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    LanguageSettings()
+}
+
+@Composable
 private fun LanguageSettings() {
     val container = rememberAppContainer()
     val context = LocalContext.current
@@ -205,6 +273,7 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
         onBack = onBack,
     ) {
         when (category) {
+            SettingsCategory.GENERAL -> GeneralSettings()
             SettingsCategory.CONTROL -> ControlVisionSettings()
             SettingsCategory.EDITOR -> EditorSettingsScreen()
             SettingsCategory.STORAGE -> StorageSettings()

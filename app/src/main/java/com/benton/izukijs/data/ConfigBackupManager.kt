@@ -28,6 +28,7 @@ class ConfigBackupManager(
     private val captureSettingsRepository: CaptureSettingsRepository,
     private val logSettingsRepository: LogSettingsRepository,
     private val editorSettingsRepository: EditorSettingsRepository,
+    private val appearanceRepository: AppearanceRepository,
 ) {
 
     fun exportJson(): String {
@@ -40,6 +41,7 @@ class ConfigBackupManager(
         root.put("capture", captureToJson(captureSettingsRepository.current()))
         root.put("log", logToJson(logSettingsRepository.current()))
         root.put("editor", editorToJson(editorSettingsRepository.current()))
+        root.put("appearance", appearanceToJson(appearanceRepository.current()))
         return root.toString(2)
     }
 
@@ -52,6 +54,7 @@ class ConfigBackupManager(
         root.optJSONObject("capture")?.let { captureSettingsRepository.save(captureFromJson(it)) }
         root.optJSONObject("log")?.let { logSettingsRepository.save(logFromJson(it)) }
         root.optJSONObject("editor")?.let { editorSettingsRepository.save(editorFromJson(it)) }
+        root.optJSONObject("appearance")?.let { appearanceRepository.save(appearanceFromJson(it)) }
     }
 
     fun resetAll() {
@@ -61,6 +64,7 @@ class ConfigBackupManager(
         captureSettingsRepository.save(CaptureSettings())
         logSettingsRepository.save(LogSettings())
         editorSettingsRepository.save(EditorSettings())
+        appearanceRepository.save(AppearanceSettings())
     }
 
     // ---- AI ----
@@ -213,6 +217,21 @@ class ConfigBackupManager(
             fontSizeSp = o.optInt("fontSizeSp", base.fontSizeSp),
             autoSave = o.optBoolean("autoSave", base.autoSave),
             consoleHeightDp = o.optInt("consoleHeightDp", base.consoleHeightDp),
+        )
+    }
+
+    // ---- Appearance ----
+
+    private fun appearanceToJson(c: AppearanceSettings): JSONObject = JSONObject().apply {
+        put("themeMode", c.themeMode.name)
+        put("dynamicColor", c.dynamicColor)
+    }
+
+    private fun appearanceFromJson(o: JSONObject): AppearanceSettings {
+        val base = AppearanceSettings()
+        return AppearanceSettings(
+            themeMode = o.optString("themeMode", base.themeMode.name).toEnumOr(base.themeMode),
+            dynamicColor = o.optBoolean("dynamicColor", base.dynamicColor),
         )
     }
 

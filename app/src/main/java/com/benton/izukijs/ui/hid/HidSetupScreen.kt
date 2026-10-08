@@ -2,7 +2,6 @@ package com.benton.izukijs.ui.hid
 
 import android.Manifest
 import android.os.Build
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -61,6 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.hid.HidConnectionState
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 
@@ -69,6 +69,7 @@ import com.benton.izukijs.ui.rememberAppContainer
 fun HidSetupScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val snackbar = LocalSnackbarController.current
     val manager = container.hidManager
     val client = manager.client
 
@@ -97,13 +98,13 @@ fun HidSetupScreen(onBack: () -> Unit) {
         if (result.values.all { it }) {
             manager.startScan()
         } else {
-            Toast.makeText(context, context.getString(R.string.hid_need_bt_permission), Toast.LENGTH_SHORT).show()
+            scope.launch { snackbar.show(context.getString(R.string.hid_need_bt_permission)) }
         }
     }
 
     fun startScan() {
         if (!client.isBluetoothEnabled()) {
-            Toast.makeText(context, context.getString(R.string.hid_enable_bt), Toast.LENGTH_SHORT).show()
+            scope.launch { snackbar.show(context.getString(R.string.hid_enable_bt)) }
             return
         }
         if (client.hasPermissions()) manager.startScan() else permissionLauncher.launch(requiredPermissions)

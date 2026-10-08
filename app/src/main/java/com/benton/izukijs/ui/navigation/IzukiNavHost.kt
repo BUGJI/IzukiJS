@@ -10,10 +10,12 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
@@ -25,9 +27,14 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -43,6 +50,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.benton.izukijs.R
 import com.benton.izukijs.ui.ai.AiAgentScreen
+import com.benton.izukijs.ui.common.LocalSnackbarController
+import com.benton.izukijs.ui.common.SnackbarController
 import com.benton.izukijs.ui.editor.EditorScreen
 import com.benton.izukijs.ui.hid.HidSetupScreen
 import com.benton.izukijs.ui.inspector.LayoutInspectorScreen
@@ -133,42 +142,21 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
         }
     }
 
-    BoxWithConstraints {
-        val wide = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
-        if (wide) {
-            // 宽屏：侧边 NavigationRail 参与布局，内容区不再预留底栏高度。
-            Row(modifier = Modifier.fillMaxSize()) {
-                if (showNavBar) {
-                    NavigationRail {
-                        BottomItem.entries.forEach { item ->
-                            NavigationRailItem(
-                                selected = currentRoute == item.route,
-                                onClick = { navigate(item.route) },
-                                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
-                                label = { Text(stringResource(item.labelRes)) },
-                            )
-                        }
-                    }
-                }
-                NavContent(
-                    navController = navController,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        } else {
-            // 窄屏：使用标准 Scaffold.bottomBar，底栏参与布局与 inset 计算，
-            // 内容不会被遮挡，也不再需要硬编码的预留高度。显隐时用位移 + 淡入淡出过渡，
-            // 避免进入详情页时底栏生硬地瞬间消失 / 出现。
-            Scaffold(
-                bottomBar = {
-                    AnimatedVisibility(
-                        visible = showNavBar,
-                        enter = slideInVertically(tween(NAV_ANIM_MS)) { it } + fadeIn(tween(NAV_ANIM_MS)),
-                        exit = slideOutVertically(tween(NAV_ANIM_MS)) { it } + fadeOut(tween(NAV_ANIM_MS)),
-                    ) {
-                        NavigationBar {
+    // 全局唯一的 Snackbar 宿主：通过 CompositionLocal 提供给所有页面，替代零散的 Toast。
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarController = remember(snackbarHostState) { SnackbarController(snackbarHostState) }
+
+    CompositionLocalProvider(LocalSnackbarController provides snackbarController) {
+        BoxWithConstraints {
+            val wide = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
+            if (wide) {
+                // 宽屏：侧边 NavigationRail 参与布局，内容区不再预留底栏高度。
+                // 无底栏，Snackbar 直接浮在内容区底部。
+                Row(modifier = Modifier.fillMaxSize()) {
+                    if (showNavBar) {
+                        NavigationRail {
                             BottomItem.entries.forEach { item ->
-                                NavigationBarItem(
+                                NavigationRailItem(
                                     selected = currentRoute == item.route,
                                     onClick = { navigate(item.route) },
                                     icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
@@ -177,17 +165,53 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                             }
                         }
                     }
-                },
-            ) { innerPadding ->
-                NavContent(
-                    navController = navController,
-                    // padding 把内容抬到底栏之上；consumeWindowInsets 标记已消费的系统栏 inset，
-                    // 避免各页面自身的 Scaffold 再次叠加底部 inset。
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        .consumeWindowInsets(innerPadding),
-                )
+                    Box(modifier = Modifier.weight(1f)) {
+                        NavContent(
+                            navController = navController,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
+                        )
+                    }
+                }
+            } else {
+                // 窄屏：使用标准 Scaffold.bottomBar，底栏参与布局与 inset 计算，
+                // 内容不会被遮挡，也不再需要硬编码的预留高度。显隐时用位移 + 淡入淡出过渡，
+                // 避免进入详情页时底栏生硬地瞬间消失 / 出现。
+                // snackbarHost 交给 Scaffold，Snackbar 会自动浮在底栏之上。
+                Scaffold(
+                    bottomBar = {
+                        AnimatedVisibility(
+                            visible = showNavBar,
+                            enter = slideInVertically(tween(NAV_ANIM_MS)) { it } + fadeIn(tween(NAV_ANIM_MS)),
+                            exit = slideOutVertically(tween(NAV_ANIM_MS)) { it } + fadeOut(tween(NAV_ANIM_MS)),
+                        ) {
+                            NavigationBar {
+                                BottomItem.entries.forEach { item ->
+                                    NavigationBarItem(
+                                        selected = currentRoute == item.route,
+                                        onClick = { navigate(item.route) },
+                                        icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                                        label = { Text(stringResource(item.labelRes)) },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
+                ) { innerPadding ->
+                    NavContent(
+                        navController = navController,
+                        // padding 把内容抬到底栏之上；consumeWindowInsets 标记已消费的系统栏 inset，
+                        // 避免各页面自身的 Scaffold 再次叠加底部 inset。
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(innerPadding)
+                            .consumeWindowInsets(innerPadding),
+                    )
+                }
             }
         }
     }

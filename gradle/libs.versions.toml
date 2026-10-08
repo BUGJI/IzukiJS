@@ -10,7 +10,7 @@ kotlin = "2.2.10"
 composeBom = "2026.02.01"
 coroutines = "1.9.0"
 navigationCompose = "2.7.7"
-quickjs = "1.4.6"
+quickjs = "1.4.6.1"
 timber = "5.0.1"
 shizuku = "13.1.0"
 opencv = "4.14.0"
@@ -37,7 +37,7 @@ androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-te
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
-quickjs-android = { group = "io.github.taoweiji.quickjs", name = "quickjs-android", version.ref = "quickjs" }
+quickjs-android = { group = "com.github.hjhrq1991", name = "quickjs-android", version.ref = "quickjs" }
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
 shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }

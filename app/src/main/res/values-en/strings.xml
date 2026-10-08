@@ -10,6 +10,7 @@
     <string name="common_confirm">OK</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_delete">Delete</string>
+    <string name="common_undo">Undo</string>
     <string name="common_run">Run</string>
     <string name="common_stop">Stop</string>
     <string name="common_copy">Copy</string>
@@ -29,12 +30,22 @@
     <string name="nav_logs">Logs</string>
     <string name="nav_settings">Settings</string>
 
-    <!-- Language -->
+    <!-- Language / Appearance -->
+    <string name="settings_general">General</string>
+    <string name="settings_general_summary">%1$s · %2$s</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_desc">Choose the interface language; the UI refreshes immediately.</string>
     <string name="language_system">System default</string>
     <string name="language_chinese">中文</string>
     <string name="language_english">English</string>
+    <string name="settings_appearance">Appearance</string>
+    <string name="settings_appearance_desc">Choose the interface theme; \"System default\" follows the system dark mode.</string>
+    <string name="settings_dynamic_color">Dynamic color</string>
+    <string name="settings_dynamic_color_desc">Use colors from the system wallpaper (Material You).</string>
+    <string name="settings_dynamic_color_unsupported">Requires Android 12 or above.</string>
+    <string name="theme_system">System default</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
 
     <!-- Control modes / capabilities / OCR providers -->
     <string name="control_accessibility">Accessibility</string>
@@ -76,6 +87,10 @@
     <string name="run_capture_recording">Screen capture: recording</string>
     <string name="run_capture_off">Screen capture: off</string>
     <string name="run_mode_disabled">Disabled</string>
+    <string name="run_quick_title">Quick launch</string>
+    <string name="run_quick_empty">Scripts you have run will appear here; tap to run again.</string>
+    <string name="run_quick_clear">Clear history</string>
+    <string name="run_last_at">Last run %1$s</string>
 
     <!-- Scripts -->
     <string name="scripts_title">Scripts</string>
@@ -89,8 +104,13 @@
     <string name="scripts_name">Name</string>
     <string name="scripts_create">Create</string>
     <string name="scripts_rename">Rename</string>
+    <string name="scripts_pin">Pin to top</string>
+    <string name="scripts_unpin">Unpin</string>
+    <string name="scripts_sort_updated">Sort by updated</string>
+    <string name="scripts_sort_name">Sort by name</string>
     <string name="scripts_delete_title">Delete script</string>
-    <string name="scripts_delete_message">Delete \"%1$s\"? This cannot be undone.</string>
+    <string name="scripts_delete_message">Delete \"%1$s\"? You can undo from the message afterwards.</string>
+    <string name="scripts_deleted">Deleted \"%1$s\"</string>
     <string name="scripts_exported">Exported %1$s</string>
     <string name="scripts_export_failed">Export failed</string>
     <string name="scripts_imported">Imported %1$s</string>
@@ -273,6 +293,19 @@
     <string name="editor_expand_console">Expand console</string>
     <string name="editor_collapse_console">Collapse console</string>
     <string name="editor_placeholder">// Write JS here</string>
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="editor_find">Find</string>
+    <string name="editor_find_placeholder">Text to find</string>
+    <string name="editor_replace">Replace with</string>
+    <string name="editor_replace_one">Replace</string>
+    <string name="editor_replace_all">Replace all</string>
+    <string name="editor_match_of">%1$d/%2$d</string>
+    <string name="editor_match_none">No matches</string>
+    <string name="editor_prev_match">Previous</string>
+    <string name="editor_next_match">Next</string>
+    <string name="editor_close_find">Close find</string>
+    <string name="editor_run_selection">Running selection</string>
 
     <!-- Bluetooth HID -->
     <string name="hid_scan">Scan</string>
@@ -328,6 +361,12 @@
     <string name="console_empty">No output</string>
     <string name="console_filtered_empty">No logs for the current filter</string>
     <string name="console_back_to_latest">Back to latest</string>
+    <string name="console_search">Search logs</string>
+    <string name="console_clear_search">Clear search</string>
+    <string name="console_wrap">Wrap</string>
+    <string name="console_follow">Follow</string>
+    <string name="console_copied">Log line copied</string>
+    <string name="console_copied_all">All logs copied</string>
 
     <!-- Run env dialog -->
     <string name="env_title">Run parameters · %1$s</string>

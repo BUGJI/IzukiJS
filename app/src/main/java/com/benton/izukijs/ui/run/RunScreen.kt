@@ -1,6 +1,7 @@
 package com.benton.izukijs.ui.run
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,6 +20,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -50,7 +53,9 @@ import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.ScriptEnvDialog
+import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.localizedName
+import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
@@ -64,18 +69,22 @@ fun RunScreen(
 ) {
     val container = rememberAppContainer()
     val scope = rememberCoroutineScope()
+    val haptics = rememberAppHaptics()
     val extra = LocalIzukiExtraColors.current
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
     val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
     val runningScript by container.scriptExecutionManager.runningScript.collectAsStateWithLifecycle()
     val envData by container.scriptEnvRepository.data.collectAsStateWithLifecycle()
+    val recent by container.runHistoryRepository.recent.collectAsStateWithLifecycle()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
+    var scriptsLoaded by remember { mutableStateOf(false) }
     var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     fun requestRun(script: ScriptInfo) {
+        haptics.tap()
         scope.launch {
             val source = container.scriptRepository.readAsync(script)
             val spec = ScriptEnvSpec.parse(source)
@@ -96,12 +105,22 @@ fun RunScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                scope.launch { scripts = container.scriptRepository.listAsync() }
+                scope.launch {
+                    scripts = container.scriptRepository.listAsync()
+                    scriptsLoaded = true
+                }
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    // 运行历史里脚本可能已被删除 / 重命名，只保留仍然存在的。
+    val recentItems = remember(recent, scripts) {
+        val byId = scripts.associateBy { it.id }
+        recent.mapNotNull { record -> byId[record.name]?.let { RunItem(it, record.at) } }
+    }
+    val primary = recentItems.firstOrNull()
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -154,15 +173,18 @@ fun RunScreen(
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
-                            onClick = { scripts.maxByOrNull { it.updatedAt }?.let { requestRun(it) } },
-                            enabled = !running && scripts.isNotEmpty(),
+                            onClick = { primary?.let { requestRun(it.script) } },
+                            enabled = !running && primary != null,
                         ) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
                             Text(stringResource(R.string.run_recent))
                         }
                         OutlinedButton(
-                            onClick = { container.scriptExecutionManager.requestStop() },
+                            onClick = {
+                                haptics.reject()
+                                container.scriptExecutionManager.requestStop()
+                            },
                             enabled = running,
                         ) { Text(stringResource(R.string.common_stop)) }
                     }
@@ -181,8 +203,42 @@ fun RunScreen(
                             )
                         }
                     }
-                    if (scripts.isEmpty()) {
+                    if (scriptsLoaded && scripts.isEmpty()) {
                         TextButton(onClick = onOpenScripts) { Text(stringResource(R.string.run_no_scripts)) }
+                    }
+                }
+            }
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.run_quick_title), style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.weight(1f))
+                        if (recentItems.isNotEmpty()) {
+                            TextButton(onClick = { container.runHistoryRepository.clear() }) {
+                                Text(stringResource(R.string.run_quick_clear))
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    when {
+                        // 首次进入脚本列表仍在异步加载，先留空避免闪一下空状态。
+                        !scriptsLoaded -> Unit
+                        recentItems.isEmpty() -> Text(
+                            stringResource(R.string.run_quick_empty),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        else -> recentItems.forEach { item ->
+                            QuickRunRow(
+                                item = item,
+                                enabled = !running,
+                                onRun = { requestRun(item.script) },
+                            )
+                        }
                     }
                 }
             }
@@ -277,6 +333,33 @@ private data class EnvDialogState(
     val fields: List<EnvField>,
     val initial: Map<String, String>,
 )
+
+private data class RunItem(val script: ScriptInfo, val at: Long)
+
+@Composable
+private fun QuickRunRow(
+    item: RunItem,
+    enabled: Boolean,
+    onRun: () -> Unit,
+) {
+    ListItem(
+        headlineContent = { Text(item.script.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
+            Text(
+                stringResource(R.string.run_last_at, formatDateTime(item.at)),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        },
+        trailingContent = {
+            IconButton(onClick = onRun, enabled = enabled) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.common_run))
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onRun() },
+    )
+}
 
 @Composable
 private fun ModeStatus(label: String, ready: Boolean, modifier: Modifier = Modifier) {

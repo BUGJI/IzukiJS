@@ -88,13 +88,15 @@ class FloatingWindowService : android.app.Service() {
 
     override fun onCreate() {
         super.onCreate()
+        // Android 12+ 要求 startForegroundService() 启动后必须在约 5 秒内调用 startForeground()，
+        // 否则进程会被判定超时并崩溃。因此先无条件进入前台，再判断悬浮窗权限。
+        createChannel()
+        startForegroundInternal()
         if (!Settings.canDrawOverlays(this)) {
             stopSelf()
             return
         }
         isActive = true
-        createChannel()
-        startForegroundInternal()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         showPanel()
         observeState()
@@ -369,6 +371,8 @@ class FloatingWindowService : android.app.Service() {
 
         /** 手动开启悬浮窗。[pinned] 为 true 时常驻，脚本结束后不自动关闭。 */
         fun start(context: Context, pinned: Boolean = false) {
+            // 无悬浮窗权限时直接不启动，避免白白拉起一个前台服务（也规避 FGS 超时风险）。
+            if (!Settings.canDrawOverlays(context)) return
             val intent = Intent(context, FloatingWindowService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_PINNED, pinned)
