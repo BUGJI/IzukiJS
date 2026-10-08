@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.runtime.LogEntry
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
@@ -85,7 +87,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var envInitial by remember(scriptId) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
-    val logs by container.logBus.entries.collectAsStateWithLifecycle()
+    // 保留 State 而非解包：日志在子组件内读取，避免每次日志刷新都重组整个编辑器（含文本框排版）。
+    val logsState = container.logBus.entries.collectAsStateWithLifecycle()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
     val isDark = isSystemInDarkTheme()
     val highlighter = remember(isDark) {
@@ -212,11 +215,14 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             val drawerHeight = consoleHeight.coerceIn(minExpanded, maxExpanded)
 
             Column(modifier = Modifier.fillMaxSize()) {
-                val editorStyle = LocalTextStyle.current.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = editorSettings.fontSizeSp.sp,
-                    lineHeight = (editorSettings.fontSizeSp * LINE_HEIGHT_RATIO).sp,
-                )
+                val baseStyle = LocalTextStyle.current
+                val editorStyle = remember(baseStyle, editorSettings.fontSizeSp) {
+                    baseStyle.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = editorSettings.fontSizeSp.sp,
+                        lineHeight = (editorSettings.fontSizeSp * LINE_HEIGHT_RATIO).sp,
+                    )
+                }
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -280,14 +286,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(stringResource(R.string.editor_console), style = MaterialTheme.typography.titleSmall)
-                    if (logs.isNotEmpty()) {
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            "${logs.size}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    LogCountBadge(logsState)
                     Spacer(Modifier.weight(1f))
                     Icon(
                         if (consoleCollapsed) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
@@ -298,10 +297,9 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                     )
                 }
                 if (!consoleCollapsed) {
-                    ConsolePanel(
-                        entries = logs,
+                    EditorConsolePanel(
+                        logsState = logsState,
                         onClear = { container.logBus.clear() },
-                        showHeader = false,
                         modifier = Modifier.fillMaxWidth().height(drawerHeight),
                     )
                 }
@@ -326,3 +324,32 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
 private const val AUTOSAVE_DELAY_MS = 800L
 private const val LINE_HEIGHT_RATIO = 1.4f
+
+/** 单独读取日志条数，使日志刷新只重组这个徽标，不牵连编辑器本体。 */
+@Composable
+private fun LogCountBadge(logsState: State<List<LogEntry>>) {
+    val count = logsState.value.size
+    if (count > 0) {
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "$count",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** 在子作用域内解包日志列表，同样把重组范围限制在控制台面板内。 */
+@Composable
+private fun EditorConsolePanel(
+    logsState: State<List<LogEntry>>,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ConsolePanel(
+        entries = logsState.value,
+        onClear = onClear,
+        showHeader = false,
+        modifier = modifier,
+    )
+}

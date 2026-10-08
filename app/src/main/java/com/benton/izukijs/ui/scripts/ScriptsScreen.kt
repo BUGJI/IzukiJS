@@ -179,7 +179,10 @@ fun ScriptsScreen(
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when {
-                    loaded && scripts.isEmpty() -> EmptyState(stringResource(R.string.scripts_empty))
+                    // 首次进入时列表尚在异步加载，先留空，避免闪一下「无匹配」空状态。
+                    !loaded -> Unit
+
+                    scripts.isEmpty() -> EmptyState(stringResource(R.string.scripts_empty))
 
                     filtered.isEmpty() -> EmptyState(stringResource(R.string.scripts_no_match, query.trim()))
 
