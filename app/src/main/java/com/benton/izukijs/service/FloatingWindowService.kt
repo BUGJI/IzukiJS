@@ -45,7 +45,7 @@ import java.util.Locale
 
 /**
  * 脚本日志悬浮窗。脚本运行时自动显示，默认展示 INFO 及以上级别的日志，
- * 提供最小化与停止按钮；脚本结束（且非手动常驻）后自动关闭。
+ * 提供最小化、停止脚本与关闭窗口按钮；停止脚本后悬浮窗保持显示，需手动关闭。
  *
  * 脚本进行任何截图操作时，会通过 [OverlayCoordinator] 临时隐藏自身，避免被截入画面。
  */
@@ -62,9 +62,6 @@ class FloatingWindowService : android.app.Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    /** 手动开启后常驻，脚本结束也不自动关闭。 */
-    private var pinned = false
 
     /** 是否已折叠日志区域。 */
     private var minimized = false
@@ -104,14 +101,7 @@ class FloatingWindowService : android.app.Service() {
         OverlayCoordinator.register(overlayListener)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_SCRIPT_FINISHED -> if (!pinned) stopSelf()
-            ACTION_START -> if (intent.getBooleanExtra(EXTRA_PINNED, false)) pinned = true
-            else -> Unit
-        }
-        return START_NOT_STICKY
-    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
 
     override fun onDestroy() {
         isActive = false
@@ -174,10 +164,16 @@ class FloatingWindowService : android.app.Service() {
             contentDescription = getString(R.string.floating_stop)
             textSize = 14f
             setPadding(20, 8, 4, 8)
-            setOnClickListener {
-                val manager = executionManager
-                if (manager.running.value) manager.requestStop() else stopSelf()
-            }
+            setOnClickListener { executionManager.requestStop() }
+        }
+
+        val close = TextView(this).apply {
+            text = "✕"
+            setTextColor(getColor(R.color.overlay_text_primary))
+            contentDescription = getString(R.string.floating_close)
+            textSize = 14f
+            setPadding(20, 8, 4, 8)
+            setOnClickListener { stopSelf() }
         }
 
         val header = LinearLayout(this).apply {
@@ -186,6 +182,7 @@ class FloatingWindowService : android.app.Service() {
             addView(status)
             addView(minimize)
             addView(stop)
+            addView(close)
         }
         root.addView(header)
 
@@ -351,11 +348,7 @@ class FloatingWindowService : android.app.Service() {
     companion object {
         private const val CHANNEL_ID = "izuki_floating"
         private const val NOTIFICATION_ID = 1002
-        private const val EXTRA_PINNED = "extra_pinned"
         private const val MAX_LOG_LINES = 200
-
-        private const val ACTION_START = "com.benton.izukijs.action.SHOW_FLOATING"
-        private const val ACTION_SCRIPT_FINISHED = "com.benton.izukijs.action.SCRIPT_FINISHED"
 
         private val _active = MutableStateFlow(false)
 
@@ -369,30 +362,17 @@ class FloatingWindowService : android.app.Service() {
                 _active.value = value
             }
 
-        /** 手动开启悬浮窗。[pinned] 为 true 时常驻，脚本结束后不自动关闭。 */
-        fun start(context: Context, pinned: Boolean = false) {
+        /** 开启悬浮窗。开启后常驻，脚本结束也不会自动关闭，需手动点击关闭按钮或开关。 */
+        fun start(context: Context) {
             // 无悬浮窗权限时直接不启动，避免白白拉起一个前台服务（也规避 FGS 超时风险）。
             if (!Settings.canDrawOverlays(context)) return
-            val intent = Intent(context, FloatingWindowService::class.java).apply {
-                action = ACTION_START
-                putExtra(EXTRA_PINNED, pinned)
-            }
-            runCatching { context.startForegroundService(intent) }
+            runCatching { context.startForegroundService(Intent(context, FloatingWindowService::class.java)) }
         }
 
-        /** 脚本开始时确保悬浮窗显示（临时，脚本结束后自动关闭）。 */
+        /** 脚本开始时确保悬浮窗显示（脚本结束后保持显示）。 */
         fun showForRun(context: Context) {
             if (isActive) return
-            start(context, pinned = false)
-        }
-
-        /** 脚本结束时关闭临时悬浮窗；手动常驻时保持显示。 */
-        fun onScriptFinished(context: Context) {
-            if (!isActive) return
-            val intent = Intent(context, FloatingWindowService::class.java).apply {
-                action = ACTION_SCRIPT_FINISHED
-            }
-            runCatching { context.startService(intent) }
+            start(context)
         }
 
         fun stop(context: Context) {

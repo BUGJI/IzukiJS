@@ -103,7 +103,10 @@ class AiApi(
                 onToolResult = onToolResult,
             )
         } catch (e: ScriptExitException) {
-            throw e
+            // 不能把 Java 异常抛出 javascript 回调（会导致 QuickJS JNI abort）。
+            // 这里返回 null，由 prelude 中的 ai 包装函数检测 shouldExit() 后抛出 JS 异常终止脚本。
+            logBus.info("… AI 调用已取消")
+            null
         } catch (e: Throwable) {
             logBus.error("AI 调用失败：${e.message}")
             "（AI 调用失败：${e.message}）"

@@ -99,7 +99,6 @@ class ScriptExecutionManager(
                 _running.value = false
                 _runningScript.value = null
                 ScriptForegroundService.stop(appContext)
-                FloatingWindowService.onScriptFinished(appContext)
             }
         }
     }

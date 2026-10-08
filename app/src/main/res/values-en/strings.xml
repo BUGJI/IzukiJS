@@ -408,4 +408,5 @@
     <string name="floating_collapse">Minimize log</string>
     <string name="floating_expand">Expand log</string>
     <string name="floating_stop">Stop script</string>
+    <string name="floating_close">Close floating window</string>
 </resources>

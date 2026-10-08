@@ -422,8 +422,10 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 }
 
                 val baseStyle = LocalTextStyle.current
-                val editorStyle = remember(baseStyle, editorSettings.fontSizeSp) {
+                val editorColor = MaterialTheme.colorScheme.onSurface
+                val editorStyle = remember(baseStyle, editorSettings.fontSizeSp, editorColor) {
                     baseStyle.copy(
+                        color = editorColor,
                         fontFamily = FontFamily.Monospace,
                         fontSize = editorSettings.fontSizeSp.sp,
                         lineHeight = (editorSettings.fontSizeSp * LINE_HEIGHT_RATIO).sp,

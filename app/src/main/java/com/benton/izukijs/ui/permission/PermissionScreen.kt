@@ -378,7 +378,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             checked = floatingEnabled,
                         ) { checked ->
                             if (checked) {
-                                withOverlay { FloatingWindowService.start(context, pinned = true) }
+                                withOverlay { FloatingWindowService.start(context) }
                             } else {
                                 FloatingWindowService.stop(context)
                             }

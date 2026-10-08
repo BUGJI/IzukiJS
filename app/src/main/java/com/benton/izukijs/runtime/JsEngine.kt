@@ -67,7 +67,20 @@ class JsEngine(
     private fun bindApis(ctx: JSContext) {
         val screenshotProvider: () -> Bitmap? = {
             OverlayCoordinator.withoutOverlay {
-                screenCapture.capture() ?: controllers.controllerFor(Capability.SCREENSHOT)?.screenshot()
+                val projected = screenCapture.capture()
+                if (projected != null) {
+                    logBus.debug("捕获屏幕 ${projected.width}×${projected.height} → 持续录屏")
+                    projected
+                } else {
+                    val controller = controllers.controllerFor(Capability.SCREENSHOT)
+                    val shot = controller?.screenshot()
+                    if (shot != null) {
+                        logBus.debug("捕获屏幕 ${shot.width}×${shot.height} → ${controller.mode.displayName}")
+                    } else {
+                        logBus.warn("捕获屏幕失败：无可用截图后端")
+                    }
+                    shot
+                }
             }
         }
         val globalApi = GlobalApi(
@@ -82,7 +95,7 @@ class JsEngine(
         val deviceApi = DeviceApi(context)
         val appApi = AppApi(context, logBus)
         val shellApi = ShellApi(controllers, logBus)
-        val ocrApi = OcrApi(ocrProcessor, screenshotProvider)
+        val ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus)
         val selectorApi = SelectorApi(logBus) {
             controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
         }
@@ -200,6 +213,42 @@ class JsEngine(
                   return state.getOrRaw(key, String(fallback));
                 };
                 state.all = function () { return JSON.parse(state.allRaw()); };
+              }
+              // 停止脚本：Java 侧只设标志并尽快返回，绝不抛出 Java 异常（否则 QuickJS JNI 会 abort）。
+              // 这里在原生调用返回后检测标志，抛出真正的 JS 异常来中断脚本执行。
+              if (typeof shouldExit === 'function') {
+                if (typeof sleep === 'function') {
+                  var __izukiSleep = sleep;
+                  global.sleep = function (ms) {
+                    __izukiSleep(ms);
+                    if (shouldExit()) throw new Error("IZUKI_SCRIPT_EXIT");
+                  };
+                }
+                if (typeof exit === 'function') {
+                  var __izukiExit = exit;
+                  global.exit = function () {
+                    __izukiExit();
+                    throw new Error("IZUKI_SCRIPT_EXIT");
+                  };
+                }
+                if (typeof ai !== 'undefined') {
+                  if (typeof ai.chat === 'function') {
+                    var __izukiAiChat = ai.chat;
+                    ai.chat = function (prompt, options) {
+                      var r = __izukiAiChat(prompt, options);
+                      if (shouldExit()) throw new Error("IZUKI_SCRIPT_EXIT");
+                      return r;
+                    };
+                  }
+                  if (typeof ai.run === 'function') {
+                    var __izukiAiRun = ai.run;
+                    ai.run = function (prompt, options) {
+                      var r = __izukiAiRun(prompt, options);
+                      if (shouldExit()) throw new Error("IZUKI_SCRIPT_EXIT");
+                      return r;
+                    };
+                  }
+                }
               }
             })(typeof globalThis !== 'undefined' ? globalThis : this);
         """.trimIndent()

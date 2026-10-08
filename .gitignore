@@ -16,3 +16,5 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+ge_c.txt
+ge_v.txt

@@ -10,6 +10,7 @@ import org.opencv.core.Mat
 import org.opencv.imgcodecs.Imgcodecs
 import org.opencv.imgproc.Imgproc
 import java.io.File
+import java.util.Locale
 import kotlin.math.abs
 
 /**
@@ -24,7 +25,10 @@ class ImageApi(
 
     @JavascriptInterface
     fun findImageRaw(templatePath: String, threshold: Double): String? {
-        val screen = screenshot() ?: return null
+        val screen = screenshot() ?: run {
+            logBus.warn("找图失败：无法获取屏幕截图")
+            return null
+        }
         return try {
             matchTemplate(screen, templatePath, threshold)
         } finally {
@@ -34,7 +38,10 @@ class ImageApi(
 
     @JavascriptInterface
     fun findImageInRaw(screenPath: String, templatePath: String, threshold: Double): String? {
-        val screen = android.graphics.BitmapFactory.decodeFile(screenPath) ?: return null
+        val screen = android.graphics.BitmapFactory.decodeFile(screenPath) ?: run {
+            logBus.warn("找图失败：无法读取屏幕图片 $screenPath")
+            return null
+        }
         return try {
             matchTemplate(screen, templatePath, threshold)
         } finally {
@@ -44,10 +51,22 @@ class ImageApi(
 
     @JavascriptInterface
     fun findColorRaw(color: String, threshold: Double): String? {
-        val target = parseColor(color) ?: return null
-        val bitmap = screenshot() ?: return null
+        val target = parseColor(color) ?: run {
+            logBus.warn("找色失败：颜色格式无效 \"$color\"")
+            return null
+        }
+        val bitmap = screenshot() ?: run {
+            logBus.warn("找色失败：无法获取屏幕截图")
+            return null
+        }
         return try {
-            findColorInBitmap(bitmap, target, threshold.toInt())
+            val raw = findColorInBitmap(bitmap, target, threshold.toInt())
+            if (raw == null) {
+                logBus.debug("找色 $color (±${threshold.toInt()}) → 未找到 ✗")
+            } else {
+                logBus.debug("找色 $color (±${threshold.toInt()}) → ($raw) ✓")
+            }
+            raw
         } finally {
             bitmap.recycle()
         }
@@ -63,7 +82,11 @@ class ImageApi(
         if (!ensureOpenCv()) return null
         // 模板会被缓存并复用，屏幕直接保持 RGBA 四通道；只需转换体积很小的模板，
         // 省掉每次调用对整屏做 RGBA→RGB 的转换。
-        val template = loadTemplate(templatePath) ?: return null
+        val label = File(templatePath).name
+        val template = loadTemplate(templatePath) ?: run {
+            logBus.warn("找图失败：模板不存在或无法读取 $templatePath")
+            return null
+        }
         var screenMat: Mat? = null
         var result: Mat? = null
         return try {
@@ -71,16 +94,26 @@ class ImageApi(
             Utils.bitmapToMat(screen, screenMat)
 
             if (template.cols() > screenMat.cols() || template.rows() > screenMat.rows()) {
+                logBus.debug("找图 $label → 跳过：模板大于屏幕 ✗")
                 return null
             }
 
             result = Mat()
             Imgproc.matchTemplate(screenMat, template, result, Imgproc.TM_CCOEFF_NORMED)
             val mm = Core.minMaxLoc(result)
-            if (mm.maxVal < threshold) return null
+            if (mm.maxVal < threshold) {
+                logBus.debug(
+                    "找图 $label → 未命中（最高 ${mm.maxVal.confidence()} < $threshold）✗",
+                )
+                return null
+            }
 
             val centerX = mm.maxLoc.x + template.cols() / 2.0
             val centerY = mm.maxLoc.y + template.rows() / 2.0
+            logBus.debug(
+                "找图 $label → (${centerX.toInt()}, ${centerY.toInt()}) " +
+                    "置信度 ${mm.maxVal.confidence()} ✓",
+            )
             "${centerX.toInt()},${centerY.toInt()},${mm.maxVal}"
         } catch (t: Throwable) {
             logBus.error("图像匹配失败: ${t.message}")
@@ -90,6 +123,8 @@ class ImageApi(
             result?.release()
         }
     }
+
+    private fun Double.confidence(): String = String.format(Locale.US, "%.3f", this)
 
     /** 按「路径 + 修改时间」缓存解码后的模板（RGBA Mat）。返回的 Mat 归缓存所有，调用方不得释放。 */
     private fun loadTemplate(path: String): Mat? {
