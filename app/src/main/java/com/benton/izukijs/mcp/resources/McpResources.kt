@@ -76,8 +76,8 @@ class McpResources(
     }
 
     private fun deviceInfo(): JSONObject = JSONObject().apply {
-        put("width", bundle.deviceApi.width())
-        put("height", bundle.deviceApi.height())
+        put("width", bundle.deviceApi.screenWidth())
+        put("height", bundle.deviceApi.screenHeight())
         put("brand", bundle.deviceApi.brand())
         put("model", bundle.deviceApi.model())
         put("androidVersion", bundle.deviceApi.androidVersion())

@@ -115,6 +115,12 @@
     <string name="scripts_export_failed">Export failed</string>
     <string name="scripts_imported">Imported %1$s</string>
     <string name="scripts_import_failed">Import failed</string>
+    <string name="scripts_scan_import">Scan to import</string>
+    <string name="scripts_scan_imported">Imported %1$s from QR code</string>
+    <string name="scripts_scan_no_code">No QR code detected</string>
+    <string name="scripts_scan_invalid_link">QR code does not contain a valid download link</string>
+    <string name="scripts_scan_download_failed">Failed to download script</string>
+    <string name="scripts_scan_failed">Could not open the camera to scan</string>
 
     <!-- Permissions -->
     <string name="perm_tip">Tip: you can revoke unnecessary permissions while a script runs to lower the risk of detection. Pick the permissions your current script actually needs based on the pros and cons below.</string>
@@ -436,6 +442,19 @@
     <string name="mcp_allow_shell_desc">Allow external AI to run Shell commands (needs Shizuku or Root); powerful.</string>
     <string name="mcp_allow_scripts">Allow scripts</string>
     <string name="mcp_allow_scripts_desc">Allow listing saved scripts and triggering run / stop.</string>
+    <string name="mcp_keepalive_title">Background survival</string>
+    <string name="mcp_keepalive_desc">Add this app to the battery optimization allowlist; otherwise the system may kill the process and drop the MCP connection when you switch apps or lock the screen.</string>
+    <string name="mcp_battery_ok">Battery optimization ignored ✓</string>
+    <string name="mcp_battery_warn">Battery optimization not ignored yet; may be killed in background.</string>
+    <string name="mcp_battery_request">Open settings</string>
+    <string name="mcp_security_title">Security</string>
+    <string name="mcp_security_desc">Constrain risky actions from external AI; normal commands and apps are unaffected.</string>
+    <string name="mcp_allow_dangerous_shell">Allow dangerous Shell</string>
+    <string name="mcp_allow_dangerous_shell_desc">Permit rm -rf /, mkfs, dd to block devices, pm uninstall, settings put, etc. Off by default.</string>
+    <string name="mcp_blocked_packages">Blocked packages</string>
+    <string name="mcp_blocked_packages_desc">Refuse to launch these apps; trailing * acts as a prefix wildcard (e.g. com.bank.*). Comma or newline separated.</string>
+    <string name="mcp_blocked_save">Save list</string>
+    <string name="mcp_blocked_saved">Blocklist saved</string>
     <string name="mcp_client_title">Client config example</string>
     <string name="mcp_client_desc">stdio clients (e.g. Claude Desktop) can bridge to this server via mcp-remote.</string>
     <string name="mcp_copy_endpoint">Copy endpoint</string>

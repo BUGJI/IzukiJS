@@ -4,6 +4,7 @@ import com.benton.izukijs.mcp.net.HttpServer
 import com.benton.izukijs.mcp.protocol.McpProtocolHandler
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpToolRegistry
+import com.benton.izukijs.mcp.tools.OperationRegistry
 import com.benton.izukijs.runtime.LogBus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,13 +32,16 @@ data class McpStatus(
 class McpServerController(
     private val logBus: LogBus,
     private val configProvider: () -> McpConfig,
-    private val registryFactory: (McpConfig) -> McpToolRegistry,
+    private val registryFactory: (McpConfig, OperationRegistry) -> McpToolRegistry,
     private val resourcesFactory: () -> McpResources,
     private val serverVersion: String,
 ) {
 
     private val _status = MutableStateFlow(McpStatus())
     val status: StateFlow<McpStatus> = _status.asStateFlow()
+
+    /** 异步操作登记表；跨重启保留，便于客户端重连后回查结果。 */
+    private val operations = OperationRegistry()
 
     private var server: HttpServer? = null
     private var handler: McpHttpHandler? = null
@@ -52,12 +56,12 @@ class McpServerController(
             return
         }
 
-        val registry = registryFactory(config)
+        val registry = registryFactory(config, operations)
         val resources = resourcesFactory()
         val dispatcher = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "izuki-mcp-tools").apply { isDaemon = true }
         }
-        val protocol = McpProtocolHandler(registry, resources, logBus, dispatcher, serverVersion)
+        val protocol = McpProtocolHandler(registry, resources, operations, logBus, dispatcher, serverVersion)
         val httpHandler = McpHttpHandler(protocol, config.token, logBus)
         val bindAddress = if (config.bindMode == McpBindMode.LAN) LAN_BIND else LOOPBACK_BIND
 

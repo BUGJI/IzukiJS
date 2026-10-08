@@ -3,6 +3,7 @@ package com.benton.izukijs.runtime
 import android.content.Context
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.controller.UiautomatorDumper
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.api.AiApi
@@ -92,6 +93,7 @@ class JsEngine(
         ctx.addJavascriptInterface(EnvApi(scriptEnv), "env")
         ctx.addJavascriptInterface(StateApi(scriptEnv), "state")
         ctx.addJavascriptInterface(ModuleApi(moduleSourceProvider), "modules")
+        val dumper = UiautomatorDumper(controllers, logBus)
         ctx.addJavascriptInterface(
             AiApi(
                 configRepository = aiConfigRepository,
@@ -102,7 +104,9 @@ class JsEngine(
                 shellApi = shellApi,
                 deviceApi = deviceApi,
                 screenshotPathProvider = { globalApi.captureScreen("") },
-                nodeTreeProvider = { controllers.controllerFor(Capability.NODE_TREE)?.nodeTree() },
+                nodeTreeProvider = {
+                    controllers.controllerFor(Capability.NODE_TREE)?.nodeTree() ?: dumper.dump()
+                },
                 logBus = logBus,
                 isExitRequested = { exitRequested },
             ),

@@ -7,14 +7,18 @@ import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.ControllerSettingsRepository
+import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.controller.UiautomatorDumper
 import com.benton.izukijs.controller.hid.HidManager
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
+import com.benton.izukijs.model.Capability
 import com.benton.izukijs.data.AppearanceRepository
 import com.benton.izukijs.data.ConfigBackupManager
 import com.benton.izukijs.data.EditorSettingsRepository
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
+import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.i18n.LanguageRepository
@@ -58,6 +62,8 @@ class AppContainer(private val application: Application) {
     val logFileStore = LogFileStore(application, logSettingsRepository)
 
     val scriptRepository = ScriptRepository(application)
+
+    val scriptImporter = ScriptImporter(application, scriptRepository, logBus)
 
     val scriptListPreferences = ScriptListPreferences(application)
 
@@ -112,18 +118,27 @@ class AppContainer(private val application: Application) {
         DeviceApiBundle.create(application, controllerManager, screenCapture, ocrProcessor, logBus)
     }
 
+    private val uiautomatorDumper = UiautomatorDumper(controllerManager, logBus)
+
+    /** 读控件树：无障碍优先，Shizuku / Root 的 uiautomator dump 兜底。 */
+    private val nodeTreeProvider: () -> NodeSnapshot? = {
+        controllerManager.controllerFor(Capability.NODE_TREE)?.nodeTree() ?: uiautomatorDumper.dump()
+    }
+
     val mcpServerController = McpServerController(
         logBus = logBus,
         configProvider = { mcpConfigRepository.current() },
-        registryFactory = { config ->
+        registryFactory = { config, operations ->
             McpToolRegistry(
                 bundle = deviceApiBundle,
-                controllers = controllerManager,
-                captureSettingsRepository = captureSettingsRepository,
+                nodeTreeProvider = nodeTreeProvider,
                 scriptRepository = scriptRepository,
                 executionManager = scriptExecutionManager,
+                operations = operations,
                 allowShell = config.allowShell,
                 allowScripts = config.allowScripts,
+                allowDangerousShell = config.allowDangerousShell,
+                isPackageBlocked = { config.isPackageBlocked(it) },
             )
         },
         resourcesFactory = {

@@ -23,13 +23,14 @@ data class OcrConfig(
     val headerValue: String = "",
 )
 
-/** 单个识别结果（坐标为屏幕像素，x/y 为包围盒中心）。 */
+/** 单个识别结果（坐标为屏幕像素，x/y 为包围盒中心）。[confidence] 为 0~1，引擎不提供时为 null。 */
 data class OcrBlock(
     val text: String,
     val x: Int,
     val y: Int,
     val width: Int,
     val height: Int,
+    val confidence: Double? = null,
 )
 
 data class OcrResult(val text: String, val blocks: List<OcrBlock>)

@@ -5,6 +5,7 @@ import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GesturePoint
 import com.benton.izukijs.controller.GestureStroke
+import com.benton.izukijs.controller.TextInputMethod
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.runtime.LogBus
@@ -234,10 +235,17 @@ class InputApi(
     }
 
     @JavascriptInterface
-    fun input(text: String): Boolean {
+    fun input(text: String): Boolean = input(text, TextInputMethod.AUTO)
+
+    /** 指定输入方式：auto / input / clipboard / broadcast。 */
+    @JavascriptInterface
+    fun inputWithMethod(text: String, method: String): Boolean =
+        input(text, TextInputMethod.from(method))
+
+    private fun input(text: String, method: TextInputMethod): Boolean {
         val controller = controllers.controllerFor(Capability.TEXT)
-        val ok = controller?.inputText(text) ?: false
-        logBus.debug("输入文本 \"${text.preview()}\"${controller.resultTag(ok)}")
+        val ok = controller?.inputText(text, method) ?: false
+        logBus.debug("输入文本 \"${text.preview()}\" [${method.name.lowercase()}]${controller.resultTag(ok)}")
         return ok
     }
 

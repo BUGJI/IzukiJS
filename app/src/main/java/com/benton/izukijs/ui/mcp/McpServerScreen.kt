@@ -3,6 +3,12 @@ package com.benton.izukijs.ui.mcp
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.PowerManager
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,7 +62,12 @@ fun McpServerScreen(onBack: () -> Unit) {
     val status by container.mcpServerController.status.collectAsStateWithLifecycle()
 
     var message by remember { mutableStateOf<String?>(null) }
+    var ignoringBattery by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    var blockedText by remember { mutableStateOf(config.blockedPackages.joinToString(", ")) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    val batteryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { ignoringBattery = isIgnoringBatteryOptimizations(context) }
 
     fun current() = container.mcpConfigRepository.current()
 
@@ -74,6 +85,7 @@ fun McpServerScreen(onBack: () -> Unit) {
 
     val endpoint = status.addresses.firstOrNull().orEmpty()
     val isRunning = status.running
+    val blockedSavedText = stringResource(R.string.mcp_blocked_saved)
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -252,6 +264,81 @@ fun McpServerScreen(onBack: () -> Unit) {
                 ) { apply(config.copy(allowScripts = it)) }
             }
 
+            Spacer(Modifier.height(12.dp))
+            SectionCard(stringResource(R.string.mcp_security_title)) {
+                Text(
+                    stringResource(R.string.mcp_security_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                SwitchRow(
+                    label = stringResource(R.string.mcp_allow_dangerous_shell),
+                    checked = config.allowDangerousShell,
+                    description = stringResource(R.string.mcp_allow_dangerous_shell_desc),
+                ) { apply(config.copy(allowDangerousShell = it)) }
+                Spacer(Modifier.height(8.dp))
+                LabeledField(
+                    label = stringResource(R.string.mcp_blocked_packages),
+                    value = blockedText,
+                    placeholder = "com.example.bank, com.pay.*",
+                ) { blockedText = it }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.mcp_blocked_packages_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = {
+                    val list = blockedText
+                        .split(',', '\n')
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
+                    apply(config.copy(blockedPackages = list))
+                    message = blockedSavedText
+                }) { Text(stringResource(R.string.mcp_blocked_save)) }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            SectionCard(stringResource(R.string.mcp_keepalive_title)) {
+                Text(
+                    stringResource(R.string.mcp_keepalive_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(
+                        if (ignoringBattery) R.string.mcp_battery_ok else R.string.mcp_battery_warn,
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (ignoringBattery) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = {
+                    val intent = if (ignoringBattery) {
+                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                    } else {
+                        Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:${context.packageName}"),
+                        )
+                    }
+                    runCatching { batteryLauncher.launch(intent) }.onFailure {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                            )
+                        }
+                    }
+                }) { Text(stringResource(R.string.mcp_battery_request)) }
+            }
+
             message?.let {
                 Spacer(Modifier.height(12.dp))
                 Text(it, style = MaterialTheme.typography.bodySmall)
@@ -260,6 +347,11 @@ fun McpServerScreen(onBack: () -> Unit) {
             Spacer(Modifier.height(24.dp))
         }
     }
+}
+
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+    return manager.isIgnoringBatteryOptimizations(context.packageName)
 }
 
 /** 生成可直接粘贴到 MCP 客户端的配置 JSON。 */

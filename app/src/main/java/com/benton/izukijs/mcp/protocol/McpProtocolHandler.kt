@@ -3,12 +3,14 @@ package com.benton.izukijs.mcp.protocol
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpToolResult
 import com.benton.izukijs.mcp.tools.McpToolRegistry
+import com.benton.izukijs.mcp.tools.OperationRegistry
 import com.benton.izukijs.runtime.LogBus
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 /**
  * MCP（Model Context Protocol）JSON-RPC 2.0 处理器（Streamable HTTP 的 JSON 响应模式）。
@@ -20,6 +22,7 @@ import java.util.concurrent.TimeUnit
 class McpProtocolHandler(
     private val registry: McpToolRegistry,
     private val resources: McpResources,
+    private val operations: OperationRegistry,
     private val logBus: LogBus,
     private val toolDispatcher: ExecutorService,
     private val serverVersion: String,
@@ -128,15 +131,61 @@ class McpProtocolHandler(
         val tool = registry.find(name)
             ?: return failure(id, INVALID_PARAMS, "未知工具：$name")
         val arguments = params.optJSONObject("arguments") ?: JSONObject()
+
+        // 结果查询类工具在请求线程直接执行：它们只读登记表，若排到设备队列末尾，
+        // 一旦前面的操作卡住就永远查不到结果。
+        if (tool.synchronous) {
+            val result = runCatching { tool.call(arguments) }
+                .getOrElse { McpToolResult.error("工具执行失败：${it.message}") }
+            return success(id, result.toJson())
+        }
+
         logBus.info("🔌 MCP 调用工具 $name")
-        val result: McpToolResult = try {
-            toolDispatcher.submit<McpToolResult> { tool.call(arguments) }
-                .get(TOOL_TIMEOUT_SEC, TimeUnit.SECONDS)
+        val requestId = operations.create(name)
+        val future = try {
+            toolDispatcher.submit<McpToolResult> {
+                val result = try {
+                    tool.call(arguments)
+                } catch (t: Throwable) {
+                    operations.fail(requestId, t.message ?: t.javaClass.simpleName)
+                    throw t
+                }
+                if (result.isError) {
+                    operations.fail(requestId, result.content.firstOrNull()?.text ?: "执行失败")
+                } else {
+                    operations.succeed(requestId, result)
+                }
+                result
+            }
         } catch (t: Throwable) {
-            logBus.warn("MCP 工具 $name 执行异常：${t.message}")
+            operations.fail(requestId, t.message ?: t.javaClass.simpleName)
+            logBus.warn("MCP 工具 $name 无法调度：${t.message}")
             return failure(id, INTERNAL_ERROR, "工具执行异常：${t.message}")
         }
-        return success(id, result.toJson())
+
+        return try {
+            val result = future.get(SYNC_WAIT_SEC, TimeUnit.SECONDS)
+            success(id, result.toJson())
+        } catch (t: TimeoutException) {
+            // 操作已提交到设备队列，是否已真正执行未知——返回句柄而非报错。
+            logBus.warn("MCP 工具 $name 超过 ${SYNC_WAIT_SEC}s 仍未返回，转异步（request_id=$requestId）")
+            success(id, runningResult(name, requestId))
+        } catch (t: Throwable) {
+            val cause = t.cause ?: t
+            logBus.warn("MCP 工具 $name 执行异常：${cause.message}")
+            failure(id, INTERNAL_ERROR, "工具执行异常：${cause.message}")
+        }
+    }
+
+    /** 异步句柄：说明操作已提交、结果未知，并给出回查方式。 */
+    private fun runningResult(toolName: String, requestId: String): JSONObject {
+        val payload = JSONObject().apply {
+            put("status", "running")
+            put("request_id", requestId)
+            put("tool", toolName)
+            put("message", "操作已提交，结果未知。稍后调用 get_result(request_id=\"$requestId\") 查询。")
+        }
+        return McpToolResult.text(payload.toString()).toJson()
     }
 
     private fun resourcesRead(id: Any?, params: JSONObject): JSONObject {
@@ -183,13 +232,16 @@ class McpProtocolHandler(
         const val INVALID_PARAMS = -32602
         const val INTERNAL_ERROR = -32603
 
-        private const val TOOL_TIMEOUT_SEC = 60L
+        /** 同步等待窗口：超过则返回 request_id 转异步，避免客户端读超时。 */
+        private const val SYNC_WAIT_SEC = 20L
 
         private val SUPPORTED_VERSIONS = setOf("2025-06-18", "2025-03-26", "2024-11-05")
 
         private val INSTRUCTIONS =
-            "Izuki JS 运行于 Android，可读取无障碍控件树、执行 OCR 与截图，并通过无障碍 / " +
-                "Shizuku / Root / 蓝牙 HID 注入点击、滑动、文本与按键。shell 与脚本执行默认关闭，" +
-                "需在 App 内显式开启。操作前建议先用 ui_dump / ocr_screen / screenshot 观察界面。"
+            "Izuki JS 运行于 Android，可读取控件树 / OCR / 截图，并通过无障碍 / Shizuku / Root / " +
+                "蓝牙 HID 注入点击、滑动、文本与按键。坐标默认是全分辨率屏幕像素；click 支持 " +
+                "normalized=true 的 0~1 归一化坐标（推荐，免疫截图缩放）。操作前建议先用 ocr / " +
+                "ui_dump / screenshot 观察。耗时操作超过同步窗口会返回 {status:\"running\", request_id}，" +
+                "此时动作可能已执行，请用 get_result 查询，不要直接重试。shell 与脚本执行默认关闭。"
     }
 }

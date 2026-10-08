@@ -13,6 +13,27 @@ data class GestureStroke(val points: List<GesturePoint>)
 /** Shell 执行结果。 */
 data class ShellResult(val stdout: String, val stderr: String, val exitCode: Int)
 
+/** 文本输入方式。 */
+enum class TextInputMethod {
+    /** 自动：ASCII 用 `input text`，非 ASCII 优先剪贴板粘贴，其次广播输入法。 */
+    AUTO,
+
+    /** 仅 `input text`（只支持 ASCII）。 */
+    INPUT,
+
+    /** 先写入系统剪贴板，再发送粘贴键。 */
+    CLIPBOARD,
+
+    /** 广播输入法（ADBKeyboard 的 `ADB_INPUT_*`）。 */
+    BROADCAST,
+    ;
+
+    companion object {
+        fun from(id: String?): TextInputMethod =
+            entries.firstOrNull { it.name.equals(id?.trim(), ignoreCase = true) } ?: AUTO
+    }
+}
+
 /** 控件树节点快照。 */
 data class NodeSnapshot(
     val className: String?,
@@ -64,6 +85,9 @@ interface DeviceController {
     fun pressKey(keyCode: Int): Boolean = false
 
     fun inputText(text: String): Boolean = false
+
+    /** 按指定方式输入文本；默认忽略 [method]，等价于 [inputText]。 */
+    fun inputText(text: String, method: TextInputMethod): Boolean = inputText(text)
 
     /** 执行无障碍全局动作（返回/主页/最近任务等）。 */
     fun globalAction(action: Int): Boolean = false

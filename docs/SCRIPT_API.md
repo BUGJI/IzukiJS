@@ -21,7 +21,8 @@
 | `swipe(x1, y1, x2, y2, ms)` | 滑动 |
 | `gesture(strokes)` | 复杂轨迹：曲线 / 多段 / 多指 / 按住停顿（见下） |
 | `press(keyCode)` | 按键（Android KeyEvent 码，见下方限制） |
-| `input(text)` | 输入文本 |
+| `input(text)` | 输入文本（自动选方式） |
+| `inputWithMethod(text, method)` | 指定输入方式：`auto` / `input` / `clipboard` / `broadcast` |
 | `back()` / `home()` / `recents()` | 返回 / 主页 / 最近任务 |
 
 > 底层由控制模式提供：无障碍 / Shizuku / Root / 蓝牙 HID。具体能力见「控制模式」。
@@ -255,9 +256,10 @@ ops.goBack();
 | `onTool(name, args)` | 模型决定调用某工具时回调 |
 | `onToolResult(name, result)` | 工具执行完成后回调 |
 
-模型可调用的工具由设备能力决定，包括 `ocr_screen` / `ui_dump` / `find_text` / `click` /
-`long_click` / `swipe` / `input_text` / `press_back` / `press_home` / `press_recents` /
-`press_enter` / `launch_app` / `current_app` / `device_info` / `screenshot`，以及按需开启的 `shell`。
+模型可调用的工具由设备能力决定，包括 `ocr` / `ui_dump` / `find` / `click`（`by` 区分
+coord / text / id / desc，`long` 长按、`normalized` 归一化坐标）/ `swipe` / `gesture` /
+`text` / `press`（`key` 为 back / home / recents / enter 或键码）/ `wait` / `info` / `app` /
+`batch`（一次调用顺序执行多个动作）/ `screenshot`，以及按需开启的 `shell`。
 
 ```js
 if (ai.available()) {

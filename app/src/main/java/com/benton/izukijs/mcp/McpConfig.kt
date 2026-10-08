@@ -25,8 +25,25 @@ data class McpConfig(
     val token: String = "",
     val allowShell: Boolean = false,
     val allowScripts: Boolean = false,
+    /** 允许 Shell 执行高危命令（rm -rf /、mkfs、pm uninstall 等），默认关闭。 */
+    val allowDangerousShell: Boolean = false,
+    /** 禁止启动的应用包名列表；支持结尾 `*` 前缀通配（如 `com.bank.*`）。 */
+    val blockedPackages: List<String> = emptyList(),
 ) {
     val isConfigured: Boolean get() = token.isNotBlank()
+
+    /** 判断某包名是否命中黑名单。 */
+    fun isPackageBlocked(packageName: String): Boolean {
+        val target = packageName.trim()
+        if (target.isBlank()) return false
+        return blockedPackages.any { entry ->
+            when {
+                entry.isBlank() -> false
+                entry.endsWith("*") -> target.startsWith(entry.dropLast(1).trim(), ignoreCase = true)
+                else -> target.equals(entry.trim(), ignoreCase = true)
+            }
+        }
+    }
 
     companion object {
         const val DEFAULT_PORT = 8765

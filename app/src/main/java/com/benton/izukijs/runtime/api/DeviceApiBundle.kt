@@ -52,11 +52,14 @@ class DeviceApiBundle(
                     }
                 }
             }
+            val shellExec: (String) -> String? = { cmd ->
+                controllers.controllerFor(Capability.SHELL)?.shell(cmd)?.stdout
+            }
             return DeviceApiBundle(
                 screenshotProvider = screenshotProvider,
                 inputApi = InputApi(controllers, logBus),
                 deviceApi = DeviceApi(context),
-                appApi = AppApi(context, logBus),
+                appApi = AppApi(context, logBus, shellExec),
                 shellApi = ShellApi(controllers, logBus),
                 ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus),
                 selectorApi = SelectorApi(logBus) {

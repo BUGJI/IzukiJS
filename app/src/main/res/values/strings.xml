@@ -115,6 +115,12 @@
     <string name="scripts_export_failed">导出失败</string>
     <string name="scripts_imported">已导入 %1$s</string>
     <string name="scripts_import_failed">导入失败</string>
+    <string name="scripts_scan_import">扫码导入</string>
+    <string name="scripts_scan_imported">已扫码导入 %1$s</string>
+    <string name="scripts_scan_no_code">未识别到二维码</string>
+    <string name="scripts_scan_invalid_link">二维码内容不是有效的下载链接</string>
+    <string name="scripts_scan_download_failed">脚本下载失败</string>
+    <string name="scripts_scan_failed">无法启动相机，扫码失败</string>
 
     <!-- 权限与能力 -->
     <string name="perm_tip">提示：脚本运行时可以收回非必要权限，以降低被风控识别的风险。按标注的优缺点选择当前脚本真正需要的权限即可。</string>
@@ -436,6 +442,19 @@
     <string name="mcp_allow_shell_desc">允许外部 AI 执行 Shell 命令（需 Shizuku 或 Root），权限较大。</string>
     <string name="mcp_allow_scripts">允许运行脚本</string>
     <string name="mcp_allow_scripts_desc">允许列出现有脚本并触发运行 / 停止。</string>
+    <string name="mcp_keepalive_title">后台保活</string>
+    <string name="mcp_keepalive_desc">建议将本应用加入电池优化白名单；否则切到其它 App 或锁屏时，系统可能回收进程导致 MCP 断连。</string>
+    <string name="mcp_battery_ok">已忽略电池优化 ✓</string>
+    <string name="mcp_battery_warn">尚未忽略电池优化，后台可能被杀。</string>
+    <string name="mcp_battery_request">去设置</string>
+    <string name="mcp_security_title">安全策略</string>
+    <string name="mcp_security_desc">对外部 AI 的危险操作进行约束；正常命令与应用不受影响。</string>
+    <string name="mcp_allow_dangerous_shell">允许高危 Shell</string>
+    <string name="mcp_allow_dangerous_shell_desc">放行 rm -rf /、mkfs、dd 写块设备、pm uninstall、settings put 等破坏性命令；默认关闭。</string>
+    <string name="mcp_blocked_packages">敏感应用黑名单</string>
+    <string name="mcp_blocked_packages_desc">拒绝启动列表中的应用；支持结尾 * 前缀通配（如 com.bank.*），用逗号或换行分隔。</string>
+    <string name="mcp_blocked_save">保存黑名单</string>
+    <string name="mcp_blocked_saved">黑名单已保存</string>
     <string name="mcp_client_title">客户端配置示例</string>
     <string name="mcp_client_desc">stdio 客户端（如 Claude Desktop）可通过 mcp-remote 桥接到本服务。</string>
     <string name="mcp_copy_endpoint">复制地址</string>

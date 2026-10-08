@@ -1,12 +1,12 @@
 package com.benton.izukijs.mcp.tools
 
+import android.graphics.Rect
 import com.benton.izukijs.ai.AgentTools
-import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.ai.ShellGuard
+import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.data.ScriptRepository
-import com.benton.izukijs.model.Capability
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
-import com.benton.izukijs.service.CaptureSettingsRepository
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -14,18 +14,20 @@ import org.json.JSONObject
  * MCP 工具目录。
  *
  * 读屏 / 控制类工具直接复用 [AgentTools] 的 schema 与执行逻辑，保证与脚本、AI Agent
- * 行为一致；再补齐选择器、按键、手势、脚本等 MCP 专属工具。
+ * 行为一致；这里只额外提供 MCP 专属的截图（图像内容块）、异步结果查询与脚本管理。
  *
  * [allowShell] / [allowScripts] 由当前配置决定；配置变更时会重建本对象（服务随配置重启）。
  */
 class McpToolRegistry(
     private val bundle: DeviceApiBundle,
-    private val controllers: ControllerManager,
-    private val captureSettingsRepository: CaptureSettingsRepository,
+    private val nodeTreeProvider: () -> NodeSnapshot?,
     private val scriptRepository: ScriptRepository,
     private val executionManager: ScriptExecutionManager,
+    private val operations: OperationRegistry,
     private val allowShell: Boolean,
     private val allowScripts: Boolean,
+    private val allowDangerousShell: Boolean,
+    private val isPackageBlocked: (String) -> Boolean,
 ) {
 
     private val agentTools = AgentTools(
@@ -36,7 +38,7 @@ class McpToolRegistry(
         shellApi = bundle.shellApi,
         deviceApi = bundle.deviceApi,
         screenshotPathProvider = { null },
-        nodeTreeProvider = { controllers.controllerFor(Capability.NODE_TREE)?.nodeTree() },
+        nodeTreeProvider = nodeTreeProvider,
         allowShell = allowShell,
     )
 
@@ -49,9 +51,8 @@ class McpToolRegistry(
     private fun buildCatalog(): List<McpTool> = buildList {
         addAll(sharedTools())
         add(screenshotTool())
-        addAll(selectorTools())
-        addAll(inputExtraTools())
-        add(batteryTool())
+        add(getResultTool())
+        add(listOperationsTool())
         if (allowScripts) addAll(scriptTools())
     }
 
@@ -66,157 +67,144 @@ class McpToolRegistry(
                     description = spec.description,
                     inputSchema = spec.parameters,
                     readOnly = spec.name in READ_ONLY_SHARED,
-                ) { args -> McpToolResult.text(agentTools.execute(spec.name, args.toString())) }
+                ) { args -> runShared(spec.name, args) }
             }
+
+    /** 共用工具的执行入口，叠加安全护栏（危险 shell / 敏感 App 启动）。 */
+    private fun runShared(name: String, args: JSONObject): McpToolResult {
+        when (name) {
+            "shell" -> {
+                if (!allowDangerousShell) {
+                    val reason = ShellGuard.reason(args.optString("command"))
+                    if (reason != null) return blocked("命令被安全策略拦截（$reason）")
+                }
+            }
+
+            "app" -> {
+                if (args.optString("action") == "launch") {
+                    val pkg = args.optString("package")
+                    if (pkg.isNotBlank() && isPackageBlocked(pkg)) {
+                        return blocked("目标应用 $pkg 在敏感应用黑名单中，已拒绝启动")
+                    }
+                }
+            }
+        }
+        return McpToolResult.text(agentTools.execute(name, args.toString()))
+    }
+
+    private fun blocked(message: String): McpToolResult = McpToolResult.text(
+        JSONObject().apply {
+            put("ok", false)
+            put("blocked", true)
+            put("message", message)
+        }.toString(),
+    )
 
     // ---- 截图（返回图像内容块） ----
 
     private fun screenshotTool(): McpTool = McpTool(
         name = "screenshot",
-        description = "捕获当前屏幕，返回一张 JPEG 图像（Base64）及其像素尺寸。",
-        inputSchema = McpSchemas.objectSchema(emptyMap()),
+        description = "捕获当前屏幕，返回一张图像，并附带 image_size（图像像素）与 " +
+            "screen_size（真实屏幕像素）。可用 `scale` 缩小、`region=[l,t,r,b]` 只截局部、`format` 选 " +
+            "jpeg/webp。注意 click 使用 screen_size 坐标系，或直接用 normalized 坐标，避免按 " +
+            "image_size 误算；带 region 时请改用屏幕像素坐标。",
+        inputSchema = McpSchemas.objectSchema(
+            mapOf(
+                "scale" to McpSchemas.number("缩放比例 0.1~1，默认 1（原图）"),
+                "quality" to McpSchemas.integer("压缩质量 1~100，默认 90"),
+                "region" to McpSchemas.intArray("裁剪区域 [left,top,right,bottom]（屏幕像素），省略为整屏"),
+                "format" to McpSchemas.enum("图像格式", listOf("jpeg", "webp")),
+            ),
+        ),
         readOnly = true,
-    ) {
+    ) { args ->
         val source = bundle.screenshotProvider()
             ?: return@McpTool McpToolResult.error("截图失败：无可用截图后端（需屏幕捕获 / 无障碍 / Shizuku / Root）")
+        val scale = args.optDouble("scale", 1.0).coerceIn(0.1, 1.0)
+        val quality = args.optInt("quality", 90).coerceIn(1, 100)
+        val region = args.optJSONArray("region")?.let { array ->
+            if (array.length() < 4) null else Rect(
+                array.optInt(0),
+                array.optInt(1),
+                array.optInt(2),
+                array.optInt(3),
+            )
+        }
+        val format = ScreenshotFormat.from(args.optString("format"))
         val encoded = try {
-            ScreenshotEncoder.encode(source, captureSettingsRepository.current())
+            ScreenshotEncoder.encode(source, (scale * 100).toInt(), quality, region, format)
         } finally {
             source.recycle()
+        }
+        val meta = JSONObject().apply {
+            put("image_size", sizeOf(encoded.width, encoded.height))
+            put("screen_size", sizeOf(encoded.screenWidth, encoded.screenHeight))
+            encoded.region?.let { put("region", JSONArray(it)) }
         }
         McpToolResult(
             listOf(
                 McpContent.image(encoded.base64, encoded.mimeType),
-                McpContent.text("屏幕 ${encoded.width}×${encoded.height}"),
+                McpContent.text(meta.toString()),
             ),
         )
     }
 
-    // ---- 无障碍选择器 ----
+    private fun sizeOf(width: Int, height: Int): JSONObject =
+        JSONObject().put("w", width).put("h", height)
 
-    private fun selectorTools(): List<McpTool> = listOf(
-        selectorTool("click_by_id", "点击指定控件 id。", "viewId", "控件 id，如 com.example:id/confirm") {
-            bundle.selectorApi.clickById(it.getString("viewId"))
-        },
-        selectorTool("click_by_text", "点击文本匹配的控件。", "text", "控件文本") {
-            bundle.selectorApi.clickByText(it.getString("text"))
-        },
-        selectorTool("click_by_desc", "点击内容描述匹配的控件。", "desc", "内容描述") {
-            bundle.selectorApi.clickByDesc(it.getString("desc"))
-        },
-        selectorTool("long_click_by_id", "长按指定控件 id。", "viewId", "控件 id") {
-            bundle.selectorApi.longClickById(it.getString("viewId"))
-        },
-        selectorTool("long_click_by_text", "长按文本匹配的控件。", "text", "控件文本") {
-            bundle.selectorApi.longClickByText(it.getString("text"))
-        },
-        McpTool(
-            name = "set_text_by_id",
-            description = "给指定输入框控件设置文本（需无障碍）。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf(
-                    "viewId" to McpSchemas.string("控件 id"),
-                    "text" to McpSchemas.string("要设置的文本"),
-                ),
-                required = listOf("viewId", "text"),
-            ),
-        ) { args ->
-            ok(bundle.selectorApi.setTextById(args.getString("viewId"), args.getString("text")), "设置文本")
-        },
-        McpTool(
-            name = "get_text_by_id",
-            description = "读取指定控件 id 的文本（需无障碍）。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf("viewId" to McpSchemas.string("控件 id")),
-                required = listOf("viewId"),
-            ),
-            readOnly = true,
-        ) { args ->
-            val text = bundle.selectorApi.getTextById(args.getString("viewId"))
-            McpToolResult.text(text ?: "（未找到该控件或无文本）")
-        },
-        McpTool(
-            name = "bounds_by_id",
-            description = "读取指定控件 id 在屏幕上的边界，返回 left,top,right,bottom（需无障碍）。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf("viewId" to McpSchemas.string("控件 id")),
-                required = listOf("viewId"),
-            ),
-            readOnly = true,
-        ) { args ->
-            val bounds = bundle.selectorApi.boundsById(args.getString("viewId"))
-            McpToolResult.text(bounds ?: "（未找到该控件）")
-        },
-        McpTool(
-            name = "exists_by_id",
-            description = "判断指定控件 id 是否存在（需无障碍）。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf("viewId" to McpSchemas.string("控件 id")),
-                required = listOf("viewId"),
-            ),
-            readOnly = true,
-        ) { args ->
-            McpToolResult.text(if (bundle.selectorApi.existsById(args.getString("viewId"))) "存在" else "不存在")
-        },
-    )
+    // ---- 异步结果查询（绕过设备队列，直接执行） ----
 
-    private fun selectorTool(
-        name: String,
-        description: String,
-        param: String,
-        paramDesc: String,
-        action: (JSONObject) -> Boolean,
-    ): McpTool = McpTool(
-        name = name,
-        description = "$description（需无障碍）",
+    private fun getResultTool(): McpTool = McpTool(
+        name = "get_result",
+        description = "查询一次异步操作的执行结果。当某次工具调用返回 {status:\"running\", request_id} " +
+            "时使用——这表示动作已提交但结果未知，请勿盲目重试。",
         inputSchema = McpSchemas.objectSchema(
-            mapOf(param to McpSchemas.string(paramDesc)),
-            required = listOf(param),
+            mapOf("request_id" to McpSchemas.string("异步操作的 request_id")),
+            required = listOf("request_id"),
         ),
-    ) { args -> ok(action(args), description) }
+        readOnly = true,
+        synchronous = true,
+    ) { args ->
+        val id = args.optString("request_id")
+        val op = operations.get(id)
+            ?: return@McpTool McpToolResult.text(
+                JSONObject().put("status", "not_found").put("request_id", id).toString(),
+            )
+        McpToolResult.text(operationJson(op))
+    }
 
-    // ---- 按键 / 手势 / 打开链接 ----
-
-    private fun inputExtraTools(): List<McpTool> = listOf(
-        McpTool(
-            name = "press_key",
-            description = "按下物理按键。key_code 为 Android KeyEvent 键码（如返回=4、回车=66、主页=3、音量+ =24）。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf("key_code" to McpSchemas.integer("Android KeyEvent 键码")),
-                required = listOf("key_code"),
-            ),
-        ) { args ->
-            ok(bundle.inputApi.press(args.getInt("key_code")), "按键 ${args.getInt("key_code")}")
-        },
-        McpTool(
-            name = "gesture",
-            description = "注入一条复杂手势轨迹（曲线 / 多段 / 按住停顿）。strokes 为笔画数组，每个点可写 [x,y] 或 [x,y,时间ms]。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf("strokes" to McpSchemas.gestureStrokes("手势轨迹，例如 [[[100,200],[300,400,120]]]")),
-                required = listOf("strokes"),
-            ),
-        ) { args ->
-            val raw = args.optJSONArray("strokes")?.toString() ?: "[]"
-            ok(bundle.inputApi.gestureRaw(raw), "手势")
-        },
-        McpTool(
-            name = "open_url",
-            description = "用系统默认方式打开一个链接。",
-            inputSchema = McpSchemas.objectSchema(
-                mapOf("url" to McpSchemas.string("要打开的 URL")),
-                required = listOf("url"),
-            ),
-        ) { args -> ok(bundle.appApi.openUrl(args.getString("url")), "打开链接") },
-    )
-
-    private fun batteryTool(): McpTool = McpTool(
-        name = "battery",
-        description = "读取当前电量百分比。",
+    private fun listOperationsTool(): McpTool = McpTool(
+        name = "list_operations",
+        description = "列出最近的异步操作及其状态（running / done / failed）。",
         inputSchema = McpSchemas.objectSchema(emptyMap()),
         readOnly = true,
+        synchronous = true,
     ) {
-        McpToolResult.text("电量 ${bundle.deviceApi.batteryLevel()}%")
+        val array = JSONArray()
+        operations.list().forEach { op ->
+            array.put(
+                JSONObject().apply {
+                    put("request_id", op.id)
+                    put("tool", op.tool)
+                    put("status", op.status.name.lowercase())
+                    put("elapsed_ms", op.elapsedMs)
+                },
+            )
+        }
+        McpToolResult.text(array.toString())
     }
+
+    private fun operationJson(op: OperationState): String = JSONObject().apply {
+        put("request_id", op.id)
+        put("tool", op.tool)
+        put("status", op.status.name.lowercase())
+        put("elapsed_ms", op.elapsedMs)
+        when (op.status) {
+            OperationStatus.DONE -> op.result?.let { put("result", it.toJson()) }
+            OperationStatus.FAILED -> put("error", op.error ?: "执行失败")
+            OperationStatus.RUNNING -> put("message", "仍在执行中，请稍后再查询")
+        }
+    }.toString()
 
     // ---- 脚本（受 allowScripts 控制） ----
 
@@ -296,20 +284,12 @@ class McpToolRegistry(
         },
     )
 
-    private fun ok(success: Boolean, action: String): McpToolResult =
-        if (success) {
-            McpToolResult.text("$action 成功")
-        } else {
-            McpToolResult.error("$action 失败（当前控制模式不支持或目标无效）")
-        }
-
     private companion object {
         val READ_ONLY_SHARED = setOf(
-            "ocr_screen",
+            "ocr",
             "ui_dump",
-            "find_text",
-            "current_app",
-            "device_info",
+            "find",
+            "info",
         )
     }
 }

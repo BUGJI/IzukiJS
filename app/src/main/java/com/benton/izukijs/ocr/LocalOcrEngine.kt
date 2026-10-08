@@ -31,6 +31,7 @@ class LocalOcrEngine {
                             y = rect?.centerY() ?: 0,
                             width = rect?.width() ?: 0,
                             height = rect?.height() ?: 0,
+                            confidence = element.confidence?.takeIf { it >= 0f }?.toDouble(),
                         ),
                     )
                 }

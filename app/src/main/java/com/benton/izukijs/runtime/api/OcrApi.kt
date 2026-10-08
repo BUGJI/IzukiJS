@@ -5,6 +5,8 @@ import android.graphics.BitmapFactory
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.LogBus
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * OCR 识别 API。挂在全局 `ocr` 命名空间，识别引擎（本地/在线）由设备配置决定。
@@ -34,6 +36,43 @@ class OcrApi(
             return null
         }
         return recognizeBitmap(path, bitmap)
+    }
+
+    /**
+     * 识别当前屏幕，返回结构化结果（JSON）：
+     * `{"text":"全文","blocks":[{"text","x","y","w","h","conf"}]}`。
+     * 坐标均为全分辨率屏幕像素（x/y 为包围盒中心），可直接用于点击。
+     */
+    @JavascriptInterface
+    fun recognizeBlocksJson(): String? {
+        val bitmap = screenshot() ?: run {
+            logBus.warn("OCR 识别失败：无法获取屏幕截图")
+            return null
+        }
+        val result = try {
+            ocrProcessor.recognize(bitmap)
+        } finally {
+            bitmap.recycle()
+        } ?: return null
+        val blocks = JSONArray()
+        result.blocks.forEach { block ->
+            blocks.put(
+                JSONObject().apply {
+                    put("text", block.text)
+                    put("x", block.x)
+                    put("y", block.y)
+                    put("w", block.width)
+                    put("h", block.height)
+                    block.confidence?.let { put("conf", it) }
+                },
+            )
+        }
+        val json = JSONObject().apply {
+            put("text", result.text)
+            put("blocks", blocks)
+        }
+        logBus.debug("OCR 结构化识别 → ${result.blocks.size} 块（${bitmap.width}×${bitmap.height}）")
+        return json.toString()
     }
 
     /** 查找包含指定文字的元素，返回 "x,y,width,height"（包围盒中心）。 */

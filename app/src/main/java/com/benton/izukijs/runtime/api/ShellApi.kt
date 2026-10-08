@@ -26,10 +26,10 @@ class ShellApi(
     fun exec(command: String): String? {
         val result = controllers.controllerFor(Capability.SHELL)?.shell(command)
         if (result == null) {
-            logBus.debug("shell.exec> $command → 无可用后端 ✗")
+            logBus.warn("🛡️ shell.exec> ${audit(command)} → 无可用后端 ✗")
             return null
         }
-        logBus.debug("shell.exec> $command (exit=${result.exitCode})")
+        logBus.info("🛡️ shell.exec> ${audit(command)} (exit=${result.exitCode})")
         return if (result.stdout.isNotBlank()) result.stdout else result.stderr
     }
 
@@ -37,10 +37,20 @@ class ShellApi(
     fun exitCode(command: String): Int {
         val result = controllers.controllerFor(Capability.SHELL)?.shell(command)
         if (result == null) {
-            logBus.debug("shell.exitCode> $command → 无可用后端 ✗")
+            logBus.warn("🛡️ shell.exitCode> ${audit(command)} → 无可用后端 ✗")
             return -1
         }
-        logBus.debug("shell.exitCode> $command (exit=${result.exitCode})")
+        logBus.info("🛡️ shell.exitCode> ${audit(command)} (exit=${result.exitCode})")
         return result.exitCode
+    }
+
+    /** 审计用：折叠空白并截断过长命令。 */
+    private fun audit(command: String): String {
+        val oneLine = command.replace(Regex("\\s+"), " ").trim()
+        return if (oneLine.length <= AUDIT_MAX_CHARS) oneLine else oneLine.take(AUDIT_MAX_CHARS) + "…"
+    }
+
+    private companion object {
+        const val AUDIT_MAX_CHARS = 200
     }
 }

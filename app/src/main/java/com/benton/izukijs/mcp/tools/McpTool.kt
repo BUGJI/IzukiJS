@@ -54,6 +54,8 @@ class McpTool(
     val description: String,
     val inputSchema: JSONObject,
     val readOnly: Boolean = false,
+    /** 是否绕过单线程设备队列、在请求线程直接执行（用于查询异步结果，避免被阻塞任务堵死）。 */
+    val synchronous: Boolean = false,
     private val handler: (JSONObject) -> McpToolResult,
 ) {
     fun call(arguments: JSONObject): McpToolResult =
@@ -106,6 +108,16 @@ object McpSchemas {
         .put("type", "array")
         .put("description", description)
         .put("items", JSONObject().put("type", "string"))
+
+    fun intArray(description: String): JSONObject = JSONObject()
+        .put("type", "array")
+        .put("description", description)
+        .put("items", JSONObject().put("type", "integer"))
+
+    fun enum(description: String, values: List<String>): JSONObject = JSONObject()
+        .put("type", "string")
+        .put("description", description)
+        .put("enum", JSONArray(values))
 
     /** 手势点数组：`[{x,y,t?}, ...]` 或简写 `[[x,y,t?], ...]`。 */
     fun gestureStrokes(description: String): JSONObject = JSONObject()
