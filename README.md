@@ -1,6 +1,6 @@
 # Izuki JS
 
-> zuki 源自日语「いづき」（居付き），意为“常驻、附着”。<br>
+> Izuki 源自日语「いづき」（居付き），意为“常驻、附着”。<br>
 > 在自动化脚本的语境下，它代表脚本像影子一样附着在系统之上，安静、持续、可靠地执行任务。<br>
 > 后缀 -js 表明它仍可以用 JavaScript 编写脚本，并且让同一份脚本更通用
 
@@ -8,6 +8,7 @@
 组合**无障碍 / Shizuku / Root / 蓝牙 HID** 多种控制后端驱动设备，内置找图找色、OCR 与 AI Agent 脱困能力。
 
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/BUGJI/IzukiJS?sort=semver&label=Release)](https://github.com/BUGJI/IzukiJS/releases)
 [![Platform](https://img.shields.io/badge/Platform-Android%2028%2B-green.svg)]()
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg)]()
 
@@ -25,9 +26,11 @@
   不支持时自动降级为提示词协议。
 - **MCP 服务器**：把设备读屏与控制能力以 Model Context Protocol 暴露给外部 AI 客户端
   （Claude Desktop / Cursor / Cline），支持局域网 / 仅本机监听、令牌鉴权与工具级开关。
-- **蓝牙 HID 注入**：通过外部 HID 硬件（如 ESP32 数位板狗）以真实硬件事件控制设备，最难被检测。
+- **蓝牙 HID 注入**：通过外部 HID 硬件（如 ESP32 数位板狗，固件见
+  [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)）以真实硬件事件控制设备，最难被检测。
 - **调试与工具**：布局分析器生成选择器代码、可拖动调试悬浮窗（布局 / OCR 坐标叠加）、
   悬浮控制条、定时任务、日志分文件存储与自动清理。
+- **中英双语界面**：内置简体中文与英文，跟随系统语言自动切换。
 - **配置备份**：AI / OCR / 控制 / 截图 / 日志 / 编辑器偏好一键导出导入，敏感密钥经 Android Keystore 加密。
   由于 Keystore 密钥无法跨设备迁移，系统级自动备份已排除含密文的配置；**换机请使用应用内导出 / 导入**。
 
@@ -41,16 +44,37 @@
 | 截图 | ✅(API30+) | ✅ | ✅ | ❌ |
 | Shell | ❌ | ✅ | ✅ | ❌ |
 
+> 「读控件树」中 Shizuku / Root 的 `△ dump` 指通过 `uiautomator dump` 获取控件树（约 1~2 秒、
+> 偶发失败），用于 AI Agent 读屏兜底；**脚本的 `selector.*` 仍只支持无障碍**。
+
 脚本内可用 `permissions.*` 查询就绪状态，详见 [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md)。
 
 ## 快速开始
 
-### 环境要求
+### 方式一：下载安装（推荐）
+
+从 [Releases](https://github.com/BUGJI/IzukiJS/releases/latest) 下载 APK，按设备架构选择其一：
+
+| 文件 | 适用设备 |
+|---|---|
+| `app-arm64-v8a-release.apk` | 绝大多数现代手机（首选） |
+| `app-armeabi-v7a-release.apk` | 较老的 32 位设备 |
+| `app-x86_64-release.apk` | 模拟器 / x86 平板 |
+
+安装时若提示「未知来源」，需在系统设置中允许该来源。本 App 会用到无障碍 / Shizuku / Root
+等较高权限，请只安装可信来源的包。
+
+> Release 包未配置正式签名时会回退为 debug 签名（见下方「构建」），仅用于分发验证；
+> 自行构建正式签名版请按下文配置 `keystore.properties`。
+
+### 方式二：从源码构建
+
+#### 环境要求
 
 - Android 9（API 28）及以上
 - 构建：JDK 17（运行 Gradle 所需；源码兼容级别为 Java 11）、Android SDK（`compileSdk 37`）
 
-### 构建
+#### 构建
 
 ```bash
 # 克隆
@@ -120,6 +144,7 @@ if (ai.available()) {
 | [`docs/TOOLS.md`](docs/TOOLS.md) | 工具与权限说明：控制模式、持续录屏、调试悬浮窗、定时任务、日志 |
 | [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | 蓝牙 HID 控制协议：GATT 服务、帧格式、坐标映射、连接流程 |
 | [`docs/MCP.md`](docs/MCP.md) | MCP 服务器：启用、客户端配置、工具与资源、安全说明 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录 |
 
 ## 项目结构
 
@@ -146,7 +171,7 @@ app/src/main/java/com/benton/izukijs/
 ## 技术栈
 
 - Kotlin 2.2.10 · Jetpack Compose（Material 3）· Navigation Compose
-- [QuickJS-Android](https://github.com/taoweiji/quickjs-android)（`io.github.taoweiji.quickjs`）
+- [QuickJS-Android](https://github.com/taoweiji/quickjs-android)（`com.github.hjhrq1991:quickjs-android`，采用 16KB 页大小兼容的修复分支，经 JitPack 分发）
 - [Shizuku](https://shizuku.rikka.app/) · OpenCV · MLKit 中文文字识别
 - Kotlin Coroutines · Timber
 
