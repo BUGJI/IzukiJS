@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.0.0)'
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # compileSdk 37 需要对应平台；build-tools 缺失时由 AGP 兜底。
+      - name: Install Android SDK platform
+        run: sdkmanager --install "platforms;android-37"
+        continue-on-error: true
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x ./gradlew
+
+      # 未提供 keystore.properties 时回退 debug 签名，仅用于分发验证。
+      - name: Build release APKs
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" app/build/outputs/apk/release/*.apk --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              app/build/outputs/apk/release/*.apk
+          fi
