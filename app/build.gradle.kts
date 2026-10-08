@@ -108,6 +108,7 @@ dependencies {
     implementation(libs.shizuku.provider)
     implementation(libs.opencv)
     implementation(libs.mlkit.text.recognition.chinese)
+    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.material)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

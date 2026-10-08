@@ -64,8 +64,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptSort
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.EmptyState
@@ -77,6 +79,7 @@ import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,6 +105,7 @@ fun ScriptsScreen(
     var renameName by remember { mutableStateOf("") }
     var exportTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var deleteTarget by remember { mutableStateOf<ScriptInfo?>(null) }
+    var pendingScanFile by remember { mutableStateOf<File?>(null) }
     var query by remember { mutableStateOf("") }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -167,6 +171,45 @@ fun ScriptsScreen(
         }
     }
 
+    val scanLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture(),
+    ) { success ->
+        val file = pendingScanFile
+        pendingScanFile = null
+        if (!success || file == null) {
+            file?.delete()
+            return@rememberLauncherForActivityResult
+        }
+        scope.launch {
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val result = container.scriptImporter.importFromImage(uri)
+            file.delete()
+            val message = when (result) {
+                is ScriptImporter.Result.Success -> {
+                    refresh()
+                    context.getString(R.string.scripts_scan_imported, result.name)
+                }
+                ScriptImporter.Result.NoQrCode -> context.getString(R.string.scripts_scan_no_code)
+                ScriptImporter.Result.InvalidLink -> context.getString(R.string.scripts_scan_invalid_link)
+                ScriptImporter.Result.DownloadFailed -> context.getString(R.string.scripts_scan_download_failed)
+            }
+            snackbar.show(message)
+        }
+    }
+
+    fun startScanImport() {
+        showOverflow = false
+        runCatching {
+            val dir = File(context.cacheDir, "captures").apply { mkdirs() }
+            val file = File.createTempFile("scan_", ".jpg", dir)
+            pendingScanFile = file
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            scanLauncher.launch(uri)
+        }.onFailure {
+            scope.launch { snackbar.show(context.getString(R.string.scripts_scan_failed)) }
+        }
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -189,6 +232,10 @@ fun ScriptsScreen(
                                     showOverflow = false
                                     importLauncher.launch(arrayOf("text/*", "application/javascript"))
                                 },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.scripts_scan_import)) },
+                                onClick = { startScanImport() },
                             )
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.scripts_schedule)) },
