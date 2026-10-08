@@ -5,7 +5,6 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -34,6 +33,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -139,15 +141,15 @@ class FloatingWindowService : android.app.Service() {
             setPadding(24, 12, 24, 12)
             background = GradientDrawable().apply {
                 cornerRadius = 32f
-                setColor(Color.parseColor("#EE1F1F1F"))
-                setStroke(1, Color.parseColor("#55FFFFFF"))
+                setColor(getColor(R.color.overlay_surface))
+                setStroke(1, getColor(R.color.overlay_stroke))
             }
             elevation = 8f
         }
 
         val status = TextView(this).apply {
-            text = "● 就绪"
-            setTextColor(Color.parseColor("#9E9E9E"))
+            text = getString(R.string.floating_status_ready)
+            setTextColor(getColor(R.color.overlay_text_muted))
             textSize = 14f
             setPadding(4, 8, 16, 8)
             maxLines = 1
@@ -156,7 +158,8 @@ class FloatingWindowService : android.app.Service() {
 
         val minimize = TextView(this).apply {
             text = "—"
-            setTextColor(Color.WHITE)
+            setTextColor(getColor(R.color.overlay_text_primary))
+            contentDescription = getString(R.string.floating_collapse)
             textSize = 18f
             setPadding(20, 8, 20, 8)
             setOnClickListener { setMinimized(!minimized) }
@@ -165,7 +168,8 @@ class FloatingWindowService : android.app.Service() {
 
         val stop = TextView(this).apply {
             text = "■"
-            setTextColor(Color.parseColor("#FF8A80"))
+            setTextColor(getColor(R.color.overlay_error))
+            contentDescription = getString(R.string.floating_stop)
             textSize = 14f
             setPadding(20, 8, 4, 8)
             setOnClickListener {
@@ -184,10 +188,10 @@ class FloatingWindowService : android.app.Service() {
         root.addView(header)
 
         val log = TextView(this).apply {
-            setTextColor(Color.parseColor("#E0E0E0"))
+            setTextColor(getColor(R.color.overlay_text_secondary))
             textSize = 11f
             typeface = Typeface.MONOSPACE
-            text = "等待脚本日志…"
+            text = getString(R.string.floating_waiting_log)
         }
         logView = log
 
@@ -238,7 +242,12 @@ class FloatingWindowService : android.app.Service() {
     private fun setMinimized(value: Boolean) {
         minimized = value
         bodyView?.visibility = if (value) View.GONE else View.VISIBLE
-        minimizeButton?.text = if (value) "▢" else "—"
+        minimizeButton?.apply {
+            text = if (value) "▢" else "—"
+            contentDescription = getString(
+                if (value) R.string.floating_expand else R.string.floating_collapse,
+            )
+        }
     }
 
     private fun observeState() {
@@ -248,11 +257,12 @@ class FloatingWindowService : android.app.Service() {
             }.collectLatest { (running, name) ->
                 val status = statusView ?: return@collectLatest
                 if (running) {
-                    status.text = name?.takeIf { it.isNotBlank() }?.let { "● $it" } ?: "● 运行中"
-                    status.setTextColor(Color.parseColor("#69F0AE"))
+                    status.text = name?.takeIf { it.isNotBlank() }?.let { "● $it" }
+                        ?: getString(R.string.floating_status_running)
+                    status.setTextColor(getColor(R.color.overlay_success))
                 } else {
-                    status.text = "● 就绪"
-                    status.setTextColor(Color.parseColor("#9E9E9E"))
+                    status.text = getString(R.string.floating_status_ready)
+                    status.setTextColor(getColor(R.color.overlay_text_muted))
                 }
             }
         }
@@ -299,18 +309,18 @@ class FloatingWindowService : android.app.Service() {
     }
 
     private fun colorOf(level: LogLevel): Int = when (level) {
-        LogLevel.DEBUG -> Color.parseColor("#9E9E9E")
-        LogLevel.INFO -> Color.parseColor("#E0E0E0")
-        LogLevel.SUCCESS -> Color.parseColor("#69F0AE")
-        LogLevel.WARN -> Color.parseColor("#FFD54F")
-        LogLevel.ERROR -> Color.parseColor("#FF8A80")
+        LogLevel.DEBUG -> getColor(R.color.overlay_text_muted)
+        LogLevel.INFO -> getColor(R.color.overlay_text_secondary)
+        LogLevel.SUCCESS -> getColor(R.color.overlay_success)
+        LogLevel.WARN -> getColor(R.color.overlay_warning)
+        LogLevel.ERROR -> getColor(R.color.overlay_error)
     }
 
     private fun startForegroundInternal() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_script)
-            .setContentTitle("Izuki JS 悬浮窗")
-            .setContentText("运行日志正在显示")
+            .setContentTitle(getString(R.string.notif_floating_title))
+            .setContentText(getString(R.string.notif_floating_text))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -330,7 +340,7 @@ class FloatingWindowService : android.app.Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "悬浮窗日志",
+                getString(R.string.notif_floating_channel),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )
@@ -345,9 +355,17 @@ class FloatingWindowService : android.app.Service() {
         private const val ACTION_START = "com.benton.izukijs.action.SHOW_FLOATING"
         private const val ACTION_SCRIPT_FINISHED = "com.benton.izukijs.action.SCRIPT_FINISHED"
 
+        private val _active = MutableStateFlow(false)
+
+        /** 服务运行状态的响应式订阅，供「权限与能力」页同步开关。 */
+        val active: StateFlow<Boolean> = _active.asStateFlow()
+
         @Volatile
         var isActive: Boolean = false
-            private set
+            private set(value) {
+                field = value
+                _active.value = value
+            }
 
         /** 手动开启悬浮窗。[pinned] 为 true 时常驻，脚本结束后不自动关闭。 */
         fun start(context: Context, pinned: Boolean = false) {

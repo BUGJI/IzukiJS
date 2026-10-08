@@ -70,8 +70,8 @@ class InputApi(
      * 复杂手势轨迹（曲线 / 多段 / 多指 / 按住停顿）。
      *
      * QuickJS 无法直接传对象数组，prelude 中把 JS 数组 `JSON.stringify` 后经 [gestureRaw] 传入。
-     * 无障碍后端支持带时间戳的完整轨迹；Shizuku / Root / HID 无法表达曲线与停顿，
-     * 会降级为逐段 [DeviceController.swipe]（同点段等价于长按）。
+     * 无障碍与 v2 及以上固件的蓝牙 HID 支持带时间戳的完整轨迹；Shizuku / Root 无法表达
+     * 曲线与停顿，会降级为逐段 [DeviceController.swipe]（同点段等价于长按）。
      */
     @JavascriptInterface
     fun gestureRaw(strokesJson: String): Boolean {

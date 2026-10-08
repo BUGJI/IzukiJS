@@ -195,31 +195,39 @@ class OnlineOcrEngine(
 
     // ---- HTTP ----
 
-    private fun httpPost(url: String, contentType: String, body: ByteArray): String? = try {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
-            connectTimeout = 15_000
-            readTimeout = 20_000
-            setRequestProperty("Content-Type", contentType)
-            if (config.headerName.isNotBlank()) {
-                setRequestProperty(config.headerName, config.headerValue)
+    private fun httpPost(url: String, contentType: String, body: ByteArray): String? {
+        return try {
+            val parsed = URL(url)
+            val scheme = parsed.protocol.lowercase()
+            if (scheme != "http" && scheme != "https") {
+                logBus.warn("在线 OCR 地址协议「$scheme」不受支持，请使用 http:// 或 https://")
+                return null
             }
-        }
-        connection.outputStream.use { it.write(body) }
-        val code = connection.responseCode
-        val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-        val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        connection.disconnect()
-        if (code in 200..299) {
-            responseBody
-        } else {
-            logBus.warn("OCR HTTP $code: ${responseBody.take(200)}")
+            val connection = (parsed.openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 15_000
+                readTimeout = 20_000
+                setRequestProperty("Content-Type", contentType)
+                if (config.headerName.isNotBlank()) {
+                    setRequestProperty(config.headerName, config.headerValue)
+                }
+            }
+            connection.outputStream.use { it.write(body) }
+            val code = connection.responseCode
+            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+            val responseBody = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            connection.disconnect()
+            if (code in 200..299) {
+                responseBody
+            } else {
+                logBus.warn("OCR HTTP $code: ${responseBody.take(200)}")
+                null
+            }
+        } catch (t: Throwable) {
+            logBus.error("在线 OCR 请求失败: ${t.message}")
             null
         }
-    } catch (t: Throwable) {
-        logBus.error("在线 OCR 请求失败: ${t.message}")
-        null
     }
 
     /** 进程内缓存百度 access_token，避免每次识别都发起一次额外的鉴权请求。 */

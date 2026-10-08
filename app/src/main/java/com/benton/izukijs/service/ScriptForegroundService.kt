@@ -29,7 +29,7 @@ class ScriptForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val name = intent.getStringExtra(EXTRA_SCRIPT_NAME).orEmpty().ifBlank { "脚本" }
+                val name = intent.getStringExtra(EXTRA_SCRIPT_NAME).orEmpty().ifBlank { getString(R.string.nav_scripts) }
                 startForegroundInternal(name)
             }
 
@@ -69,12 +69,12 @@ class ScriptForegroundService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_script)
-            .setContentTitle("Izuki JS 正在运行")
+            .setContentTitle(getString(R.string.notif_script_title))
             .setContentText(scriptName)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(0, "停止", stopIntent)
+            .addAction(0, getString(R.string.common_stop), stopIntent)
             .build()
     }
 
@@ -82,10 +82,10 @@ class ScriptForegroundService : Service() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "脚本运行",
+            getString(R.string.notif_script_channel),
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "脚本运行期间常驻通知"
+            description = getString(R.string.notif_script_channel_desc)
         }
         manager.createNotificationChannel(channel)
     }

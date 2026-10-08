@@ -67,26 +67,26 @@ class ScriptExecutionManager(
         FloatingWindowService.showForRun(appContext)
 
         job = scope.launch {
-            val jsEngine = JsEngine(
-                appContext,
-                controllers,
-                screenCapture,
-                ocrProcessor,
-                logBus,
-                aiConfigRepository,
-                captureSettingsRepository,
-                scriptEnv,
-                moduleSourceProvider,
-            )
-            engine = jsEngine
+            var jsEngine: JsEngine? = null
             var failure: Throwable? = null
             try {
+                jsEngine = JsEngine(
+                    appContext,
+                    controllers,
+                    screenCapture,
+                    ocrProcessor,
+                    logBus,
+                    aiConfigRepository,
+                    captureSettingsRepository,
+                    scriptEnv,
+                    moduleSourceProvider,
+                ).also { engine = it }
                 jsEngine.execute(source, scriptName)
             } catch (t: Throwable) {
                 failure = t
             } finally {
-                val exited = jsEngine.exitRequested || isExitThrowable(failure)
-                runCatching { jsEngine.close() }
+                val exited = jsEngine?.exitRequested == true || isExitThrowable(failure)
+                jsEngine?.let { runCatching { it.close() } }
                 engine = null
                 when {
                     exited -> logBus.success("■ 脚本已退出")

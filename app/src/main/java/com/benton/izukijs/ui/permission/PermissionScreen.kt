@@ -15,15 +15,12 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -47,13 +44,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.service.DebugOverlayService
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.IzukiAccessibilityService
 import com.benton.izukijs.service.ScreenCaptureService
+import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.rememberAppContainer
@@ -82,8 +82,8 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     val rootReady = ControlMode.ROOT in readyModes
     val hidReady = ControlMode.HID in readyModes
 
-    var floatingEnabled by remember { mutableStateOf(FloatingWindowService.isActive) }
-    var debugOverlayEnabled by remember { mutableStateOf(DebugOverlayService.isActive) }
+    val floatingEnabled by FloatingWindowService.active.collectAsStateWithLifecycle()
+    val debugOverlayEnabled by DebugOverlayService.active.collectAsStateWithLifecycle()
     var canDrawOverlays by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
 
     var pendingGrant by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -126,27 +126,21 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("权限与能力") },
+                title = { Text(stringResource(R.string.run_permissions_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { shizukuManager.refresh() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
                     }
                 },
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
+        PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -154,7 +148,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                 ),
             ) {
                 Text(
-                    "提示：脚本运行时可以收回非必要权限，以降低被风控识别的风险。按标注的优缺点选择当前脚本真正需要的权限即可。",
+                    stringResource(R.string.perm_tip),
                     modifier = Modifier.padding(16.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -163,16 +157,18 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             Spacer(Modifier.height(16.dp))
 
             AuxiliaryCard(
-                title = "屏幕捕获",
-                status = if (screenCaptureActive) "录制中" else "未开启",
-                ready = screenCaptureActive,
-                description = "授权一次后持续录屏，为截图 / 找图 / OCR 提供无限屏幕帧。",
-                dimensions = listOf(
-                    Dimension("精准度", "高", Rating.GOOD),
-                    Dimension("风控", "低", Rating.GOOD),
-                    Dimension("授权", "简单", Rating.GOOD),
+                title = stringResource(R.string.perm_screen_capture),
+                status = stringResource(
+                    if (screenCaptureActive) R.string.perm_status_recording else R.string.perm_status_off,
                 ),
-                tip = "建议配合 蓝牙 HID / 无障碍 / Shizuku 等控制权限，形成「看屏 + 操作」闭环。",
+                ready = screenCaptureActive,
+                description = stringResource(R.string.perm_capture_desc),
+                dimensions = listOf(
+                    Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+                ),
+                tip = stringResource(R.string.perm_capture_tip),
                 action = {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
@@ -186,12 +182,18 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                                 }
                             },
                             enabled = !screenCaptureActive,
-                        ) { Text(if (screenCaptureActive) "录制中" else "授权并开始") }
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (screenCaptureActive) R.string.perm_status_recording else R.string.perm_action_authorize_start,
+                                ),
+                            )
+                        }
                         if (screenCaptureActive) {
                             OutlinedButton(onClick = {
                                 ScreenCaptureService.stop(context)
                                 container.screenCapture.stop()
-                            }) { Text("停止录制") }
+                            }) { Text(stringResource(R.string.perm_action_stop_recording)) }
                         }
                     }
                 },
@@ -199,20 +201,26 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             CapabilityCard(
-                title = "蓝牙 HID",
-                status = if (hidReady) "已就绪" else "未就绪",
+                title = stringResource(R.string.control_hid),
+                status = stringResource(if (hidReady) R.string.common_ready else R.string.common_not_ready),
                 ready = hidReady,
-                description = "通过外部 HID 硬件（数位板狗）以绝对坐标注入输入，等同真实硬件。",
+                description = stringResource(R.string.perm_hid_desc),
                 dimensions = listOf(
-                    Dimension("精准度", "高", Rating.GOOD),
-                    Dimension("风控", "极低", Rating.GOOD),
-                    Dimension("授权", "中", Rating.WARN),
+                    Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_very_low), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_medium), Rating.WARN),
                 ),
-                pros = listOf("等同真实硬件事件，最难被检测", "绝对坐标，点击 / 滑动精准"),
-                cons = listOf("需外部 HID 硬件，便携性受限", "不支持截图与控件树"),
+                pros = listOf(
+                    stringResource(R.string.perm_hid_pro_1),
+                    stringResource(R.string.perm_hid_pro_2),
+                ),
+                cons = listOf(
+                    stringResource(R.string.perm_hid_con_1),
+                    stringResource(R.string.perm_hid_con_2),
+                ),
                 action = {
                     CapabilityActions(
-                        actionLabel = if (hidReady) "已就绪" else "去连接",
+                        actionLabel = stringResource(if (hidReady) R.string.common_ready else R.string.perm_action_connect),
                         onAction = onOpenHid,
                         onRevoke = if (hidReady) {
                             ({ container.hidManager.revoke() })
@@ -225,20 +233,28 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             CapabilityCard(
-                title = "无障碍",
-                status = if (accessibilityReady) "已就绪" else "未就绪",
+                title = stringResource(R.string.control_accessibility),
+                status = stringResource(if (accessibilityReady) R.string.common_ready else R.string.common_not_ready),
                 ready = accessibilityReady,
-                description = "通过无障碍服务注入手势、读取控件树。无需额外安装，兼容性最好。",
+                description = stringResource(R.string.perm_accessibility_desc),
                 dimensions = listOf(
-                    Dimension("精准度", "高", Rating.GOOD),
-                    Dimension("风控", "中", Rating.WARN),
-                    Dimension("授权", "简单", Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+                    Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
                 ),
-                pros = listOf("无需额外安装，开箱即用", "可读控件树，选择器定位精准"),
-                cons = listOf("较易被风控识别", "API30 以下无法截图；键盘 / 文本能力有限"),
+                pros = listOf(
+                    stringResource(R.string.perm_accessibility_pro_1),
+                    stringResource(R.string.perm_accessibility_pro_2),
+                ),
+                cons = listOf(
+                    stringResource(R.string.perm_accessibility_con_1),
+                    stringResource(R.string.perm_accessibility_con_2),
+                ),
                 action = {
                     CapabilityActions(
-                        actionLabel = if (accessibilityReady) "已开启" else "去开启",
+                        actionLabel = stringResource(
+                            if (accessibilityReady) R.string.perm_status_on else R.string.perm_action_open,
+                        ),
                         onAction = if (accessibilityReady) {
                             null
                         } else {
@@ -262,28 +278,38 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             CapabilityCard(
-                title = "Shizuku",
-                status = when {
-                    shizukuReady -> "已就绪"
-                    !shizukuRunning -> "未运行服务"
-                    else -> "未就绪"
-                },
-                ready = shizukuReady,
-                description = "通过 Shizuku 以 ADB 权限注入输入、截图、执行 Shell。功能最强。",
-                dimensions = listOf(
-                    Dimension("精准度", "高", Rating.GOOD),
-                    Dimension("风控", "中", Rating.WARN),
-                    Dimension("授权", "复杂", Rating.BAD),
+                title = stringResource(R.string.control_shizuku),
+                status = stringResource(
+                    when {
+                        shizukuReady -> R.string.common_ready
+                        !shizukuRunning -> R.string.perm_status_service_stopped
+                        else -> R.string.common_not_ready
+                    },
                 ),
-                pros = listOf("功能最全：手势 / 按键 / 文本 / 截图 / Shell", "无需 Root 即可获得高权限能力"),
-                cons = listOf("需安装并常驻 Shizuku，重启后需重新启动服务", "连接断开即失效"),
+                ready = shizukuReady,
+                description = stringResource(R.string.perm_shizuku_desc),
+                dimensions = listOf(
+                    Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+                    Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_complex), Rating.BAD),
+                ),
+                pros = listOf(
+                    stringResource(R.string.perm_shizuku_pro_1),
+                    stringResource(R.string.perm_shizuku_pro_2),
+                ),
+                cons = listOf(
+                    stringResource(R.string.perm_shizuku_con_1),
+                    stringResource(R.string.perm_shizuku_con_2),
+                ),
                 action = {
                     CapabilityActions(
-                        actionLabel = when {
-                            shizukuReady -> "已授权"
-                            !shizukuRunning -> "未运行 Shizuku"
-                            else -> "去授权"
-                        },
+                        actionLabel = stringResource(
+                            when {
+                                shizukuReady -> R.string.perm_status_authorized
+                                !shizukuRunning -> R.string.perm_action_shizuku_not_running
+                                else -> R.string.perm_action_authorize
+                            },
+                        ),
                         onAction = if (shizukuReady || !shizukuRunning) {
                             null
                         } else {
@@ -296,20 +322,28 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             CapabilityCard(
-                title = "Root",
-                status = if (rootReady) "已就绪" else "未就绪",
+                title = stringResource(R.string.control_root),
+                status = stringResource(if (rootReady) R.string.common_ready else R.string.common_not_ready),
                 ready = rootReady,
-                description = "通过 Root 权限直接调用系统能力，与 Shizuku 能力相近。",
+                description = stringResource(R.string.perm_root_desc),
                 dimensions = listOf(
-                    Dimension("精准度", "高", Rating.GOOD),
-                    Dimension("风控", "高", Rating.BAD),
-                    Dimension("授权", "复杂", Rating.BAD),
+                    Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_high), Rating.BAD),
+                    Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_complex), Rating.BAD),
                 ),
-                pros = listOf("最高权限，能力与 Shizuku 相当", "可直接执行 Shell 与系统级操作"),
-                cons = listOf("需设备已 Root，门槛高", "权限过高，风控与安全风险最大"),
+                pros = listOf(
+                    stringResource(R.string.perm_root_pro_1),
+                    stringResource(R.string.perm_root_pro_2),
+                ),
+                cons = listOf(
+                    stringResource(R.string.perm_root_con_1),
+                    stringResource(R.string.perm_root_con_2),
+                ),
                 action = {
                     CapabilityActions(
-                        actionLabel = if (rootReady) "已就绪" else "检测 Root",
+                        actionLabel = stringResource(
+                            if (rootReady) R.string.common_ready else R.string.perm_action_detect_root,
+                        ),
                         onAction = if (rootReady) null else ({ rootManager.refresh() }),
                         onRevoke = if (rootReady) ({ rootManager.revoke() }) else null,
                     )
@@ -318,51 +352,45 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             Spacer(Modifier.height(12.dp))
 
             AuxiliaryCard(
-                title = "悬浮窗",
-                status = if (floatingEnabled || debugOverlayEnabled) "已开启" else "未开启",
-                ready = floatingEnabled || debugOverlayEnabled,
-                description = "以悬浮窗显示控制条与调试面板，方便随时运行脚本、可视化控件树与 OCR 坐标。",
-                dimensions = listOf(
-                    Dimension("风控", "低", Rating.GOOD),
-                    Dimension("授权", "简单", Rating.GOOD),
+                title = stringResource(R.string.perm_floating_title),
+                status = stringResource(
+                    if (floatingEnabled || debugOverlayEnabled) R.string.perm_status_on else R.string.perm_status_off,
                 ),
-                tip = "建议配合任意控制权限使用，便于运行脚本与调试。",
+                ready = floatingEnabled || debugOverlayEnabled,
+                description = stringResource(R.string.perm_floating_desc),
+                dimensions = listOf(
+                    Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                    Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+                ),
+                tip = stringResource(R.string.perm_floating_tip),
                 action = {
                     Column {
                         SwitchRow(
-                            label = "显示悬浮控制条",
+                            label = stringResource(R.string.perm_floating_control),
                             checked = floatingEnabled,
                         ) { checked ->
                             if (checked) {
-                                withOverlay {
-                                    FloatingWindowService.start(context, pinned = true)
-                                    floatingEnabled = true
-                                }
+                                withOverlay { FloatingWindowService.start(context, pinned = true) }
                             } else {
                                 FloatingWindowService.stop(context)
-                                floatingEnabled = false
                             }
                         }
                         Spacer(Modifier.height(12.dp))
                         SwitchRow(
-                            label = "显示布局 / OCR 调试面板",
+                            label = stringResource(R.string.perm_floating_debug),
                             checked = debugOverlayEnabled,
-                            description = "抓取布局 / OCR 时会自动隐藏，避免被截入画面。",
+                            description = stringResource(R.string.perm_floating_debug_desc),
                         ) { checked ->
                             if (checked) {
-                                withOverlay {
-                                    DebugOverlayService.start(context)
-                                    debugOverlayEnabled = true
-                                }
+                                withOverlay { DebugOverlayService.start(context) }
                             } else {
                                 DebugOverlayService.stop(context)
-                                debugOverlayEnabled = false
                             }
                         }
                         if (!canDrawOverlays) {
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "需要在系统设置中授予「显示在其他应用上层」权限。",
+                                stringResource(R.string.perm_overlay_needed),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -523,7 +551,7 @@ private fun CapabilityActions(
         }
         if (onRevoke != null) {
             OutlinedButton(onClick = { onRevoke.invoke() }) {
-                Text("撤销权限")
+                Text(stringResource(R.string.perm_action_revoke))
             }
         }
     }

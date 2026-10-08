@@ -3,8 +3,6 @@ package com.benton.izukijs.ui.console
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.FilterChip
@@ -40,15 +37,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.benton.izukijs.R
 import com.benton.izukijs.runtime.LogEntry
 import com.benton.izukijs.runtime.LogLevel
+import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.displayColor
-import com.benton.izukijs.ui.common.displayName
 import com.benton.izukijs.ui.common.formatLogTime
+import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.common.shortTag
 import kotlinx.coroutines.launch
 
@@ -92,7 +92,7 @@ fun ConsolePanel(
         if (visible.isEmpty()) return
         val text = visible.joinToString("\n") { it.toLine(showTimestamp) }
         val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-        manager.setPrimaryClip(ClipData.newPlainText("log", text))
+        manager.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.nav_logs), text))
     }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -101,13 +101,18 @@ fun ConsolePanel(
                 modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("控制台", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.editor_console), style = MaterialTheme.typography.titleSmall)
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) { Text("复制") }
-                TextButton(onClick = onClear) { Text("清空") }
+                TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) {
+                    Text(stringResource(R.string.common_copy))
+                }
+                TextButton(onClick = onClear) { Text(stringResource(R.string.common_clear)) }
                 if (onCollapse != null) {
                     IconButton(onClick = onCollapse) {
-                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "收起控制台")
+                        Icon(
+                            Icons.Filled.KeyboardArrowDown,
+                            contentDescription = stringResource(R.string.editor_collapse_console),
+                        )
                     }
                 }
             }
@@ -117,20 +122,15 @@ fun ConsolePanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) { Text("复制") }
-                TextButton(onClick = onClear) { Text("清空") }
+                TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) {
+                    Text(stringResource(R.string.common_copy))
+                }
+                TextButton(onClick = onClear) { Text(stringResource(R.string.common_clear)) }
             }
         }
 
         if (showFilter) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            ChipFlow(modifier = Modifier.padding(horizontal = 12.dp)) {
                 LogLevel.entries.forEach { level ->
                     FilterChip(
                         selected = level in enabledLevels,
@@ -141,7 +141,7 @@ fun ConsolePanel(
                                 enabledLevels + level
                             }
                         },
-                        label = { Text(level.displayName()) },
+                        label = { Text(level.localizedName()) },
                     )
                 }
             }
@@ -149,8 +149,8 @@ fun ConsolePanel(
 
         HorizontalDivider()
         when {
-            entries.isEmpty() -> EmptyState("暂无输出")
-            visible.isEmpty() -> EmptyState("当前筛选下没有日志")
+            entries.isEmpty() -> EmptyState(stringResource(R.string.console_empty))
+            visible.isEmpty() -> EmptyState(stringResource(R.string.console_filtered_empty))
             else -> Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = listState,
@@ -181,7 +181,7 @@ fun ConsolePanel(
                         ) {
                             Icon(
                                 Icons.Filled.KeyboardArrowDown,
-                                contentDescription = "回到最新",
+                                contentDescription = stringResource(R.string.console_back_to_latest),
                                 modifier = Modifier.size(18.dp),
                             )
                             if (unread > 0) {

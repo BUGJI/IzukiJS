@@ -1,0 +1,372 @@
+<resources>
+    <string name="app_name">Izuki JS</string>
+    <string name="accessibility_service_description">When enabled, Izuki JS can inject gestures and read the on-screen node tree to run automation scripts.</string>
+    <string name="accessibility_service_summary">Izuki JS automation control service</string>
+
+    <!-- Common -->
+    <string name="common_back">Back</string>
+    <string name="common_refresh">Refresh</string>
+    <string name="common_more">More</string>
+    <string name="common_confirm">OK</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_run">Run</string>
+    <string name="common_stop">Stop</string>
+    <string name="common_copy">Copy</string>
+    <string name="common_clear">Clear</string>
+    <string name="common_export">Export</string>
+    <string name="common_show">Show</string>
+    <string name="common_hide">Hide</string>
+    <string name="common_ready">Ready</string>
+    <string name="common_not_ready">Not ready</string>
+    <string name="common_auto">Auto</string>
+    <string name="common_on">on</string>
+    <string name="common_off">off</string>
+
+    <!-- Navigation -->
+    <string name="nav_run">Run</string>
+    <string name="nav_scripts">Scripts</string>
+    <string name="nav_logs">Logs</string>
+    <string name="nav_settings">Settings</string>
+
+    <!-- Language -->
+    <string name="settings_language">Language</string>
+    <string name="settings_language_desc">Choose the interface language; the UI refreshes immediately.</string>
+    <string name="language_system">System default</string>
+    <string name="language_chinese">中文</string>
+    <string name="language_english">English</string>
+
+    <!-- Control modes / capabilities / OCR providers -->
+    <string name="control_accessibility">Accessibility</string>
+    <string name="control_shizuku">Shizuku</string>
+    <string name="control_hid">Bluetooth HID</string>
+    <string name="control_root">Root</string>
+
+    <string name="capability_gesture">Gesture</string>
+    <string name="capability_absolute_pointer">Absolute pointer</string>
+    <string name="capability_relative_pointer">Relative pointer</string>
+    <string name="capability_key">Key</string>
+    <string name="capability_text">Text input</string>
+    <string name="capability_screenshot">Screenshot</string>
+    <string name="capability_node_tree">Node tree</string>
+    <string name="capability_shell">Shell</string>
+    <string name="capability_global_action">Global action</string>
+    <string name="capability_root">Root</string>
+
+    <string name="ocr_provider_baidu">Baidu OCR</string>
+    <string name="ocr_provider_google">Google Vision</string>
+    <string name="ocr_provider_custom">Custom</string>
+
+    <!-- Log levels -->
+    <string name="log_level_debug">Debug</string>
+    <string name="log_level_info">Info</string>
+    <string name="log_level_success">Success</string>
+    <string name="log_level_warn">Warning</string>
+    <string name="log_level_error">Error</string>
+    <string name="log_level_all">All</string>
+
+    <!-- Run screen -->
+    <string name="run_status_title">Run status</string>
+    <string name="run_running">Running</string>
+    <string name="run_idle">No script running</string>
+    <string name="run_recent">Run latest script</string>
+    <string name="run_no_scripts">No scripts yet, create one in Scripts</string>
+    <string name="run_permissions_title">Permissions &amp; capabilities</string>
+    <string name="run_configure">Configure</string>
+    <string name="run_capture_recording">Screen capture: recording</string>
+    <string name="run_capture_off">Screen capture: off</string>
+    <string name="run_mode_disabled">Disabled</string>
+
+    <!-- Scripts -->
+    <string name="scripts_title">Scripts</string>
+    <string name="scripts_inspector">Layout inspector</string>
+    <string name="scripts_import">Import script</string>
+    <string name="scripts_schedule">Scheduled tasks</string>
+    <string name="scripts_new">New script</string>
+    <string name="scripts_search">Search scripts</string>
+    <string name="scripts_empty">No scripts yet. Tap + in the corner to create one.</string>
+    <string name="scripts_no_match">No scripts match \"%1$s\"</string>
+    <string name="scripts_name">Name</string>
+    <string name="scripts_create">Create</string>
+    <string name="scripts_rename">Rename</string>
+    <string name="scripts_delete_title">Delete script</string>
+    <string name="scripts_delete_message">Delete \"%1$s\"? This cannot be undone.</string>
+    <string name="scripts_exported">Exported %1$s</string>
+    <string name="scripts_export_failed">Export failed</string>
+    <string name="scripts_imported">Imported %1$s</string>
+    <string name="scripts_import_failed">Import failed</string>
+
+    <!-- Permissions -->
+    <string name="perm_tip">Tip: you can revoke unnecessary permissions while a script runs to lower the risk of detection. Pick the permissions your current script actually needs based on the pros and cons below.</string>
+    <string name="perm_screen_capture">Screen capture</string>
+    <string name="perm_status_recording">Recording</string>
+    <string name="perm_status_off">Off</string>
+    <string name="perm_status_on">On</string>
+    <string name="perm_status_service_stopped">Service not running</string>
+    <string name="perm_status_authorized">Authorized</string>
+    <string name="perm_capture_desc">Authorize once to record continuously, providing unlimited frames for screenshot / image matching / OCR.</string>
+    <string name="perm_capture_tip">Recommended together with Bluetooth HID / Accessibility / Shizuku to close the see-and-act loop.</string>
+    <string name="perm_action_authorize_start">Authorize and start</string>
+    <string name="perm_action_stop_recording">Stop recording</string>
+    <string name="perm_hid_desc">Inject input with absolute coordinates through external HID hardware (tablet dongle), identical to real hardware.</string>
+    <string name="perm_hid_pro_1">Identical to real hardware events, hardest to detect</string>
+    <string name="perm_hid_pro_2">Absolute coordinates, precise taps and swipes</string>
+    <string name="perm_hid_con_1">Requires external HID hardware, less portable</string>
+    <string name="perm_hid_con_2">No screenshot or node tree support</string>
+    <string name="perm_action_connect">Connect</string>
+    <string name="perm_accessibility_desc">Inject gestures and read the node tree through the accessibility service. No extra install, best compatibility.</string>
+    <string name="perm_accessibility_pro_1">No extra install, works out of the box</string>
+    <string name="perm_accessibility_pro_2">Reads the node tree for precise selector targeting</string>
+    <string name="perm_accessibility_con_1">Easier to detect by risk control</string>
+    <string name="perm_accessibility_con_2">No screenshot below API 30; limited key / text input</string>
+    <string name="perm_action_open">Enable</string>
+    <string name="perm_shizuku_desc">Inject input, take screenshots and run Shell with ADB privileges through Shizuku. Most capable.</string>
+    <string name="perm_shizuku_pro_1">Most complete: gesture / key / text / screenshot / Shell</string>
+    <string name="perm_shizuku_pro_2">High privileges without Root</string>
+    <string name="perm_shizuku_con_1">Requires Shizuku running; restart after reboot</string>
+    <string name="perm_shizuku_con_2">Stops working when disconnected</string>
+    <string name="perm_action_shizuku_not_running">Shizuku not running</string>
+    <string name="perm_action_authorize">Authorize</string>
+    <string name="perm_root_desc">Call system capabilities directly with Root privileges, similar in power to Shizuku.</string>
+    <string name="perm_root_pro_1">Highest privileges, comparable to Shizuku</string>
+    <string name="perm_root_pro_2">Run Shell and system-level operations directly</string>
+    <string name="perm_root_con_1">Device must be rooted, high barrier</string>
+    <string name="perm_root_con_2">Excessive privileges, greatest risk</string>
+    <string name="perm_action_detect_root">Detect Root</string>
+    <string name="perm_action_revoke">Revoke</string>
+    <string name="perm_floating_title">Floating window</string>
+    <string name="perm_floating_desc">Show the control bar and debug panel as floating windows to run scripts anytime and visualize the node tree and OCR coordinates.</string>
+    <string name="perm_floating_tip">Recommended with any control permission to run and debug scripts easily.</string>
+    <string name="perm_floating_control">Show floating control bar</string>
+    <string name="perm_floating_debug">Show layout / OCR debug panel</string>
+    <string name="perm_floating_debug_desc">Automatically hides while capturing layout / OCR so it is not captured on screen.</string>
+    <string name="perm_overlay_needed">Grant the \"Display over other apps\" permission in system settings.</string>
+
+    <string name="dim_accuracy">Accuracy</string>
+    <string name="dim_risk">Risk</string>
+    <string name="dim_auth">Setup</string>
+    <string name="rating_high">High</string>
+    <string name="rating_very_low">Very low</string>
+    <string name="rating_low">Low</string>
+    <string name="rating_medium">Medium</string>
+    <string name="rating_easy">Easy</string>
+    <string name="rating_complex">Complex</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_control">Control &amp; vision</string>
+    <string name="settings_editor">Editor</string>
+    <string name="settings_ai_agent">AI Agent</string>
+    <string name="settings_storage">Storage &amp; logs</string>
+    <string name="settings_backup">Backup &amp; restore</string>
+    <string name="settings_about">About</string>
+    <string name="settings_unknown_category">Unknown settings category.</string>
+    <string name="settings_control_summary">Priority %1$s · capture %2$s · OCR %3$s</string>
+    <string name="settings_editor_summary">Font %1$d · autosave %2$s</string>
+    <string name="settings_ai_configured">Configured</string>
+    <string name="settings_ai_not_configured">Not configured</string>
+    <string name="settings_storage_summary">%1$d MB · keep %2$d days</string>
+    <string name="settings_backup_summary">Export / Import / Reset</string>
+    <string name="settings_local">Local</string>
+    <string name="settings_online">Online</string>
+    <string name="settings_version_short">v%1$s</string>
+
+    <!-- Control & vision -->
+    <string name="ctrl_priority_title">Control mode priority</string>
+    <string name="ctrl_priority_desc">When a capability has multiple available backends, prefer the selected mode.</string>
+    <string name="ctrl_cap_priority_title">Priority per capability</string>
+    <string name="ctrl_cap_priority_desc">Assign a backend per capability; unassigned capabilities follow the global setting above. Only items with at least two available backends are listed.</string>
+    <string name="ctrl_follow_global">Follow global</string>
+    <string name="ctrl_backends_title">Control backends</string>
+    <string name="ctrl_backends_desc">When disabled, the backend no longer participates in capability negotiation; existing connections (such as the accessibility service or Shizuku) are unaffected.</string>
+    <string name="capture_compress_title">Screenshot compression</string>
+    <string name="capture_compress_desc">Affects the file size of saved screenshots and the upload traffic of online OCR; image matching, color finding and local recognition still use full resolution, so coordinates are unaffected.</string>
+    <string name="capture_scale">Scale</string>
+    <string name="capture_jpeg_quality">JPEG quality</string>
+    <string name="ocr_section_title">OCR</string>
+    <string name="ocr_section_desc">Low-end devices can switch to online recognition to save local compute; online failures fall back to local automatically.</string>
+    <string name="ocr_local_mlkit">Local (MLKit)</string>
+    <string name="ocr_online">Online</string>
+    <string name="ocr_provider_label">Provider</string>
+    <string name="ocr_api_key">API Key</string>
+    <string name="ocr_secret_key">Secret Key</string>
+    <string name="ocr_endpoint">Endpoint (POST)</string>
+    <string name="ocr_header_name">Auth header name</string>
+    <string name="ocr_header_value">Auth header value</string>
+
+    <!-- Storage & logs -->
+    <string name="storage_log_title">Log storage</string>
+    <string name="storage_auto_clean">Auto cleanup</string>
+    <string name="storage_log_level">Log level</string>
+    <string name="storage_max_size">Max storage</string>
+    <string name="storage_retention_days">Retention days</string>
+    <string name="storage_usage">Using %1$s</string>
+    <string name="storage_clear_now">Clear now</string>
+    <string name="storage_export_log">Export</string>
+    <string name="storage_export_log_chooser">Export log</string>
+    <string name="storage_days">%1$d days</string>
+
+    <!-- About -->
+    <string name="about_name">IzukiJS</string>
+    <string name="about_version">Version %1$s (%2$d)</string>
+    <string name="about_desc">An Android automation scripting runtime built with Kotlin / Jetpack Compose.</string>
+
+    <!-- Editor settings -->
+    <string name="editor_font_size">Font size</string>
+    <string name="editor_auto_save">Auto save</string>
+    <string name="editor_auto_save_desc">Save automatically after typing stops; when off, it still saves on back / run.</string>
+
+    <!-- Backup -->
+    <string name="backup_desc">Export / import covers AI, OCR, control, capture, log and editor preferences. The exported file contains plaintext keys, keep it safe; scripts are not included.</string>
+    <string name="backup_export">Export config</string>
+    <string name="backup_import">Import config</string>
+    <string name="backup_read_failed">Failed to read file</string>
+    <string name="backup_import_success">Imported</string>
+    <string name="backup_import_failed">Import failed: %1$s</string>
+    <string name="backup_export_failed">Export failed</string>
+    <string name="backup_reset_title">Reset</string>
+    <string name="backup_reset_desc">Restore all settings to defaults; scripts are unaffected.</string>
+    <string name="backup_reset_button">Reset to defaults</string>
+    <string name="backup_reset_confirm">Reset all settings to defaults? This cannot be undone.</string>
+    <string name="backup_reset_done">Settings reset</string>
+
+    <!-- AI Agent -->
+    <string name="ai_title">AI Agent</string>
+    <string name="ai_master_title">Master switch</string>
+    <string name="ai_enable">Enable AI Agent</string>
+    <string name="ai_enable_desc">When off, the script ai.* calls return null directly.</string>
+    <string name="ai_api_title">API (OpenAI-compatible)</string>
+    <string name="ai_api_desc">Enter any service compatible with OpenAI Chat Completions; change the Base URL to use DeepSeek / Qwen / one-api / Ollama, etc.</string>
+    <string name="ai_base_url">Base URL</string>
+    <string name="ai_model">Model</string>
+    <string name="ai_custom_header_name">Custom auth header name</string>
+    <string name="ai_custom_header_name_placeholder">Optional, e.g. api-key (Azure)</string>
+    <string name="ai_custom_header_value">Custom auth header value</string>
+    <string name="ai_params_title">Generation parameters</string>
+    <string name="ai_stream">Streaming</string>
+    <string name="ai_stream_desc">When on, text is returned piece by piece through the onDelta callback.</string>
+    <string name="ai_temperature">Temperature (0–2)</string>
+    <string name="ai_max_tokens">Max tokens</string>
+    <string name="ai_timeout_sec">Timeout (s)</string>
+    <string name="ai_tools_title">Agent tools</string>
+    <string name="ai_tools_enable">Enable tool calls</string>
+    <string name="ai_tools_enable_desc">Let the model tap / swipe / OCR / launch apps on its own. When off, it only holds a plain conversation.</string>
+    <string name="ai_allow_shell">Allow Shell</string>
+    <string name="ai_allow_shell_desc">Let the model run Shell commands; requires Shizuku or Root, high privilege, off by default.</string>
+    <string name="ai_max_steps">Max steps</string>
+    <string name="ai_max_steps_desc">A single script can override this with options.maxSteps at call time.</string>
+    <string name="ai_prompt_title">System prompt</string>
+    <string name="ai_prompt_desc">Sent to the model as the framework base prompt describing the environment, available tools and decision rules.</string>
+    <string name="ai_prompt_reset">Restore default prompt</string>
+    <string name="ai_test_title">Connection test</string>
+    <string name="ai_test_desc">Send a very short chat request to verify the address / key / model.</string>
+    <string name="ai_testing">Testing…</string>
+    <string name="ai_test">Test connection</string>
+    <string name="ai_test_success">✔ Success: %1$s</string>
+    <string name="ai_test_failure">✘ Failed: %1$s</string>
+
+    <!-- Editor -->
+    <string name="editor_loading">Loading…</string>
+    <string name="editor_not_found">Script not found: %1$s</string>
+    <string name="editor_unsaved">Unsaved</string>
+    <string name="editor_console">Console</string>
+    <string name="editor_expand_console">Expand console</string>
+    <string name="editor_collapse_console">Collapse console</string>
+    <string name="editor_placeholder">// Write JS here</string>
+
+    <!-- Bluetooth HID -->
+    <string name="hid_scan">Scan</string>
+    <string name="hid_connection_status">Connection status</string>
+    <string name="hid_connected">Connected: %1$s</string>
+    <string name="hid_resolution">Tablet resolution: %1$d x %2$d</string>
+    <string name="hid_target">HID test target</string>
+    <string name="hid_verify_idle">After tapping Verify HID, keep this screen open and do not touch the target manually</string>
+    <string name="hid_verify_waiting">Waiting for HID tap to hit…</string>
+    <string name="hid_verify_pass">✓ Hit, HID injection works</string>
+    <string name="hid_verify_fail">✗ Missed, check HID readiness / target visibility</string>
+    <string name="hid_hit">Hit</string>
+    <string name="hid_scan_devices">Scan devices</string>
+    <string name="hid_disconnect">Disconnect</string>
+    <string name="hid_verify">Verify HID</string>
+    <string name="hid_empty">No devices found. Make sure the dongle is powered and advertising, then tap Scan in the top-right corner.</string>
+    <string name="hid_device_meta">%1$s · RSSI %2$d</string>
+    <string name="hid_state_idle">Not connected</string>
+    <string name="hid_state_scanning">Scanning…</string>
+    <string name="hid_state_connecting">Connecting…</string>
+    <string name="hid_state_connected">Connected, discovering services…</string>
+    <string name="hid_state_ready">Ready (HID channel available)</string>
+    <string name="hid_state_ready_pending">Connected, HID channel not ready…</string>
+    <string name="hid_state_error">Connection error</string>
+    <string name="hid_need_bt_permission">Bluetooth permission is required to scan devices</string>
+    <string name="hid_enable_bt">Please turn on Bluetooth first</string>
+
+    <!-- Layout inspector -->
+    <string name="inspector_title">Layout inspector</string>
+    <string name="inspector_no_tree">Cannot read the node tree, enable the accessibility service first</string>
+    <string name="inspector_no_nodes">No nodes to inspect on this screen</string>
+    <string name="inspector_tap_hint">Tap a control in the screenshot to view its selector</string>
+    <string name="inspector_select_hint">Select a node to view its selector</string>
+    <string name="inspector_copy_selector">Copy selector</string>
+    <string name="inspector_copied">Selector copied</string>
+    <string name="inspector_field_id">id</string>
+    <string name="inspector_field_text">text</string>
+    <string name="inspector_field_desc">desc</string>
+    <string name="inspector_field_bounds">bounds</string>
+
+    <!-- Scheduled tasks -->
+    <string name="schedule_title">Scheduled tasks</string>
+    <string name="schedule_new">New scheduled task</string>
+    <string name="schedule_empty">No scheduled tasks yet. Tap + in the corner to run a script daily at a fixed time or on a repeating interval.</string>
+    <string name="schedule_select_script">Select script</string>
+    <string name="schedule_hour">Hour</string>
+    <string name="schedule_minute">Minute</string>
+    <string name="schedule_interval">Repeat interval (minutes, 0 = once)</string>
+    <string name="schedule_next_interval">Next %1$s · every %2$d min</string>
+    <string name="schedule_next_once">Once · %1$s</string>
+
+    <!-- Console -->
+    <string name="console_empty">No output</string>
+    <string name="console_filtered_empty">No logs for the current filter</string>
+    <string name="console_back_to_latest">Back to latest</string>
+
+    <!-- Run env dialog -->
+    <string name="env_title">Run parameters · %1$s</string>
+
+    <!-- Notifications -->
+    <string name="notif_script_title">Izuki JS is running</string>
+    <string name="notif_script_channel">Script running</string>
+    <string name="notif_script_channel_desc">Persistent notification while a script runs</string>
+    <string name="notif_floating_title">Izuki JS floating window</string>
+    <string name="notif_floating_text">Runtime log is showing</string>
+    <string name="notif_floating_channel">Floating log</string>
+    <string name="notif_debug_channel">Debug overlay</string>
+    <string name="notif_debug_title">Izuki JS debug overlay</string>
+    <string name="notif_debug_text">Layout / OCR debug tools running</string>
+    <string name="notif_capture_title">Izuki JS recording</string>
+    <string name="notif_capture_text">Continuous screenshot service running</string>
+    <string name="notif_capture_channel">Continuous capture</string>
+
+    <!-- Debug overlay -->
+    <string name="debug_drag_me">Debug · drag me</string>
+    <string name="debug_tab_layout">Layout</string>
+    <string name="debug_capturing_layout">Capturing layout…</string>
+    <string name="debug_recognizing_text">Recognizing text…</string>
+    <string name="debug_start_hint">Tap Layout or OCR to start debugging</string>
+    <string name="debug_task_failed">Failed: %1$s</string>
+    <string name="debug_no_accessibility">Accessibility is off, cannot read layout</string>
+    <string name="debug_no_node_tree">Failed to get the node tree</string>
+    <string name="debug_clickable_tag">clickable</string>
+    <string name="debug_empty_layout">Empty layout</string>
+    <string name="debug_no_screenshot">No screenshot source (enable Accessibility/Shizuku or continuous capture)</string>
+    <string name="debug_ocr_no_result">OCR returned no result</string>
+    <string name="debug_ocr_element_count">%1$d elements in total\n\n</string>
+    <string name="debug_close">Close debug panel</string>
+
+    <!-- Floating control bar -->
+    <string name="floating_status_ready">● Ready</string>
+    <string name="floating_status_running">● Running</string>
+    <string name="floating_waiting_log">Waiting for script logs…</string>
+    <string name="floating_collapse">Minimize log</string>
+    <string name="floating_expand">Expand log</string>
+    <string name="floating_stop">Stop script</string>
+</resources>

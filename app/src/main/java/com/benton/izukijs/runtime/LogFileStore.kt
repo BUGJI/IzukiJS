@@ -1,8 +1,13 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
+import java.io.BufferedReader
+import java.io.BufferedWriter
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import java.io.RandomAccessFile
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -127,11 +132,32 @@ class LogFileStore(
         if (settings.retentionDays <= 0 || !logFile.exists()) return
         val cutoff = System.currentTimeMillis() -
             settings.retentionDays.toLong() * 24L * 60L * 60L * 1000L
-        val kept = logFile.readLines().filter { line ->
-            val timestamp = line.substringBefore('|').toLongOrNull()
-            timestamp == null || timestamp >= cutoff
-        }
-        logFile.writeText(kept.joinToString("\n"))
+        val temp = File(logDir, "${logFile.name}.retention.tmp")
+        var removed = false
+        runCatching {
+            // 逐行过滤写入临时文件，避免把整个日志读入内存后再整体重写。
+            BufferedReader(InputStreamReader(FileInputStream(logFile), Charsets.UTF_8)).use { reader ->
+                BufferedWriter(OutputStreamWriter(FileOutputStream(temp), Charsets.UTF_8)).use { writer ->
+                    var line = reader.readLine()
+                    while (line != null) {
+                        val timestamp = line.substringBefore('|').toLongOrNull()
+                        if (timestamp == null || timestamp >= cutoff) {
+                            writer.write(line)
+                            writer.newLine()
+                        } else {
+                            removed = true
+                        }
+                        line = reader.readLine()
+                    }
+                }
+            }
+            if (removed) {
+                logFile.delete()
+                if (!temp.renameTo(logFile)) temp.delete()
+            } else {
+                temp.delete()
+            }
+        }.onFailure { temp.delete() }
     }
 
     private companion object {

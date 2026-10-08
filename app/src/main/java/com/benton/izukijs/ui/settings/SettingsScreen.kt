@@ -3,8 +3,8 @@ package com.benton.izukijs.ui.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -45,12 +43,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.BuildConfig
+import com.benton.izukijs.R
 import com.benton.izukijs.controller.ControllerSettings
 import com.benton.izukijs.data.EditorSettings
+import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ocr.OcrConfig
@@ -58,12 +59,15 @@ import com.benton.izukijs.ocr.OcrMode
 import com.benton.izukijs.ocr.OcrProvider
 import com.benton.izukijs.runtime.LogLevel
 import com.benton.izukijs.service.CaptureSettings
+import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LabeledField
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SwitchRow
+import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.common.formatFileSize
+import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.rememberAppContainer
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -71,12 +75,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置分组。key 用于二级页面路由参数。 */
-enum class SettingsCategory(val key: String, val title: String) {
-    CONTROL("control", "控制与视觉"),
-    EDITOR("editor", "编辑器"),
-    STORAGE("storage", "存储与日志"),
-    BACKUP("backup", "备份与恢复"),
-    ABOUT("about", "关于"),
+enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
+    CONTROL("control", R.string.settings_control),
+    EDITOR("editor", R.string.settings_editor),
+    STORAGE("storage", R.string.settings_storage),
+    BACKUP("backup", R.string.settings_backup),
+    ABOUT("about", R.string.settings_about),
     ;
 
     companion object {
@@ -100,44 +104,87 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("设置") })
+            TopAppBar(title = { Text(stringResource(R.string.settings_title)) })
         },
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
+            LanguageSettings()
+            Spacer(Modifier.height(12.dp))
             CategoryCard {
                 CategoryRow(
-                    title = SettingsCategory.CONTROL.title,
-                    summary = "优先 ${controllerSettings.preferredMode?.displayName ?: "自动"} · 录屏${
-                        if (screenCaptureActive) "开" else "关"
-                    } · OCR ${if (ocrConfig.mode == OcrMode.LOCAL) "本地" else "在线"}",
+                    title = stringResource(SettingsCategory.CONTROL.titleRes),
+                    summary = stringResource(
+                        R.string.settings_control_summary,
+                        controllerSettings.preferredMode?.localizedName() ?: stringResource(R.string.common_auto),
+                        stringResource(if (screenCaptureActive) R.string.common_on else R.string.common_off),
+                        stringResource(if (ocrConfig.mode == OcrMode.LOCAL) R.string.settings_local else R.string.settings_online),
+                    ),
                 ) { onOpenCategory(SettingsCategory.CONTROL) }
                 CategoryDivider()
                 CategoryRow(
-                    title = SettingsCategory.EDITOR.title,
-                    summary = "字号 ${editorSettings.fontSizeSp} · 自动保存${
-                        if (editorSettings.autoSave) "开" else "关"
-                    }",
+                    title = stringResource(SettingsCategory.EDITOR.titleRes),
+                    summary = stringResource(
+                        R.string.settings_editor_summary,
+                        editorSettings.fontSizeSp,
+                        stringResource(if (editorSettings.autoSave) R.string.common_on else R.string.common_off),
+                    ),
                 ) { onOpenCategory(SettingsCategory.EDITOR) }
                 CategoryDivider()
                 CategoryRow(
-                    title = "AI Agent",
-                    summary = if (aiConfig.isConfigured) "已配置" else "未配置",
+                    title = stringResource(R.string.settings_ai_agent),
+                    summary = stringResource(
+                        if (aiConfig.isConfigured) R.string.settings_ai_configured else R.string.settings_ai_not_configured,
+                    ),
                 ) { onOpenAi() }
                 CategoryDivider()
                 CategoryRow(
-                    title = SettingsCategory.STORAGE.title,
-                    summary = "${logSettings.maxSizeMb}MB · 保留 ${logSettings.retentionDays} 天",
+                    title = stringResource(SettingsCategory.STORAGE.titleRes),
+                    summary = stringResource(
+                        R.string.settings_storage_summary,
+                        logSettings.maxSizeMb,
+                        logSettings.retentionDays,
+                    ),
                 ) { onOpenCategory(SettingsCategory.STORAGE) }
                 CategoryDivider()
                 CategoryRow(
-                    title = SettingsCategory.BACKUP.title,
-                    summary = "导出 / 导入 / 重置",
+                    title = stringResource(SettingsCategory.BACKUP.titleRes),
+                    summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
                 CategoryDivider()
                 CategoryRow(
-                    title = SettingsCategory.ABOUT.title,
-                    summary = "v${BuildConfig.VERSION_NAME}",
+                    title = stringResource(SettingsCategory.ABOUT.titleRes),
+                    summary = stringResource(R.string.settings_version_short, BuildConfig.VERSION_NAME),
                 ) { onOpenCategory(SettingsCategory.ABOUT) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSettings() {
+    val container = rememberAppContainer()
+    val context = LocalContext.current
+    val language by container.languageRepository.language.collectAsStateWithLifecycle()
+
+    SectionCard(stringResource(R.string.settings_language)) {
+        Text(
+            stringResource(R.string.settings_language_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ChipFlow {
+            AppLanguage.entries.forEach { option ->
+                FilterChip(
+                    selected = language == option,
+                    onClick = {
+                        if (language != option) {
+                            container.languageRepository.save(option)
+                            context.findActivity()?.recreate()
+                        }
+                    },
+                    label = { Text(option.localizedName()) },
+                )
             }
         }
     }
@@ -147,7 +194,10 @@ fun SettingsScreen(
 @Composable
 fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
     val category = SettingsCategory.fromKey(categoryKey)
-    SettingsDetailScaffold(title = category?.title ?: "设置", onBack = onBack) {
+    SettingsDetailScaffold(
+        title = category?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings_title),
+        onBack = onBack,
+    ) {
         when (category) {
             SettingsCategory.CONTROL -> ControlVisionSettings()
             SettingsCategory.EDITOR -> EditorSettingsScreen()
@@ -155,7 +205,7 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
             SettingsCategory.BACKUP -> BackupSettingsScreen()
             SettingsCategory.ABOUT -> AboutSettings()
             null -> Text(
-                "未知的设置分组。",
+                stringResource(R.string.settings_unknown_category),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -175,21 +225,21 @@ private fun ControlVisionSettings() {
     fun updateOcr(new: OcrConfig) = container.ocrConfigRepository.save(new)
     fun updateCapture(new: CaptureSettings) = container.captureSettingsRepository.save(new)
 
-    SectionCard("控制模式优先级") {
+    SectionCard(stringResource(R.string.ctrl_priority_title)) {
         Text(
-            "当某项能力有多个后端可用时，优先使用选中的模式。",
+            stringResource(R.string.ctrl_priority_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
         PreferenceRow(
-            label = "自动",
+            label = stringResource(R.string.common_auto),
             selected = controllerSettings.preferredMode == null,
             onSelect = { saveController(controllerSettings.copy(preferredMode = null)) },
         )
         ControlMode.entries.forEach { mode ->
             PreferenceRow(
-                label = mode.displayName,
+                label = mode.localizedName(),
                 selected = controllerSettings.preferredMode == mode,
                 onSelect = { saveController(controllerSettings.copy(preferredMode = mode)) },
             )
@@ -205,20 +255,17 @@ private fun ControlVisionSettings() {
 
     if (choiceCapabilities.isNotEmpty()) {
         Spacer(Modifier.height(12.dp))
-        SectionCard("按能力指定优先模式") {
+        SectionCard(stringResource(R.string.ctrl_cap_priority_title)) {
             Text(
-                "可为不同能力分别指定后端；未指定的能力跟随上方全局设置。仅列出至少有两个可用后端的项。",
+                stringResource(R.string.ctrl_cap_priority_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             choiceCapabilities.forEach { capability ->
                 Spacer(Modifier.height(8.dp))
-                Text(capability.displayName, style = MaterialTheme.typography.bodyMedium)
+                Text(capability.localizedName(), style = MaterialTheme.typography.bodyMedium)
                 Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
+                ChipFlow {
                     FilterChip(
                         selected = controllerSettings.capabilityPreferences[capability] == null,
                         onClick = {
@@ -228,7 +275,7 @@ private fun ControlVisionSettings() {
                                 ),
                             )
                         },
-                        label = { Text("跟随全局") },
+                        label = { Text(stringResource(R.string.ctrl_follow_global)) },
                     )
                     ControlMode.entries
                         .filter { mode ->
@@ -245,7 +292,7 @@ private fun ControlVisionSettings() {
                                         ),
                                     )
                                 },
-                                label = { Text(mode.displayName) },
+                                label = { Text(mode.localizedName()) },
                             )
                         }
                 }
@@ -254,9 +301,9 @@ private fun ControlVisionSettings() {
     }
 
     Spacer(Modifier.height(12.dp))
-    SectionCard("控制后端") {
+    SectionCard(stringResource(R.string.ctrl_backends_title)) {
         Text(
-            "关闭后该后端不参与能力协商；已建立的连接（如无障碍服务、Shizuku）本身不受影响。",
+            stringResource(R.string.ctrl_backends_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -267,9 +314,9 @@ private fun ControlVisionSettings() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(mode.displayName)
+                    Text(mode.localizedName())
                     Text(
-                        if (mode in readyModes) "已就绪" else "未就绪",
+                        stringResource(if (mode in readyModes) R.string.common_ready else R.string.common_not_ready),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -290,19 +337,16 @@ private fun ControlVisionSettings() {
     }
 
     Spacer(Modifier.height(12.dp))
-    SectionCard("截图压缩") {
+    SectionCard(stringResource(R.string.capture_compress_title)) {
         Text(
-            "影响「保存截图」的文件大小与在线 OCR 的上传流量；图像匹配、找色与本地识别仍使用原始分辨率，坐标不受影响。",
+            stringResource(R.string.capture_compress_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
-        Text("缩放比例", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.capture_scale), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        ChipFlow {
             listOf(100, 75, 50, 25).forEach { percent ->
                 FilterChip(
                     selected = captureSettings.scalePercent == percent,
@@ -312,12 +356,9 @@ private fun ControlVisionSettings() {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Text("JPEG 质量", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.capture_jpeg_quality), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        ChipFlow {
             listOf(60, 75, 90, 100).forEach { quality ->
                 FilterChip(
                     selected = captureSettings.jpegQuality == quality,
@@ -329,67 +370,64 @@ private fun ControlVisionSettings() {
     }
 
     Spacer(Modifier.height(12.dp))
-    SectionCard("OCR 识别") {
+    SectionCard(stringResource(R.string.ocr_section_title)) {
         Text(
-            "低端设备可切换到在线识别以节省本地算力；在线失败会自动回退本地。",
+            stringResource(R.string.ocr_section_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ChipFlow {
             FilterChip(
                 selected = ocrConfig.mode == OcrMode.LOCAL,
                 onClick = { updateOcr(ocrConfig.copy(mode = OcrMode.LOCAL)) },
-                label = { Text("本地 (MLKit)") },
+                label = { Text(stringResource(R.string.ocr_local_mlkit)) },
             )
             FilterChip(
                 selected = ocrConfig.mode == OcrMode.ONLINE,
                 onClick = { updateOcr(ocrConfig.copy(mode = OcrMode.ONLINE)) },
-                label = { Text("在线") },
+                label = { Text(stringResource(R.string.ocr_online)) },
             )
         }
 
         if (ocrConfig.mode == OcrMode.ONLINE) {
             Spacer(Modifier.height(12.dp))
-            Text("服务商", style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.ocr_provider_label), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            ChipFlow {
                 OcrProvider.entries.forEach { provider ->
                     FilterChip(
                         selected = ocrConfig.provider == provider,
                         onClick = { updateOcr(ocrConfig.copy(provider = provider)) },
-                        label = { Text(provider.displayName) },
+                        label = { Text(provider.localizedName()) },
                     )
                 }
             }
             Spacer(Modifier.height(12.dp))
             when (ocrConfig.provider) {
                 OcrProvider.BAIDU -> {
-                    SecretField("API Key", ocrConfig.apiKey) {
+                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
-                    SecretField("Secret Key", ocrConfig.secretKey) {
+                    SecretField(stringResource(R.string.ocr_secret_key), ocrConfig.secretKey) {
                         updateOcr(ocrConfig.copy(secretKey = it))
                     }
                 }
 
                 OcrProvider.GOOGLE_VISION -> {
-                    SecretField("API Key", ocrConfig.apiKey) {
+                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
                 }
 
                 OcrProvider.CUSTOM -> {
-                    LabeledField("请求地址 (POST)", ocrConfig.endpoint) {
+                    LabeledField(stringResource(R.string.ocr_endpoint), ocrConfig.endpoint) {
                         updateOcr(ocrConfig.copy(endpoint = it))
                     }
-                    LabeledField("鉴权 Header 名", ocrConfig.headerName) {
+                    LabeledField(stringResource(R.string.ocr_header_name), ocrConfig.headerName) {
                         updateOcr(ocrConfig.copy(headerName = it))
                     }
-                    SecretField("鉴权 Header 值", ocrConfig.headerValue) {
+                    SecretField(stringResource(R.string.ocr_header_value), ocrConfig.headerValue) {
                         updateOcr(ocrConfig.copy(headerValue = it))
                     }
                 }
@@ -414,9 +452,9 @@ private fun StorageSettings() {
 
     LaunchedEffect(Unit) { refreshLogSize() }
 
-    SectionCard("日志存储") {
+    SectionCard(stringResource(R.string.storage_log_title)) {
         SwitchRow(
-            label = "自动清理",
+            label = stringResource(R.string.storage_auto_clean),
             checked = logSettings.autoClean,
         ) {
             container.logSettingsRepository.save(logSettings.copy(autoClean = it))
@@ -425,17 +463,14 @@ private fun StorageSettings() {
         }
         Spacer(Modifier.height(12.dp))
 
-        Text("日志级别", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.storage_log_level), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        ChipFlow {
             listOf(
-                LogLevel.DEBUG to "全部",
-                LogLevel.INFO to "信息",
-                LogLevel.WARN to "警告",
-                LogLevel.ERROR to "错误",
+                LogLevel.DEBUG to stringResource(R.string.log_level_all),
+                LogLevel.INFO to stringResource(R.string.log_level_info),
+                LogLevel.WARN to stringResource(R.string.log_level_warn),
+                LogLevel.ERROR to stringResource(R.string.log_level_error),
             ).forEach { (level, label) ->
                 FilterChip(
                     selected = logSettings.minLevel == level,
@@ -448,12 +483,9 @@ private fun StorageSettings() {
         }
         Spacer(Modifier.height(12.dp))
 
-        Text("最大存储", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.storage_max_size), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        ChipFlow {
             listOf(1, 5, 10, 20).forEach { size ->
                 FilterChip(
                     selected = logSettings.maxSizeMb == size,
@@ -468,12 +500,9 @@ private fun StorageSettings() {
         }
         Spacer(Modifier.height(12.dp))
 
-        Text("保留天数", style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.storage_retention_days), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        ChipFlow {
             listOf(1, 3, 7, 30).forEach { days ->
                 FilterChip(
                     selected = logSettings.retentionDays == days,
@@ -482,7 +511,7 @@ private fun StorageSettings() {
                         container.logFileStore.trim()
                         refreshLogSize()
                     },
-                    label = { Text("$days 天") },
+                    label = { Text(stringResource(R.string.storage_days, days)) },
                 )
             }
         }
@@ -492,7 +521,7 @@ private fun StorageSettings() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "当前占用 ${formatFileSize(logFileSize)}",
+                stringResource(R.string.storage_usage, formatFileSize(logFileSize)),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -501,7 +530,7 @@ private fun StorageSettings() {
                 container.logBus.clear()
                 container.logFileStore.clear()
                 refreshLogSize()
-            }) { Text("立即清空") }
+            }) { Text(stringResource(R.string.storage_clear_now)) }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
                 scope.launch {
@@ -512,7 +541,7 @@ private fun StorageSettings() {
                     val ok = withContext(Dispatchers.IO) { container.logFileStore.exportTo(file) }
                     if (ok) shareFile(context, file)
                 }
-            }) { Text("导出") }
+            }) { Text(stringResource(R.string.storage_export_log)) }
         }
     }
 }
@@ -531,24 +560,25 @@ private fun shareFile(context: android.content.Context, file: File) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(
-            Intent.createChooser(send, "导出日志").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            Intent.createChooser(send, context.getString(R.string.storage_export_log_chooser))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
 }
 
 @Composable
 private fun AboutSettings() {
-    SectionCard("关于") {
-        Text("IzukiJS", style = MaterialTheme.typography.titleMedium)
+    SectionCard(stringResource(R.string.settings_about)) {
+        Text(stringResource(R.string.about_name), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            "版本 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            stringResource(R.string.about_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "基于 Kotlin / Jetpack Compose 的 Android 自动化脚本运行环境。",
+            stringResource(R.string.about_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -562,13 +592,10 @@ private fun EditorSettingsScreen() {
 
     fun update(new: EditorSettings) = container.editorSettingsRepository.save(new)
 
-    SectionCard("编辑器") {
-        Text("字号", style = MaterialTheme.typography.bodyMedium)
+    SectionCard(stringResource(R.string.settings_editor)) {
+        Text(stringResource(R.string.editor_font_size), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        ChipFlow {
             listOf(12, 13, 14, 16, 18, 20).forEach { size ->
                 FilterChip(
                     selected = editorSettings.fontSizeSp == size,
@@ -583,9 +610,9 @@ private fun EditorSettingsScreen() {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("自动保存")
+                Text(stringResource(R.string.editor_auto_save))
                 Text(
-                    "停止输入后自动写盘；关闭后返回 / 运行时仍会保存。",
+                    stringResource(R.string.editor_auto_save_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -618,17 +645,22 @@ private fun BackupSettingsScreen() {
                 }.getOrNull()
             }
             message = if (text.isNullOrBlank()) {
-                "读取文件失败"
+                context.getString(R.string.backup_read_failed)
             } else {
                 runCatching { container.configBackupManager.importJson(text) }
-                    .fold(onSuccess = { "导入成功" }, onFailure = { "导入失败：${it.message}" })
+                    .fold(
+                        onSuccess = { context.getString(R.string.backup_import_success) },
+                        onFailure = {
+                            context.getString(R.string.backup_import_failed, it.message.orEmpty())
+                        },
+                    )
             }
         }
     }
 
-    SectionCard("备份与恢复") {
+    SectionCard(stringResource(R.string.settings_backup)) {
         Text(
-            "导出 / 导入包含 AI、OCR、控制、截图、日志与编辑器偏好。导出文件含明文密钥，请妥善保管；不含脚本文件。",
+            stringResource(R.string.backup_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -647,12 +679,12 @@ private fun BackupSettingsScreen() {
                             true
                         }.getOrDefault(false)
                     }
-                    if (ok) shareFile(context, file) else message = "导出失败"
+                    if (ok) shareFile(context, file) else message = context.getString(R.string.backup_export_failed)
                 }
-            }) { Text("导出配置") }
+            }) { Text(stringResource(R.string.backup_export)) }
             OutlinedButton(onClick = {
                 importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-            }) { Text("导入配置") }
+            }) { Text(stringResource(R.string.backup_import)) }
         }
         message?.let {
             Spacer(Modifier.height(8.dp))
@@ -661,30 +693,30 @@ private fun BackupSettingsScreen() {
     }
 
     Spacer(Modifier.height(12.dp))
-    SectionCard("重置") {
+    SectionCard(stringResource(R.string.backup_reset_title)) {
         Text(
-            "将全部设置恢复为默认值，不影响脚本内容。",
+            stringResource(R.string.backup_reset_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedButton(onClick = { confirmReset = true }) { Text("恢复默认设置") }
+        OutlinedButton(onClick = { confirmReset = true }) { Text(stringResource(R.string.backup_reset_button)) }
     }
 
     if (confirmReset) {
         AlertDialog(
             onDismissRequest = { confirmReset = false },
-            title = { Text("恢复默认设置") },
-            text = { Text("确定要将全部设置恢复为默认值吗？此操作不可撤销。") },
+            title = { Text(stringResource(R.string.backup_reset_button)) },
+            text = { Text(stringResource(R.string.backup_reset_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
                     runCatching { container.configBackupManager.resetAll() }
-                    message = "已恢复默认设置"
+                    message = context.getString(R.string.backup_reset_done)
                     confirmReset = false
-                }) { Text("确定") }
+                }) { Text(stringResource(R.string.common_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmReset = false }) { Text("取消") }
+                TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -742,7 +774,7 @@ private fun SettingsDetailScaffold(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )

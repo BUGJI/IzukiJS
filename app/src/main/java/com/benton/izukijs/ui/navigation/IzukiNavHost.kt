@@ -1,13 +1,18 @@
 package com.benton.izukijs.ui.navigation
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -15,13 +20,17 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import com.benton.izukijs.R
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -62,17 +71,35 @@ object Routes {
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
 }
 
-private enum class BottomItem(val route: String, val label: String, val icon: ImageVector) {
-    RUN(Routes.RUN, "运行", Icons.Filled.PlayArrow),
-    SCRIPTS(Routes.SCRIPTS, "脚本", Icons.AutoMirrored.Filled.List),
-    LOGS(Routes.LOGS, "日志", Icons.Filled.Menu),
-    SETTINGS(Routes.SETTINGS, "设置", Icons.Filled.Settings),
+private enum class BottomItem(
+    val route: String,
+    @StringRes val labelRes: Int,
+) {
+    RUN(Routes.RUN, R.string.nav_run),
+    SCRIPTS(Routes.SCRIPTS, R.string.nav_scripts),
+    LOGS(Routes.LOGS, R.string.nav_logs),
+    SETTINGS(Routes.SETTINGS, R.string.nav_settings),
+}
+
+/** 底部导航图标；日志使用专用矢量图，避免与「菜单」图标语义混淆。 */
+@Composable
+private fun BottomItem.icon(): ImageVector = when (this) {
+    BottomItem.RUN -> Icons.Filled.PlayArrow
+    BottomItem.SCRIPTS -> Icons.AutoMirrored.Filled.List
+    BottomItem.LOGS -> ImageVector.vectorResource(R.drawable.ic_nav_logs)
+    BottomItem.SETTINGS -> Icons.Filled.Settings
 }
 
 private val BOTTOM_ROUTES = BottomItem.entries.map { it.route }.toSet()
 
 /** 宽屏判定阈值：>= 600dp 时改用侧边 NavigationRail。 */
 private val WIDE_LAYOUT_MIN_WIDTH = 600.dp
+
+/** 悬浮底栏滑入 / 滑出的动画时长。 */
+private const val BAR_ANIMATION_MS = 250
+
+/** 悬浮底栏占位高度（NavigationBar 自身高度，系统导航栏 inset 由各页面 Scaffold 处理）。 */
+private val FLOATING_BAR_RESERVED_HEIGHT = 80.dp
 
 @Composable
 fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
@@ -98,75 +125,98 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                         NavigationRailItem(
                             selected = currentRoute == item.route,
                             onClick = { navigate(item.route) },
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
+                            icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                            label = { Text(stringResource(item.labelRes)) },
                         )
                     }
                 }
                 NavContent(
                     navController = navController,
                     modifier = Modifier.weight(1f),
+                    reserveBottomBar = false,
                 )
             }
         } else {
-            Scaffold(
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                bottomBar = {
-                    if (showNavBar) {
-                        NavigationBar {
-                            BottomItem.entries.forEach { item ->
-                                NavigationBarItem(
-                                    selected = currentRoute == item.route,
-                                    onClick = { navigate(item.route) },
-                                    icon = { Icon(item.icon, contentDescription = item.label) },
-                                    label = { Text(item.label) },
-                                )
-                            }
-                        }
-                    }
-                },
-            ) { padding ->
+            // 悬浮底栏：作为覆盖层叠在页面之上，显示 / 隐藏只做位移动画，
+            // 不占用布局空间，因此页面内容不会被推挤或重排。
+            Box(modifier = Modifier.fillMaxSize()) {
                 NavContent(
                     navController = navController,
-                    modifier = Modifier.padding(padding),
+                    modifier = Modifier.fillMaxSize(),
+                    reserveBottomBar = true,
                 )
+                AnimatedVisibility(
+                    visible = showNavBar,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    enter = slideInVertically(
+                        animationSpec = tween(BAR_ANIMATION_MS),
+                        initialOffsetY = { it },
+                    ) + fadeIn(tween(BAR_ANIMATION_MS)),
+                    exit = slideOutVertically(
+                        animationSpec = tween(BAR_ANIMATION_MS),
+                        targetOffsetY = { it },
+                    ) + fadeOut(tween(BAR_ANIMATION_MS)),
+                ) {
+                    NavigationBar {
+                        BottomItem.entries.forEach { item ->
+                            NavigationBarItem(
+                                selected = currentRoute == item.route,
+                                onClick = { navigate(item.route) },
+                                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                                label = { Text(stringResource(item.labelRes)) },
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun NavContent(navController: NavHostController, modifier: Modifier = Modifier) {
+private fun NavContent(
+    navController: NavHostController,
+    modifier: Modifier = Modifier,
+    reserveBottomBar: Boolean = false,
+) {
     NavHost(
         navController = navController,
         startDestination = Routes.RUN,
         modifier = modifier,
     ) {
         composable(Routes.RUN) {
-            RunScreen(
-                onOpenSetup = { navController.navigate(Routes.SETUP) },
-                onOpenScripts = {
-                    navController.navigate(Routes.SCRIPTS) { launchSingleTop = true }
-                },
-            )
+            BottomTabContent(reserveBottomBar) {
+                RunScreen(
+                    onOpenSetup = { navController.navigate(Routes.SETUP) },
+                    onOpenScripts = {
+                        navController.navigate(Routes.SCRIPTS) { launchSingleTop = true }
+                    },
+                )
+            }
         }
         composable(Routes.SCRIPTS) {
-            ScriptsScreen(
-                onOpenScript = { id -> navController.navigate(Routes.editor(id)) },
-                onOpenInspector = { navController.navigate(Routes.INSPECTOR) },
-                onOpenSchedule = { navController.navigate(Routes.SCHEDULE) },
-            )
+            BottomTabContent(reserveBottomBar) {
+                ScriptsScreen(
+                    onOpenScript = { id -> navController.navigate(Routes.editor(id)) },
+                    onOpenInspector = { navController.navigate(Routes.INSPECTOR) },
+                    onOpenSchedule = { navController.navigate(Routes.SCHEDULE) },
+                )
+            }
         }
         composable(Routes.LOGS) {
-            LogsScreen()
+            BottomTabContent(reserveBottomBar) {
+                LogsScreen()
+            }
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(
-                onOpenCategory = { category ->
-                    navController.navigate(Routes.settingsDetail(category))
-                },
-                onOpenAi = { navController.navigate(Routes.AI) },
-            )
+            BottomTabContent(reserveBottomBar) {
+                SettingsScreen(
+                    onOpenCategory = { category ->
+                        navController.navigate(Routes.settingsDetail(category))
+                    },
+                    onOpenAi = { navController.navigate(Routes.AI) },
+                )
+            }
         }
         composable(
             route = Routes.SETTINGS_DETAIL,
@@ -206,5 +256,23 @@ private fun NavContent(navController: NavHostController, modifier: Modifier = Mo
         composable(Routes.AI) {
             AiAgentScreen(onBack = { navController.popBackStack() })
         }
+    }
+}
+
+/**
+ * 为显示悬浮底栏的页面在底部预留高度，避免列表最后一项被底栏遮住。
+ * 留白只在底栏会出现的页面生效，因此切换页面时不会引起共享容器重排。
+ */
+@Composable
+private fun BottomTabContent(
+    reserveBottomBar: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = if (reserveBottomBar) FLOATING_BAR_RESERVED_HEIGHT else 0.dp),
+    ) {
+        content()
     }
 }

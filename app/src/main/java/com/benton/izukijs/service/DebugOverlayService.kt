@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.Typeface
@@ -36,6 +35,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,20 +102,21 @@ class DebugOverlayService : Service() {
             setPadding(24, 20, 24, 20)
             background = GradientDrawable().apply {
                 cornerRadius = 28f
-                setColor(Color.parseColor("#F21F1F1F"))
-                setStroke(1, Color.parseColor("#55FFFFFF"))
+                setColor(getColor(R.color.overlay_surface_strong))
+                setStroke(1, getColor(R.color.overlay_stroke))
             }
             elevation = 12f
         }
 
         val title = TextView(this).apply {
-            text = "调试 · 拖我"
-            setTextColor(Color.WHITE)
+            text = getString(R.string.debug_drag_me)
+            setTextColor(getColor(R.color.overlay_text_primary))
             textSize = 14f
         }
         val close = TextView(this).apply {
             text = "✕"
-            setTextColor(Color.parseColor("#FF8A80"))
+            setTextColor(getColor(R.color.overlay_error))
+            contentDescription = getString(R.string.debug_close)
             textSize = 16f
             setPadding(24, 0, 0, 0)
             setOnClickListener { stopSelf() }
@@ -128,15 +131,15 @@ class DebugOverlayService : Service() {
         )
 
         val layoutBtn = Button(this).apply {
-            text = "布局"
-            setOnClickListener { runTask("正在获取布局…", ::captureLayout) }
+            text = getString(R.string.debug_tab_layout)
+            setOnClickListener { runTask(getString(R.string.debug_capturing_layout), ::captureLayout) }
         }
         val ocrBtn = Button(this).apply {
             text = "OCR"
-            setOnClickListener { runTask("正在识别文字…", ::captureOcr) }
+            setOnClickListener { runTask(getString(R.string.debug_recognizing_text), ::captureOcr) }
         }
         val clearBtn = Button(this).apply {
-            text = "清空"
+            text = getString(R.string.common_clear)
             setOnClickListener {
                 output?.text = ""
                 removeBoxOverlay()
@@ -153,11 +156,11 @@ class DebugOverlayService : Service() {
         )
 
         val text = TextView(this).apply {
-            setTextColor(Color.parseColor("#E0E0E0"))
+            setTextColor(getColor(R.color.overlay_text_secondary))
             textSize = 12f
             typeface = Typeface.MONOSPACE
             movementMethod = ScrollingMovementMethod()
-            text = "点击「布局」或「OCR」开始调试"
+            text = getString(R.string.debug_start_hint)
         }
         output = text
         root.addView(
@@ -210,7 +213,9 @@ class DebugOverlayService : Service() {
             panel?.visibility = View.INVISIBLE
             delay(HIDE_DELAY_MS)
             val result = withContext(Dispatchers.IO) {
-                runCatching { block() }.getOrElse { TaskResult("失败: ${it.message}", emptyList()) }
+                runCatching { block() }.getOrElse {
+                    TaskResult(getString(R.string.debug_task_failed, it.message.orEmpty()), emptyList())
+                }
             }
             panel?.visibility = View.VISIBLE
             output?.text = result.text
@@ -223,8 +228,8 @@ class DebugOverlayService : Service() {
     private fun captureLayout(): TaskResult {
         val controller = container.controllerManager
             .controllerFor(Capability.NODE_TREE) as? AccessibilityController
-            ?: return TaskResult("无障碍未开启，无法读取布局", emptyList())
-        val root = controller.nodeTree() ?: return TaskResult("未获取到控件树", emptyList())
+            ?: return TaskResult(getString(R.string.debug_no_accessibility), emptyList())
+        val root = controller.nodeTree() ?: return TaskResult(getString(R.string.debug_no_node_tree), emptyList())
         val builder = StringBuilder()
         fun walk(node: NodeSnapshot, depth: Int) {
             if (depth > 6 || builder.length > 6000) return
@@ -234,28 +239,28 @@ class DebugOverlayService : Service() {
             node.text?.takeIf { it.isNotBlank() }?.let {
                 builder.append(" \"").append(it.take(24)).append('"')
             }
-            if (node.clickable) builder.append(" [可点]")
+            if (node.clickable) builder.append(' ').append(getString(R.string.debug_clickable_tag))
             builder.append(" @(${(node.left + node.right) / 2},${(node.top + node.bottom) / 2})")
             builder.append('\n')
             node.children.forEach { walk(it, depth + 1) }
         }
         walk(root, 0)
-        return TaskResult(builder.toString().ifBlank { "空布局" }, emptyList())
+        return TaskResult(builder.toString().ifBlank { getString(R.string.debug_empty_layout) }, emptyList())
     }
 
     private fun captureOcr(): TaskResult {
         val bitmap = container.screenCapture.capture()
             ?: container.controllerManager.controllerFor(Capability.SCREENSHOT)?.screenshot()
-            ?: return TaskResult("无截图来源（请开启无障碍/Shizuku 或持续录屏）", emptyList())
+            ?: return TaskResult(getString(R.string.debug_no_screenshot), emptyList())
 
         val result = try {
             container.ocrProcessor.recognize(bitmap)
         } finally {
             bitmap.recycle()
-        } ?: return TaskResult("OCR 无结果", emptyList())
+        } ?: return TaskResult(getString(R.string.debug_ocr_no_result), emptyList())
 
         val builder = StringBuilder()
-        builder.append("共 ${result.blocks.size} 个元素\n\n")
+        builder.append(getString(R.string.debug_ocr_element_count, result.blocks.size))
         result.blocks.forEach { block ->
             builder.append("[${block.x},${block.y} ${block.width}x${block.height}] ")
                 .append(block.text)
@@ -333,15 +338,15 @@ class DebugOverlayService : Service() {
     private fun createChannel() {
         val manager = getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "调试悬浮窗", NotificationManager.IMPORTANCE_LOW),
+            NotificationChannel(CHANNEL_ID, getString(R.string.notif_debug_channel), NotificationManager.IMPORTANCE_LOW),
         )
     }
 
     private fun startForegroundInternal() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_script)
-            .setContentTitle("Izuki JS 调试悬浮窗")
-            .setContentText("布局 / OCR 调试工具运行中")
+            .setContentTitle(getString(R.string.notif_debug_title))
+            .setContentText(getString(R.string.notif_debug_text))
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
@@ -362,9 +367,17 @@ class DebugOverlayService : Service() {
         private const val HIDE_DELAY_MS = 160L
         private const val BOX_DISPLAY_MS = 6000L
 
+        private val _active = MutableStateFlow(false)
+
+        /** 服务运行状态的响应式订阅，供「权限与能力」页同步开关。 */
+        val active: StateFlow<Boolean> = _active.asStateFlow()
+
         @Volatile
         var isActive: Boolean = false
-            private set
+            private set(value) {
+                field = value
+                _active.value = value
+            }
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, DebugOverlayService::class.java))

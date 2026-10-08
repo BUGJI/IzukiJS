@@ -7,15 +7,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
@@ -37,17 +34,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.ScriptEnvDialog
+import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
 import kotlinx.coroutines.launch
@@ -99,19 +100,14 @@ fun RunScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("运行") }) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.nav_run)) }) },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(rememberScrollState()),
-        ) {
+        PageColumn(modifier = Modifier.padding(padding)) {
             Card(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("运行状态", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.run_status_title), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(8.dp))
                     if (running) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -131,35 +127,35 @@ fun RunScreen(
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "正在运行",
+                            stringResource(R.string.run_running),
                             color = extra.success,
                             style = MaterialTheme.typography.labelLarge,
                         )
                     } else {
                         Text(
-                            "当前未运行脚本",
+                            stringResource(R.string.run_idle),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
-                            onClick = { scripts.firstOrNull()?.let { requestRun(it) } },
+                            onClick = { scripts.maxByOrNull { it.updatedAt }?.let { requestRun(it) } },
                             enabled = !running && scripts.isNotEmpty(),
                         ) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = null)
                             Spacer(Modifier.width(6.dp))
-                            Text("运行最近脚本")
+                            Text(stringResource(R.string.run_recent))
                         }
                         OutlinedButton(
                             onClick = { container.scriptExecutionManager.requestStop() },
                             enabled = running,
-                        ) { Text("停止") }
+                        ) { Text(stringResource(R.string.common_stop)) }
                     }
                     val runState = runningScript?.let { envData[it]?.state }.orEmpty()
                     if (running && runState.isNotEmpty()) {
                         Spacer(Modifier.height(12.dp))
-                        Text("运行状态", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.run_status_title), style = MaterialTheme.typography.labelLarge)
                         Spacer(Modifier.height(4.dp))
                         runState.forEach { (key, value) ->
                             Text(
@@ -172,7 +168,7 @@ fun RunScreen(
                         }
                     }
                     if (scripts.isEmpty()) {
-                        TextButton(onClick = onOpenScripts) { Text("还没有脚本，去脚本中心新建") }
+                        TextButton(onClick = onOpenScripts) { Text(stringResource(R.string.run_no_scripts)) }
                     }
                 }
             }
@@ -185,9 +181,9 @@ fun RunScreen(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("权限与能力", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.run_permissions_title), style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.weight(1f))
-                        TextButton(onClick = onOpenSetup) { Text("配置") }
+                        TextButton(onClick = onOpenSetup) { Text(stringResource(R.string.run_configure)) }
                     }
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -205,17 +201,19 @@ fun RunScreen(
                         )
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            if (screenCaptureActive) "屏幕捕获：录制中" else "屏幕捕获：未开启",
+                            stringResource(
+                                if (screenCaptureActive) R.string.run_capture_recording else R.string.run_capture_off,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Spacer(Modifier.height(8.dp))
                     val modes = listOf(
-                        "无障碍" to (ControlMode.ACCESSIBILITY in readyModes),
-                        "Shizuku" to (ControlMode.SHIZUKU in readyModes),
-                        "Root" to (ControlMode.ROOT in readyModes),
-                        "蓝牙 HID" to (ControlMode.HID in readyModes),
+                        ControlMode.ACCESSIBILITY.localizedName() to (ControlMode.ACCESSIBILITY in readyModes),
+                        ControlMode.SHIZUKU.localizedName() to (ControlMode.SHIZUKU in readyModes),
+                        ControlMode.ROOT.localizedName() to (ControlMode.ROOT in readyModes),
+                        ControlMode.HID.localizedName() to (ControlMode.HID in readyModes),
                     )
                     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                         val columns = if (maxWidth >= 480.dp) 4 else 2
@@ -282,7 +280,7 @@ private fun ModeStatus(label: String, ready: Boolean, modifier: Modifier = Modif
             )
         }
         Text(
-            if (ready) "已就绪" else "未启用",
+            stringResource(if (ready) R.string.common_ready else R.string.run_mode_disabled),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

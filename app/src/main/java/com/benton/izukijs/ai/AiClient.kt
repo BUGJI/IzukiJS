@@ -65,7 +65,7 @@ class AiClient(
         }
 
     private fun openConnection(body: JSONObject): HttpURLConnection {
-        val connection = (URL(config.chatCompletionsUrl()).openConnection() as HttpURLConnection).apply {
+        val connection = (httpUrl(config.chatCompletionsUrl()).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             doOutput = true
             connectTimeout = config.timeoutSec * 1000
@@ -81,6 +81,16 @@ class AiClient(
         }
         connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
         return connection
+    }
+
+    /** 校验协议，给出比类转换异常更可读的报错。 */
+    private fun httpUrl(raw: String): URL {
+        val url = URL(raw)
+        val scheme = url.protocol.lowercase()
+        if (scheme != "http" && scheme != "https") {
+            throw AiException("不支持的接口协议「$scheme」：baseUrl 需以 http:// 或 https:// 开头")
+        }
+        return url
     }
 
     // ---- 非流式 ----

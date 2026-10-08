@@ -7,4 +7,15 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- 悬浮窗：始终深色，保证覆盖任意应用时的对比度 -->
+    <color name="overlay_surface">#EE1F1F1F</color>
+    <color name="overlay_surface_strong">#F21F1F1F</color>
+    <color name="overlay_stroke">#55FFFFFF</color>
+    <color name="overlay_text_primary">#FFFFFFFF</color>
+    <color name="overlay_text_secondary">#FFE0E0E0</color>
+    <color name="overlay_text_muted">#FF9E9E9E</color>
+    <color name="overlay_success">#FF69F0AE</color>
+    <color name="overlay_warning">#FFFFD54F</color>
+    <color name="overlay_error">#FFFF8A80</color>
 </resources>

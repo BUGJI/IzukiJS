@@ -1,6 +1,7 @@
 package com.benton.izukijs.ui.editor
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -14,9 +15,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -30,7 +34,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -43,7 +46,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,6 +56,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.R
 import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
@@ -99,7 +105,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     if (!loaded) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("加载中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.editor_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
@@ -107,7 +113,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val current = script
     if (current == null) {
         Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-            Text("脚本不存在: $scriptId", color = MaterialTheme.colorScheme.error)
+            Text(stringResource(R.string.editor_not_found, scriptId), color = MaterialTheme.colorScheme.error)
         }
         return
     }
@@ -151,7 +157,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                         if (dirty) {
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "未保存",
+                                stringResource(R.string.editor_unsaved),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.error,
                             )
@@ -160,13 +166,13 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 },
                 navigationIcon = {
                     IconButton(onClick = { saveAndThen(onBack) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     if (running) {
                         IconButton(onClick = { container.scriptExecutionManager.requestStop() }) {
-                            Icon(Icons.Filled.Close, contentDescription = "停止")
+                            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_stop))
                         }
                     } else {
                         IconButton(onClick = {
@@ -187,38 +193,62 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                 }
                             }
                         }) {
-                            Icon(Icons.Filled.PlayArrow, contentDescription = "运行")
+                            Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.common_run))
                         }
                     }
                 },
             )
         },
     ) { padding ->
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding)) {
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
             val density = LocalDensity.current
             val minExpanded = 140.dp
             val maxExpanded = (maxHeight * 0.8f).coerceAtLeast(minExpanded)
             var consoleHeight by remember(scriptId) { mutableStateOf(editorSettings.consoleHeightDp.dp) }
+            // 设置里改动控制台高度、或配置异步载入后，同步一次；拖动保存回同值时无副作用。
+            LaunchedEffect(editorSettings.consoleHeightDp) {
+                consoleHeight = editorSettings.consoleHeightDp.dp
+            }
             val drawerHeight = consoleHeight.coerceIn(minExpanded, maxExpanded)
 
             Column(modifier = Modifier.fillMaxSize()) {
-                OutlinedTextField(
-                    value = code,
-                    onValueChange = { code = it },
-                    modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp),
-                    textStyle = LocalTextStyle.current.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = editorSettings.fontSizeSp.sp,
-                        lineHeight = (editorSettings.fontSizeSp * LINE_HEIGHT_RATIO).sp,
-                    ),
-                    visualTransformation = highlighter,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.None,
-                        autoCorrectEnabled = false,
-                        keyboardType = KeyboardType.Ascii,
-                    ),
-                    placeholder = { Text("// 在此编写 JS 脚本") },
+                val editorStyle = LocalTextStyle.current.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = editorSettings.fontSizeSp.sp,
+                    lineHeight = (editorSettings.fontSizeSp * LINE_HEIGHT_RATIO).sp,
                 )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(8.dp)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                ) {
+                    BasicTextField(
+                        value = code,
+                        onValueChange = { code = it },
+                        modifier = Modifier.fillMaxSize(),
+                        textStyle = editorStyle,
+                        visualTransformation = highlighter,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.None,
+                            autoCorrectEnabled = false,
+                            keyboardType = KeyboardType.Ascii,
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        decorationBox = { inner ->
+                            if (code.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.editor_placeholder),
+                                    style = editorStyle,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            inner()
+                        },
+                    )
+                }
                 HorizontalDivider()
                 Row(
                     modifier = Modifier
@@ -249,7 +279,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("控制台", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.editor_console), style = MaterialTheme.typography.titleSmall)
                     if (logs.isNotEmpty()) {
                         Spacer(Modifier.width(6.dp))
                         Text(
@@ -261,7 +291,9 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                     Spacer(Modifier.weight(1f))
                     Icon(
                         if (consoleCollapsed) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                        contentDescription = if (consoleCollapsed) "展开控制台" else "收起控制台",
+                        contentDescription = stringResource(
+                            if (consoleCollapsed) R.string.editor_expand_console else R.string.editor_collapse_console,
+                        ),
                         modifier = Modifier.size(20.dp),
                     )
                 }

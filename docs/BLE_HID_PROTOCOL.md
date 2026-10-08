@@ -182,7 +182,7 @@ App                                  狗
  │  discoverServices
  │  subscribe Event (CCCD)
  │  requestMtu(517)
- │  HANDSHAKE(ver=1)                  │
+  │  HANDSHAKE(ver=2)                  │
  │ ─────────────────────────────────▶ │
   │                        HANDSHAKE_ACK(ver,w,h)
   │ ◀───────────────────────────────── │

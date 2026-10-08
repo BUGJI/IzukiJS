@@ -27,14 +27,6 @@ fun LogLevel.displayColor(): Color {
     }
 }
 
-fun LogLevel.displayName(): String = when (this) {
-    LogLevel.DEBUG -> "调试"
-    LogLevel.INFO -> "信息"
-    LogLevel.SUCCESS -> "成功"
-    LogLevel.WARN -> "警告"
-    LogLevel.ERROR -> "错误"
-}
-
 fun LogLevel.shortTag(): String = when (this) {
     LogLevel.DEBUG -> "D"
     LogLevel.INFO -> "I"
@@ -44,7 +36,17 @@ fun LogLevel.shortTag(): String = when (this) {
 }
 
 private val LOG_TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss")
+private val DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
+private val MONTH_DAY_TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
 /** 日志时间戳，[DateTimeFormatter] 线程安全，可在任意线程调用。 */
 fun formatLogTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(LOG_TIME_FORMAT)
+
+/** 完整日期时间（脚本更新时间等），替代各页面的 SimpleDateFormat。 */
+fun formatDateTime(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(DATE_TIME_FORMAT)
+
+/** 月-日 时:分（定时任务下次触发时间等）。 */
+fun formatMonthDayTime(millis: Long): String =
+    Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(MONTH_DAY_TIME_FORMAT)

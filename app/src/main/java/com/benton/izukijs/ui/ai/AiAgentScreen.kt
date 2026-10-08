@@ -23,14 +23,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.R
 import com.benton.izukijs.ai.AiClient
 import com.benton.izukijs.ai.AiConfig
 import com.benton.izukijs.ai.AiPrompts
 import com.benton.izukijs.ai.ChatMessage
+import com.benton.izukijs.ui.common.DecimalField
 import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.NumberField
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.SectionCard
@@ -44,6 +48,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AiAgentScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val config by container.aiConfigRepository.config.collectAsStateWithLifecycle()
 
@@ -55,10 +60,10 @@ fun AiAgentScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI Agent") },
+                title = { Text(stringResource(R.string.ai_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )
@@ -67,114 +72,106 @@ fun AiAgentScreen(onBack: () -> Unit) {
         PageColumn(
             modifier = Modifier.padding(padding).padding(16.dp),
         ) {
-            SectionCard("总开关") {
+            SectionCard(stringResource(R.string.ai_master_title)) {
                 SwitchRow(
-                    label = "启用 AI Agent",
+                    label = stringResource(R.string.ai_enable),
                     checked = config.enabled,
-                    description = "关闭后脚本的 ai.* 调用会直接返回 null。",
+                    description = stringResource(R.string.ai_enable_desc),
                 ) {
                     update(config.copy(enabled = it))
                 }
             }
 
             Spacer(Modifier.height(12.dp))
-            SectionCard("接口（OpenAI 兼容）") {
+            SectionCard(stringResource(R.string.ai_api_title)) {
                 Text(
-                    "填写任意兼容 OpenAI Chat Completions 的服务地址；换 Base URL 即可对接 DeepSeek / 通义 / one-api / Ollama 等。",
+                    stringResource(R.string.ai_api_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
                 LabeledField(
-                    label = "Base URL",
+                    label = stringResource(R.string.ai_base_url),
                     value = config.baseUrl,
                     placeholder = AiConfig.DEFAULT_BASE_URL,
                 ) {
                     update(config.copy(baseUrl = it))
                 }
-                SecretField("API Key", config.apiKey) { update(config.copy(apiKey = it)) }
+                SecretField(stringResource(R.string.ocr_api_key), config.apiKey) { update(config.copy(apiKey = it)) }
                 LabeledField(
-                    label = "模型",
+                    label = stringResource(R.string.ai_model),
                     value = config.model,
                     placeholder = AiConfig.DEFAULT_MODEL,
                 ) {
                     update(config.copy(model = it))
                 }
                 LabeledField(
-                    label = "自定义鉴权 Header 名",
+                    label = stringResource(R.string.ai_custom_header_name),
                     value = config.extraHeaderName,
-                    placeholder = "可选，如 api-key（Azure）",
+                    placeholder = stringResource(R.string.ai_custom_header_name_placeholder),
                 ) { update(config.copy(extraHeaderName = it)) }
-                SecretField("自定义鉴权 Header 值", config.extraHeaderValue) {
+                SecretField(stringResource(R.string.ai_custom_header_value), config.extraHeaderValue) {
                     update(config.copy(extraHeaderValue = it))
                 }
             }
 
             Spacer(Modifier.height(12.dp))
-            SectionCard("生成参数") {
+            SectionCard(stringResource(R.string.ai_params_title)) {
                 SwitchRow(
-                    label = "流式返回",
+                    label = stringResource(R.string.ai_stream),
                     checked = config.stream,
-                    description = "开启后通过 onDelta 回调逐段返回文本。",
+                    description = stringResource(R.string.ai_stream_desc),
                 ) {
                     update(config.copy(stream = it))
                 }
                 Spacer(Modifier.height(8.dp))
-                LabeledField(
-                    label = "Temperature（0–2）",
-                    value = config.temperature.toString(),
-                    keyboardType = KeyboardType.Decimal,
-                ) { text ->
-                    text.toDoubleOrNull()?.let { update(config.copy(temperature = it.coerceIn(0.0, 2.0))) }
-                }
-                LabeledField(
-                    label = "最大 Token",
-                    value = config.maxTokens.toString(),
-                    keyboardType = KeyboardType.Number,
-                ) { text ->
-                    text.toIntOrNull()?.let { update(config.copy(maxTokens = it.coerceIn(1, 32000))) }
-                }
-                LabeledField(
-                    label = "超时（秒）",
-                    value = config.timeoutSec.toString(),
-                    keyboardType = KeyboardType.Number,
-                ) { text ->
-                    text.toIntOrNull()?.let { update(config.copy(timeoutSec = it.coerceIn(5, 600))) }
-                }
+                DecimalField(
+                    label = stringResource(R.string.ai_temperature),
+                    value = config.temperature,
+                    range = 0.0..2.0,
+                ) { update(config.copy(temperature = it)) }
+                NumberField(
+                    label = stringResource(R.string.ai_max_tokens),
+                    value = config.maxTokens,
+                    range = 1..32000,
+                ) { update(config.copy(maxTokens = it)) }
+                NumberField(
+                    label = stringResource(R.string.ai_timeout_sec),
+                    value = config.timeoutSec,
+                    range = 5..600,
+                ) { update(config.copy(timeoutSec = it)) }
             }
 
             Spacer(Modifier.height(12.dp))
-            SectionCard("Agent 工具") {
+            SectionCard(stringResource(R.string.ai_tools_title)) {
                 SwitchRow(
-                    label = "启用工具调用",
+                    label = stringResource(R.string.ai_tools_enable),
                     checked = config.toolsEnabled,
-                    description = "允许模型自己点击 / 滑动 / OCR / 启动应用等。关闭则仅做纯对话。",
+                    description = stringResource(R.string.ai_tools_enable_desc),
                 ) { update(config.copy(toolsEnabled = it)) }
                 Spacer(Modifier.height(8.dp))
                 SwitchRow(
-                    label = "允许 Shell",
+                    label = stringResource(R.string.ai_allow_shell),
                     checked = config.allowShell,
-                    description = "允许模型执行 Shell 命令，需要 Shizuku 或 Root，权限较大，默认关闭。",
+                    description = stringResource(R.string.ai_allow_shell_desc),
                 ) { update(config.copy(allowShell = it)) }
                 Spacer(Modifier.height(8.dp))
-                LabeledField(
-                    label = "最大步数",
-                    value = config.maxSteps.toString(),
-                    keyboardType = KeyboardType.Number,
-                ) { text ->
-                    text.toIntOrNull()?.let { update(config.copy(maxSteps = it.coerceIn(1, 50))) }
-                }
+                NumberField(
+                    label = stringResource(R.string.ai_max_steps),
+                    value = config.maxSteps,
+                    range = 1..50,
+                ) { update(config.copy(maxSteps = it)) }
                 Text(
-                    "单个脚本可在调用时用 options.maxSteps 覆盖该值。",
+                    stringResource(R.string.ai_max_steps_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
             Spacer(Modifier.height(12.dp))
-            SectionCard("系统提示词") {
+            SectionCard(stringResource(R.string.ai_prompt_title)) {
                 Text(
-                    "作为框架基础提示词发送给模型，描述所处环境、可用工具与决策规范。",
+                    stringResource(R.string.ai_prompt_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -188,13 +185,13 @@ fun AiAgentScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = {
                     update(config.copy(systemPrompt = AiPrompts.DEFAULT_AGENT_PROMPT))
-                }) { Text("恢复默认提示词") }
+                }) { Text(stringResource(R.string.ai_prompt_reset)) }
             }
 
             Spacer(Modifier.height(12.dp))
-            SectionCard("连接测试") {
+            SectionCard(stringResource(R.string.ai_test_title)) {
                 Text(
-                    "发送一条极短的对话请求，验证地址 / Key / 模型是否可用。",
+                    stringResource(R.string.ai_test_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -215,14 +212,14 @@ fun AiAgentScreen(onBack: () -> Unit) {
                                         tools = emptyList(),
                                     ).content
                                 }.fold(
-                                    onSuccess = { "✔ 成功：${it.take(120)}" },
-                                    onFailure = { "✘ 失败：${it.message}" },
+                                    onSuccess = { context.getString(R.string.ai_test_success, it.take(120)) },
+                                    onFailure = { context.getString(R.string.ai_test_failure, it.message.orEmpty()) },
                                 )
                             }
                             testing = false
                         }
                     },
-                ) { Text(if (testing) "测试中…" else "测试连接") }
+                ) { Text(stringResource(if (testing) R.string.ai_testing else R.string.ai_test)) }
                 testResult?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(it, style = MaterialTheme.typography.bodySmall)

@@ -408,6 +408,7 @@ class HidGattClient(
         handler.postDelayed({ if (autoReconnect) connect(address) }, RECONNECT_DELAY_MS)
     }
 
+    @SuppressLint("MissingPermission")
     private fun closeGatt() {
         handler.removeCallbacks(subscribeRunnable)
         handler.removeCallbacks(subscribeTimeout)
@@ -522,6 +523,7 @@ class HidGattClient(
             handleEvent(value)
         }
 
+        @SuppressLint("MissingPermission")
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
             // 部分机型会重复回调 onMtuChanged；只发起一次服务发现，避免 GATT 命令冲突。
             if (servicesDiscovered || discoveryInFlight) return

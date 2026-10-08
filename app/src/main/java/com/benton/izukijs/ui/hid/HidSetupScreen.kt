@@ -53,8 +53,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.R
 import com.benton.izukijs.controller.hid.HidConnectionState
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.rememberAppContainer
@@ -91,13 +93,13 @@ fun HidSetupScreen(onBack: () -> Unit) {
         if (result.values.all { it }) {
             manager.startScan()
         } else {
-            Toast.makeText(context, "需要蓝牙权限才能扫描设备", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.hid_need_bt_permission), Toast.LENGTH_SHORT).show()
         }
     }
 
     fun startScan() {
         if (!client.isBluetoothEnabled()) {
-            Toast.makeText(context, "请先开启蓝牙", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.hid_enable_bt), Toast.LENGTH_SHORT).show()
             return
         }
         if (client.hasPermissions()) manager.startScan() else permissionLauncher.launch(requiredPermissions)
@@ -106,15 +108,15 @@ fun HidSetupScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("蓝牙 HID") },
+                title = { Text(stringResource(R.string.control_hid)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { if (state == HidConnectionState.SCANNING) manager.stopScan() else startScan() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "扫描")
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.hid_scan))
                     }
                 },
             )
@@ -123,16 +125,16 @@ fun HidSetupScreen(onBack: () -> Unit) {
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text("连接状态", style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.hid_connection_status), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
                     Text(stateText(state, hidReady), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     connected?.let {
                         Spacer(Modifier.height(4.dp))
-                        Text("已连接: $it")
+                        Text(stringResource(R.string.hid_connected, it))
                     }
                     resolution?.let { (w, h) ->
                         Spacer(Modifier.height(4.dp))
-                        Text("数位板分辨率: $w x $h")
+                        Text(stringResource(R.string.hid_resolution, w, h))
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(
@@ -163,20 +165,22 @@ fun HidSetupScreen(onBack: () -> Unit) {
                             if (hit) {
                                 Icon(
                                     Icons.Filled.Check,
-                                    contentDescription = "命中",
+                                    contentDescription = stringResource(R.string.hid_hit),
                                     tint = MaterialTheme.colorScheme.onPrimary,
                                 )
                             }
                         }
                         Column {
-                            Text("HID 检测靶点", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.hid_target), style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                when (verifyState) {
-                                    VerifyState.IDLE -> "点「验证 HID」后保持本界面，勿手动触摸靶点"
-                                    VerifyState.WAITING -> "等待 HID 点击命中…"
-                                    VerifyState.PASS -> "✓ 已命中，HID 注入正常"
-                                    VerifyState.FAIL -> "✗ 未命中，请确认 HID 就绪/靶点未被遮挡"
-                                },
+                                stringResource(
+                                    when (verifyState) {
+                                        VerifyState.IDLE -> R.string.hid_verify_idle
+                                        VerifyState.WAITING -> R.string.hid_verify_waiting
+                                        VerifyState.PASS -> R.string.hid_verify_pass
+                                        VerifyState.FAIL -> R.string.hid_verify_fail
+                                    },
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = when (verifyState) {
                                     VerifyState.PASS -> MaterialTheme.colorScheme.primary
@@ -188,9 +192,9 @@ fun HidSetupScreen(onBack: () -> Unit) {
                     }
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(onClick = { startScan() }) { Text("扫描设备") }
+                        Button(onClick = { startScan() }) { Text(stringResource(R.string.hid_scan_devices)) }
                         if (connected != null) {
-                            OutlinedButton(onClick = { manager.disconnect() }) { Text("断开") }
+                            OutlinedButton(onClick = { manager.disconnect() }) { Text(stringResource(R.string.hid_disconnect)) }
                         }
                         if (hidReady) {
                             OutlinedButton(
@@ -207,7 +211,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
                                         }
                                     }
                                 },
-                            ) { Text("验证 HID") }
+                            ) { Text(stringResource(R.string.hid_verify)) }
                         }
                     }
                 }
@@ -215,7 +219,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
 
             if (devices.isEmpty()) {
                 EmptyState(
-                    "未发现设备。请确认狗的电源与广播已开启，点击右上角扫描。",
+                    stringResource(R.string.hid_empty),
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             } else {
@@ -223,7 +227,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
                     items(devices, key = { it.address }) { device ->
                         ListItem(
                             headlineContent = { Text(device.name) },
-                            supportingContent = { Text("${device.address} · RSSI ${device.rssi}") },
+                            supportingContent = { Text(stringResource(R.string.hid_device_meta, device.address, device.rssi)) },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { manager.connect(device.address) },
@@ -235,15 +239,18 @@ fun HidSetupScreen(onBack: () -> Unit) {
     }
 }
 
-private fun stateText(state: HidConnectionState, hidReady: Boolean): String = when (state) {
-    HidConnectionState.IDLE -> "未连接"
-    HidConnectionState.SCANNING -> "扫描中…"
-    HidConnectionState.CONNECTING -> "连接中…"
-    HidConnectionState.CONNECTED -> "已连接，发现服务…"
-    HidConnectionState.READY ->
-        if (hidReady) "已就绪（HID 通道可用）" else "已连接，HID 通道未就绪…"
-    HidConnectionState.ERROR -> "连接错误"
-}
+@Composable
+private fun stateText(state: HidConnectionState, hidReady: Boolean): String = stringResource(
+    when (state) {
+        HidConnectionState.IDLE -> R.string.hid_state_idle
+        HidConnectionState.SCANNING -> R.string.hid_state_scanning
+        HidConnectionState.CONNECTING -> R.string.hid_state_connecting
+        HidConnectionState.CONNECTED -> R.string.hid_state_connected
+        HidConnectionState.READY ->
+            if (hidReady) R.string.hid_state_ready else R.string.hid_state_ready_pending
+        HidConnectionState.ERROR -> R.string.hid_state_error
+    },
+)
 
 /** HID 回环验证状态。 */
 private enum class VerifyState { IDLE, WAITING, PASS, FAIL }

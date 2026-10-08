@@ -13,7 +13,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.benton.izukijs.R
 import com.benton.izukijs.model.EnvField
 
 /**
@@ -35,7 +37,7 @@ fun ScriptEnvDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("运行参数 · $scriptName") },
+        title = { Text(stringResource(R.string.env_title, scriptName)) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -60,10 +62,10 @@ fun ScriptEnvDialog(
                 onClick = {
                     onConfirm(fields.associate { it.key to values[it.key].orEmpty() })
                 },
-            ) { Text("运行") }
+            ) { Text(stringResource(R.string.common_run)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

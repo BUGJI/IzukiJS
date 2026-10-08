@@ -42,16 +42,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.benton.izukijs.R
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -75,6 +75,11 @@ fun ScriptsScreen(
     var deleteTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var query by remember { mutableStateOf("") }
 
+    val filtered = remember(query, scripts) {
+        if (query.isBlank()) scripts
+        else scripts.filter { it.name.contains(query.trim(), ignoreCase = true) }
+    }
+
     fun refresh() {
         scope.launch {
             scripts = container.scriptRepository.listAsync()
@@ -94,7 +99,12 @@ fun ScriptsScreen(
                 val ok = withContext(Dispatchers.IO) {
                     writeTextToUri(context, uri, container.scriptRepository.read(target))
                 }
-                Toast.makeText(context, if (ok) "已导出 ${target.name}" else "导出失败", Toast.LENGTH_SHORT).show()
+                val message = if (ok) {
+                    context.getString(R.string.scripts_exported, target.name)
+                } else {
+                    context.getString(R.string.scripts_export_failed)
+                }
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -113,9 +123,9 @@ fun ScriptsScreen(
                         .ifBlank { "imported" }
                     container.scriptRepository.createAsync(name, text)
                     refresh()
-                    Toast.makeText(context, "已导入 $name", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.scripts_imported, name), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(context, "导入失败", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.scripts_import_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -124,25 +134,25 @@ fun ScriptsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("脚本中心") },
+                title = { Text(stringResource(R.string.scripts_title)) },
                 actions = {
                     IconButton(onClick = onOpenInspector) {
-                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "布局分析")
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = stringResource(R.string.scripts_inspector))
                     }
                     Box {
                         IconButton(onClick = { showOverflow = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
                         }
                         DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
                             DropdownMenuItem(
-                                text = { Text("导入脚本") },
+                                text = { Text(stringResource(R.string.scripts_import)) },
                                 onClick = {
                                     showOverflow = false
                                     importLauncher.launch(arrayOf("text/*", "application/javascript"))
                                 },
                             )
                             DropdownMenuItem(
-                                text = { Text("定时任务") },
+                                text = { Text(stringResource(R.string.scripts_schedule)) },
                                 onClick = { showOverflow = false; onOpenSchedule() },
                             )
                         }
@@ -152,15 +162,10 @@ fun ScriptsScreen(
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { newName = "script"; showNewDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "新建脚本")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.scripts_new))
             }
         },
     ) { padding ->
-        val filtered = if (query.isBlank()) {
-            scripts
-        } else {
-            scripts.filter { it.name.contains(query.trim(), ignoreCase = true) }
-        }
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (scripts.isNotEmpty()) {
                 OutlinedTextField(
@@ -169,14 +174,14 @@ fun ScriptsScreen(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    placeholder = { Text("搜索脚本") },
+                    placeholder = { Text(stringResource(R.string.scripts_search)) },
                 )
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when {
-                    loaded && scripts.isEmpty() -> EmptyState("还没有脚本，点击右下角新建")
+                    loaded && scripts.isEmpty() -> EmptyState(stringResource(R.string.scripts_empty))
 
-                    filtered.isEmpty() -> EmptyState("没有匹配「${query.trim()}」的脚本")
+                    filtered.isEmpty() -> EmptyState(stringResource(R.string.scripts_no_match, query.trim()))
 
                     else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(filtered, key = { it.id }) { script ->
@@ -197,13 +202,13 @@ fun ScriptsScreen(
     if (showNewDialog) {
         AlertDialog(
             onDismissRequest = { showNewDialog = false },
-            title = { Text("新建脚本") },
+            title = { Text(stringResource(R.string.scripts_new)) },
             text = {
                 OutlinedTextField(
                     value = newName,
                     onValueChange = { newName = it },
                     singleLine = true,
-                    label = { Text("名称") },
+                    label = { Text(stringResource(R.string.scripts_name)) },
                 )
             },
             confirmButton = {
@@ -214,10 +219,10 @@ fun ScriptsScreen(
                         showNewDialog = false
                         onOpenScript(created.id)
                     }
-                }) { Text("创建") }
+                }) { Text(stringResource(R.string.scripts_create)) }
             },
             dismissButton = {
-                TextButton(onClick = { showNewDialog = false }) { Text("取消") }
+                TextButton(onClick = { showNewDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -225,13 +230,13 @@ fun ScriptsScreen(
     renameTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { renameTarget = null },
-            title = { Text("重命名") },
+            title = { Text(stringResource(R.string.scripts_rename)) },
             text = {
                 OutlinedTextField(
                     value = renameName,
                     onValueChange = { renameName = it },
                     singleLine = true,
-                    label = { Text("名称") },
+                    label = { Text(stringResource(R.string.scripts_name)) },
                 )
             },
             confirmButton = {
@@ -242,10 +247,10 @@ fun ScriptsScreen(
                         refresh()
                         renameTarget = null
                     }
-                }) { Text("确定") }
+                }) { Text(stringResource(R.string.common_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text("取消") }
+                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -253,8 +258,8 @@ fun ScriptsScreen(
     deleteTarget?.let { target ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
-            title = { Text("删除脚本") },
-            text = { Text("确定删除「${target.name}」吗？此操作无法撤销。") },
+            title = { Text(stringResource(R.string.scripts_delete_title)) },
+            text = { Text(stringResource(R.string.scripts_delete_message, target.name)) },
             confirmButton = {
                 TextButton(onClick = {
                     scope.launch {
@@ -263,10 +268,10 @@ fun ScriptsScreen(
                         deleteTarget = null
                         refresh()
                     }
-                }) { Text("删除") }
+                }) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -284,26 +289,26 @@ private fun ScriptRow(
 
     ListItem(
         headlineContent = { Text(script.name) },
-        supportingContent = { Text(formatTime(script.updatedAt)) },
+        supportingContent = { Text(formatDateTime(script.updatedAt)) },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
         trailingContent = {
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = "更多")
+                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     DropdownMenuItem(
-                        text = { Text("重命名") },
+                        text = { Text(stringResource(R.string.scripts_rename)) },
                         onClick = { menuOpen = false; onRename() },
                     )
                     DropdownMenuItem(
-                        text = { Text("导出") },
+                        text = { Text(stringResource(R.string.common_export)) },
                         onClick = { menuOpen = false; onExport() },
                     )
                     DropdownMenuItem(
-                        text = { Text("删除") },
+                        text = { Text(stringResource(R.string.common_delete)) },
                         onClick = { menuOpen = false; onDelete() },
                     )
                 }
@@ -311,10 +316,6 @@ private fun ScriptRow(
         },
     )
 }
-
-private val TIME_FORMATTER = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-
-private fun formatTime(millis: Long): String = TIME_FORMATTER.format(Date(millis))
 
 private fun writeTextToUri(context: Context, uri: Uri, text: String): Boolean = runCatching {
     context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }

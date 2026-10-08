@@ -2,4 +2,371 @@
     <string name="app_name">Izuki JS</string>
     <string name="accessibility_service_description">开启后，Izuki JS 可注入手势、读取屏幕控件树以执行自动化脚本。</string>
     <string name="accessibility_service_summary">Izuki JS 自动化控制服务</string>
+
+    <!-- 通用 -->
+    <string name="common_back">返回</string>
+    <string name="common_refresh">刷新</string>
+    <string name="common_more">更多</string>
+    <string name="common_confirm">确定</string>
+    <string name="common_cancel">取消</string>
+    <string name="common_delete">删除</string>
+    <string name="common_run">运行</string>
+    <string name="common_stop">停止</string>
+    <string name="common_copy">复制</string>
+    <string name="common_clear">清空</string>
+    <string name="common_export">导出</string>
+    <string name="common_show">显示</string>
+    <string name="common_hide">隐藏</string>
+    <string name="common_ready">已就绪</string>
+    <string name="common_not_ready">未就绪</string>
+    <string name="common_auto">自动</string>
+    <string name="common_on">开</string>
+    <string name="common_off">关</string>
+
+    <!-- 导航 -->
+    <string name="nav_run">运行</string>
+    <string name="nav_scripts">脚本</string>
+    <string name="nav_logs">日志</string>
+    <string name="nav_settings">设置</string>
+
+    <!-- 语言 -->
+    <string name="settings_language">语言</string>
+    <string name="settings_language_desc">选择界面语言；改动后界面会立即刷新。</string>
+    <string name="language_system">跟随系统</string>
+    <string name="language_chinese">中文</string>
+    <string name="language_english">English</string>
+
+    <!-- 控制模式 / 能力 / OCR 服务商 -->
+    <string name="control_accessibility">无障碍</string>
+    <string name="control_shizuku">Shizuku</string>
+    <string name="control_hid">蓝牙 HID</string>
+    <string name="control_root">Root</string>
+
+    <string name="capability_gesture">手势</string>
+    <string name="capability_absolute_pointer">绝对指针</string>
+    <string name="capability_relative_pointer">相对指针</string>
+    <string name="capability_key">按键</string>
+    <string name="capability_text">文本输入</string>
+    <string name="capability_screenshot">截图</string>
+    <string name="capability_node_tree">控件树</string>
+    <string name="capability_shell">Shell</string>
+    <string name="capability_global_action">全局动作</string>
+    <string name="capability_root">Root</string>
+
+    <string name="ocr_provider_baidu">百度 OCR</string>
+    <string name="ocr_provider_google">Google Vision</string>
+    <string name="ocr_provider_custom">自定义</string>
+
+    <!-- 日志级别 -->
+    <string name="log_level_debug">调试</string>
+    <string name="log_level_info">信息</string>
+    <string name="log_level_success">成功</string>
+    <string name="log_level_warn">警告</string>
+    <string name="log_level_error">错误</string>
+    <string name="log_level_all">全部</string>
+
+    <!-- 运行页 -->
+    <string name="run_status_title">运行状态</string>
+    <string name="run_running">正在运行</string>
+    <string name="run_idle">当前未运行脚本</string>
+    <string name="run_recent">运行最近脚本</string>
+    <string name="run_no_scripts">还没有脚本，去脚本中心新建</string>
+    <string name="run_permissions_title">权限与能力</string>
+    <string name="run_configure">配置</string>
+    <string name="run_capture_recording">屏幕捕获：录制中</string>
+    <string name="run_capture_off">屏幕捕获：未开启</string>
+    <string name="run_mode_disabled">未启用</string>
+
+    <!-- 脚本中心 -->
+    <string name="scripts_title">脚本中心</string>
+    <string name="scripts_inspector">布局分析</string>
+    <string name="scripts_import">导入脚本</string>
+    <string name="scripts_schedule">定时任务</string>
+    <string name="scripts_new">新建脚本</string>
+    <string name="scripts_search">搜索脚本</string>
+    <string name="scripts_empty">还没有脚本，点击右下角新建</string>
+    <string name="scripts_no_match">没有匹配「%1$s」的脚本</string>
+    <string name="scripts_name">名称</string>
+    <string name="scripts_create">创建</string>
+    <string name="scripts_rename">重命名</string>
+    <string name="scripts_delete_title">删除脚本</string>
+    <string name="scripts_delete_message">确定删除「%1$s」吗？此操作无法撤销。</string>
+    <string name="scripts_exported">已导出 %1$s</string>
+    <string name="scripts_export_failed">导出失败</string>
+    <string name="scripts_imported">已导入 %1$s</string>
+    <string name="scripts_import_failed">导入失败</string>
+
+    <!-- 权限与能力 -->
+    <string name="perm_tip">提示：脚本运行时可以收回非必要权限，以降低被风控识别的风险。按标注的优缺点选择当前脚本真正需要的权限即可。</string>
+    <string name="perm_screen_capture">屏幕捕获</string>
+    <string name="perm_status_recording">录制中</string>
+    <string name="perm_status_off">未开启</string>
+    <string name="perm_status_on">已开启</string>
+    <string name="perm_status_service_stopped">未运行服务</string>
+    <string name="perm_status_authorized">已授权</string>
+    <string name="perm_capture_desc">授权一次后持续录屏，为截图 / 找图 / OCR 提供无限屏幕帧。</string>
+    <string name="perm_capture_tip">建议配合 蓝牙 HID / 无障碍 / Shizuku 等控制权限，形成「看屏 + 操作」闭环。</string>
+    <string name="perm_action_authorize_start">授权并开始</string>
+    <string name="perm_action_stop_recording">停止录制</string>
+    <string name="perm_hid_desc">通过外部 HID 硬件（数位板狗）以绝对坐标注入输入，等同真实硬件。</string>
+    <string name="perm_hid_pro_1">等同真实硬件事件，最难被检测</string>
+    <string name="perm_hid_pro_2">绝对坐标，点击 / 滑动精准</string>
+    <string name="perm_hid_con_1">需外部 HID 硬件，便携性受限</string>
+    <string name="perm_hid_con_2">不支持截图与控件树</string>
+    <string name="perm_action_connect">去连接</string>
+    <string name="perm_accessibility_desc">通过无障碍服务注入手势、读取控件树。无需额外安装，兼容性最好。</string>
+    <string name="perm_accessibility_pro_1">无需额外安装，开箱即用</string>
+    <string name="perm_accessibility_pro_2">可读控件树，选择器定位精准</string>
+    <string name="perm_accessibility_con_1">较易被风控识别</string>
+    <string name="perm_accessibility_con_2">API30 以下无法截图；键盘 / 文本能力有限</string>
+    <string name="perm_action_open">去开启</string>
+    <string name="perm_shizuku_desc">通过 Shizuku 以 ADB 权限注入输入、截图、执行 Shell。功能最强。</string>
+    <string name="perm_shizuku_pro_1">功能最全：手势 / 按键 / 文本 / 截图 / Shell</string>
+    <string name="perm_shizuku_pro_2">无需 Root 即可获得高权限能力</string>
+    <string name="perm_shizuku_con_1">需安装并常驻 Shizuku，重启后需重新启动服务</string>
+    <string name="perm_shizuku_con_2">连接断开即失效</string>
+    <string name="perm_action_shizuku_not_running">未运行 Shizuku</string>
+    <string name="perm_action_authorize">去授权</string>
+    <string name="perm_root_desc">通过 Root 权限直接调用系统能力，与 Shizuku 能力相近。</string>
+    <string name="perm_root_pro_1">最高权限，能力与 Shizuku 相当</string>
+    <string name="perm_root_pro_2">可直接执行 Shell 与系统级操作</string>
+    <string name="perm_root_con_1">需设备已 Root，门槛高</string>
+    <string name="perm_root_con_2">权限过高，风控与安全风险最大</string>
+    <string name="perm_action_detect_root">检测 Root</string>
+    <string name="perm_action_revoke">撤销权限</string>
+    <string name="perm_floating_title">悬浮窗</string>
+    <string name="perm_floating_desc">以悬浮窗显示控制条与调试面板，方便随时运行脚本、可视化控件树与 OCR 坐标。</string>
+    <string name="perm_floating_tip">建议配合任意控制权限使用，便于运行脚本与调试。</string>
+    <string name="perm_floating_control">显示悬浮控制条</string>
+    <string name="perm_floating_debug">显示布局 / OCR 调试面板</string>
+    <string name="perm_floating_debug_desc">抓取布局 / OCR 时会自动隐藏，避免被截入画面。</string>
+    <string name="perm_overlay_needed">需要在系统设置中授予「显示在其他应用上层」权限。</string>
+
+    <string name="dim_accuracy">精准度</string>
+    <string name="dim_risk">风控</string>
+    <string name="dim_auth">授权</string>
+    <string name="rating_high">高</string>
+    <string name="rating_very_low">极低</string>
+    <string name="rating_low">低</string>
+    <string name="rating_medium">中</string>
+    <string name="rating_easy">简单</string>
+    <string name="rating_complex">复杂</string>
+
+    <!-- 设置主页面 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_control">控制与视觉</string>
+    <string name="settings_editor">编辑器</string>
+    <string name="settings_ai_agent">AI Agent</string>
+    <string name="settings_storage">存储与日志</string>
+    <string name="settings_backup">备份与恢复</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_unknown_category">未知的设置分组。</string>
+    <string name="settings_control_summary">优先 %1$s · 录屏%2$s · OCR %3$s</string>
+    <string name="settings_editor_summary">字号 %1$d · 自动保存%2$s</string>
+    <string name="settings_ai_configured">已配置</string>
+    <string name="settings_ai_not_configured">未配置</string>
+    <string name="settings_storage_summary">%1$dMB · 保留 %2$d 天</string>
+    <string name="settings_backup_summary">导出 / 导入 / 重置</string>
+    <string name="settings_local">本地</string>
+    <string name="settings_online">在线</string>
+    <string name="settings_version_short">v%1$s</string>
+
+    <!-- 控制与视觉 -->
+    <string name="ctrl_priority_title">控制模式优先级</string>
+    <string name="ctrl_priority_desc">当某项能力有多个后端可用时，优先使用选中的模式。</string>
+    <string name="ctrl_cap_priority_title">按能力指定优先模式</string>
+    <string name="ctrl_cap_priority_desc">可为不同能力分别指定后端；未指定的能力跟随上方全局设置。仅列出至少有两个可用后端的项。</string>
+    <string name="ctrl_follow_global">跟随全局</string>
+    <string name="ctrl_backends_title">控制后端</string>
+    <string name="ctrl_backends_desc">关闭后该后端不参与能力协商；已建立的连接（如无障碍服务、Shizuku）本身不受影响。</string>
+    <string name="capture_compress_title">截图压缩</string>
+    <string name="capture_compress_desc">影响「保存截图」的文件大小与在线 OCR 的上传流量；图像匹配、找色与本地识别仍使用原始分辨率，坐标不受影响。</string>
+    <string name="capture_scale">缩放比例</string>
+    <string name="capture_jpeg_quality">JPEG 质量</string>
+    <string name="ocr_section_title">OCR 识别</string>
+    <string name="ocr_section_desc">低端设备可切换到在线识别以节省本地算力；在线失败会自动回退本地。</string>
+    <string name="ocr_local_mlkit">本地 (MLKit)</string>
+    <string name="ocr_online">在线</string>
+    <string name="ocr_provider_label">服务商</string>
+    <string name="ocr_api_key">API Key</string>
+    <string name="ocr_secret_key">Secret Key</string>
+    <string name="ocr_endpoint">请求地址 (POST)</string>
+    <string name="ocr_header_name">鉴权 Header 名</string>
+    <string name="ocr_header_value">鉴权 Header 值</string>
+
+    <!-- 存储与日志 -->
+    <string name="storage_log_title">日志存储</string>
+    <string name="storage_auto_clean">自动清理</string>
+    <string name="storage_log_level">日志级别</string>
+    <string name="storage_max_size">最大存储</string>
+    <string name="storage_retention_days">保留天数</string>
+    <string name="storage_usage">当前占用 %1$s</string>
+    <string name="storage_clear_now">立即清空</string>
+    <string name="storage_export_log">导出</string>
+    <string name="storage_export_log_chooser">导出日志</string>
+    <string name="storage_days">%1$d 天</string>
+
+    <!-- 关于 -->
+    <string name="about_name">IzukiJS</string>
+    <string name="about_version">版本 %1$s (%2$d)</string>
+    <string name="about_desc">基于 Kotlin / Jetpack Compose 的 Android 自动化脚本运行环境。</string>
+
+    <!-- 编辑器设置 -->
+    <string name="editor_font_size">字号</string>
+    <string name="editor_auto_save">自动保存</string>
+    <string name="editor_auto_save_desc">停止输入后自动写盘；关闭后返回 / 运行时仍会保存。</string>
+
+    <!-- 备份与恢复 -->
+    <string name="backup_desc">导出 / 导入包含 AI、OCR、控制、截图、日志与编辑器偏好。导出文件含明文密钥，请妥善保管；不含脚本文件。</string>
+    <string name="backup_export">导出配置</string>
+    <string name="backup_import">导入配置</string>
+    <string name="backup_read_failed">读取文件失败</string>
+    <string name="backup_import_success">导入成功</string>
+    <string name="backup_import_failed">导入失败：%1$s</string>
+    <string name="backup_export_failed">导出失败</string>
+    <string name="backup_reset_title">重置</string>
+    <string name="backup_reset_desc">将全部设置恢复为默认值，不影响脚本内容。</string>
+    <string name="backup_reset_button">恢复默认设置</string>
+    <string name="backup_reset_confirm">确定要将全部设置恢复为默认值吗？此操作不可撤销。</string>
+    <string name="backup_reset_done">已恢复默认设置</string>
+
+    <!-- AI Agent -->
+    <string name="ai_title">AI Agent</string>
+    <string name="ai_master_title">总开关</string>
+    <string name="ai_enable">启用 AI Agent</string>
+    <string name="ai_enable_desc">关闭后脚本的 ai.* 调用会直接返回 null。</string>
+    <string name="ai_api_title">接口（OpenAI 兼容）</string>
+    <string name="ai_api_desc">填写任意兼容 OpenAI Chat Completions 的服务地址；换 Base URL 即可对接 DeepSeek / 通义 / one-api / Ollama 等。</string>
+    <string name="ai_base_url">Base URL</string>
+    <string name="ai_model">模型</string>
+    <string name="ai_custom_header_name">自定义鉴权 Header 名</string>
+    <string name="ai_custom_header_name_placeholder">可选，如 api-key（Azure）</string>
+    <string name="ai_custom_header_value">自定义鉴权 Header 值</string>
+    <string name="ai_params_title">生成参数</string>
+    <string name="ai_stream">流式返回</string>
+    <string name="ai_stream_desc">开启后通过 onDelta 回调逐段返回文本。</string>
+    <string name="ai_temperature">Temperature（0–2）</string>
+    <string name="ai_max_tokens">最大 Token</string>
+    <string name="ai_timeout_sec">超时（秒）</string>
+    <string name="ai_tools_title">Agent 工具</string>
+    <string name="ai_tools_enable">启用工具调用</string>
+    <string name="ai_tools_enable_desc">允许模型自己点击 / 滑动 / OCR / 启动应用等。关闭则仅做纯对话。</string>
+    <string name="ai_allow_shell">允许 Shell</string>
+    <string name="ai_allow_shell_desc">允许模型执行 Shell 命令，需要 Shizuku 或 Root，权限较大，默认关闭。</string>
+    <string name="ai_max_steps">最大步数</string>
+    <string name="ai_max_steps_desc">单个脚本可在调用时用 options.maxSteps 覆盖该值。</string>
+    <string name="ai_prompt_title">系统提示词</string>
+    <string name="ai_prompt_desc">作为框架基础提示词发送给模型，描述所处环境、可用工具与决策规范。</string>
+    <string name="ai_prompt_reset">恢复默认提示词</string>
+    <string name="ai_test_title">连接测试</string>
+    <string name="ai_test_desc">发送一条极短的对话请求，验证地址 / Key / 模型是否可用。</string>
+    <string name="ai_testing">测试中…</string>
+    <string name="ai_test">测试连接</string>
+    <string name="ai_test_success">✔ 成功：%1$s</string>
+    <string name="ai_test_failure">✘ 失败：%1$s</string>
+
+    <!-- 编辑器 -->
+    <string name="editor_loading">加载中…</string>
+    <string name="editor_not_found">脚本不存在: %1$s</string>
+    <string name="editor_unsaved">未保存</string>
+    <string name="editor_console">控制台</string>
+    <string name="editor_expand_console">展开控制台</string>
+    <string name="editor_collapse_console">收起控制台</string>
+    <string name="editor_placeholder">// 在此编写 JS 脚本</string>
+
+    <!-- 蓝牙 HID -->
+    <string name="hid_scan">扫描</string>
+    <string name="hid_connection_status">连接状态</string>
+    <string name="hid_connected">已连接: %1$s</string>
+    <string name="hid_resolution">数位板分辨率: %1$d x %2$d</string>
+    <string name="hid_target">HID 检测靶点</string>
+    <string name="hid_verify_idle">点「验证 HID」后保持本界面，勿手动触摸靶点</string>
+    <string name="hid_verify_waiting">等待 HID 点击命中…</string>
+    <string name="hid_verify_pass">✓ 已命中，HID 注入正常</string>
+    <string name="hid_verify_fail">✗ 未命中，请确认 HID 就绪/靶点未被遮挡</string>
+    <string name="hid_hit">命中</string>
+    <string name="hid_scan_devices">扫描设备</string>
+    <string name="hid_disconnect">断开</string>
+    <string name="hid_verify">验证 HID</string>
+    <string name="hid_empty">未发现设备。请确认狗的电源与广播已开启，点击右上角扫描。</string>
+    <string name="hid_device_meta">%1$s · RSSI %2$d</string>
+    <string name="hid_state_idle">未连接</string>
+    <string name="hid_state_scanning">扫描中…</string>
+    <string name="hid_state_connecting">连接中…</string>
+    <string name="hid_state_connected">已连接，发现服务…</string>
+    <string name="hid_state_ready">已就绪（HID 通道可用）</string>
+    <string name="hid_state_ready_pending">已连接，HID 通道未就绪…</string>
+    <string name="hid_state_error">连接错误</string>
+    <string name="hid_need_bt_permission">需要蓝牙权限才能扫描设备</string>
+    <string name="hid_enable_bt">请先开启蓝牙</string>
+
+    <!-- 布局分析 -->
+    <string name="inspector_title">布局分析</string>
+    <string name="inspector_no_tree">无法读取控件树，请先开启无障碍服务</string>
+    <string name="inspector_no_nodes">当前界面没有可分析的节点</string>
+    <string name="inspector_tap_hint">点击屏幕截图中的控件查看选择器</string>
+    <string name="inspector_select_hint">选择节点查看选择器</string>
+    <string name="inspector_copy_selector">复制选择器</string>
+    <string name="inspector_copied">已复制选择器</string>
+    <string name="inspector_field_id">id</string>
+    <string name="inspector_field_text">文本</string>
+    <string name="inspector_field_desc">描述</string>
+    <string name="inspector_field_bounds">范围</string>
+
+    <!-- 定时任务 -->
+    <string name="schedule_title">定时任务</string>
+    <string name="schedule_new">新建定时任务</string>
+    <string name="schedule_empty">还没有定时任务。点击右下角新建，可设置每日固定时间或按间隔重复运行脚本。</string>
+    <string name="schedule_select_script">选择脚本</string>
+    <string name="schedule_hour">时</string>
+    <string name="schedule_minute">分</string>
+    <string name="schedule_interval">重复间隔（分钟，0 = 仅一次）</string>
+    <string name="schedule_next_interval">下次 %1$s · 每 %2$d 分钟</string>
+    <string name="schedule_next_once">仅一次 · %1$s</string>
+
+    <!-- 控制台 -->
+    <string name="console_empty">暂无输出</string>
+    <string name="console_filtered_empty">当前筛选下没有日志</string>
+    <string name="console_back_to_latest">回到最新</string>
+
+    <!-- 运行参数对话框 -->
+    <string name="env_title">运行参数 · %1$s</string>
+
+    <!-- 通知 -->
+    <string name="notif_script_title">Izuki JS 正在运行</string>
+    <string name="notif_script_channel">脚本运行</string>
+    <string name="notif_script_channel_desc">脚本运行期间常驻通知</string>
+    <string name="notif_floating_title">Izuki JS 悬浮窗</string>
+    <string name="notif_floating_text">运行日志正在显示</string>
+    <string name="notif_floating_channel">悬浮窗日志</string>
+    <string name="notif_debug_channel">调试悬浮窗</string>
+    <string name="notif_debug_title">Izuki JS 调试悬浮窗</string>
+    <string name="notif_debug_text">布局 / OCR 调试工具运行中</string>
+    <string name="notif_capture_title">Izuki JS 录屏中</string>
+    <string name="notif_capture_text">持续截图服务运行中</string>
+    <string name="notif_capture_channel">持续录屏</string>
+
+    <!-- 调试悬浮窗 -->
+    <string name="debug_drag_me">调试 · 拖我</string>
+    <string name="debug_tab_layout">布局</string>
+    <string name="debug_capturing_layout">正在获取布局…</string>
+    <string name="debug_recognizing_text">正在识别文字…</string>
+    <string name="debug_start_hint">点击「布局」或「OCR」开始调试</string>
+    <string name="debug_task_failed">失败: %1$s</string>
+    <string name="debug_no_accessibility">无障碍未开启，无法读取布局</string>
+    <string name="debug_no_node_tree">未获取到控件树</string>
+    <string name="debug_clickable_tag">可点</string>
+    <string name="debug_empty_layout">空布局</string>
+    <string name="debug_no_screenshot">无截图来源（请开启无障碍/Shizuku 或持续录屏）</string>
+    <string name="debug_ocr_no_result">OCR 无结果</string>
+    <string name="debug_ocr_element_count">共 %1$d 个元素\n\n</string>
+    <string name="debug_close">关闭调试面板</string>
+
+    <!-- 悬浮控制条 -->
+    <string name="floating_status_ready">● 就绪</string>
+    <string name="floating_status_running">● 运行中</string>
+    <string name="floating_waiting_log">等待脚本日志…</string>
+    <string name="floating_collapse">最小化日志</string>
+    <string name="floating_expand">展开日志</string>
+    <string name="floating_stop">停止脚本</string>
 </resources>

@@ -38,16 +38,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.benton.izukijs.R
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.schedule.Schedule
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.formatMonthDayTime
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,23 +71,23 @@ fun ScheduleScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("定时任务") },
+                title = { Text(stringResource(R.string.schedule_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
-                Icon(Icons.Filled.Add, contentDescription = "新建定时任务")
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.schedule_new))
             }
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             if (schedules.isEmpty()) {
-                EmptyState("还没有定时任务。点击右下角新建，可设置每日固定时间或按间隔重复运行脚本。")
+                EmptyState(stringResource(R.string.schedule_empty))
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(schedules, key = { it.id }) { schedule ->
@@ -101,7 +101,7 @@ fun ScheduleScreen(onBack: () -> Unit) {
                                         refresh()
                                     }
                                 }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = "删除")
+                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete))
                                 }
                             },
                         )
@@ -147,7 +147,7 @@ private fun AddScheduleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新建定时任务") },
+        title = { Text(stringResource(R.string.schedule_new)) },
         text = {
             Column {
                 Box {
@@ -155,7 +155,7 @@ private fun AddScheduleDialog(
                         onClick = { scriptExpanded = true },
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(selected?.name ?: "选择脚本")
+                        Text(selected?.name ?: stringResource(R.string.schedule_select_script))
                     }
                     DropdownMenu(
                         expanded = scriptExpanded,
@@ -174,14 +174,14 @@ private fun AddScheduleDialog(
                     OutlinedTextField(
                         value = hour,
                         onValueChange = { hour = it.filter(Char::isDigit).take(2) },
-                        label = { Text("时") },
+                        label = { Text(stringResource(R.string.schedule_hour)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
                         value = minute,
                         onValueChange = { minute = it.filter(Char::isDigit).take(2) },
-                        label = { Text("分") },
+                        label = { Text(stringResource(R.string.schedule_minute)) },
                         singleLine = true,
                         modifier = Modifier.weight(1f),
                     )
@@ -190,7 +190,7 @@ private fun AddScheduleDialog(
                 OutlinedTextField(
                     value = interval,
                     onValueChange = { interval = it.filter(Char::isDigit).take(5) },
-                    label = { Text("重复间隔（分钟，0 = 仅一次）") },
+                    label = { Text(stringResource(R.string.schedule_interval)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -206,22 +206,21 @@ private fun AddScheduleDialog(
                     onConfirm(script, h, m, i)
                 },
                 enabled = selected != null,
-            ) { Text("确定") }
+            ) { Text(stringResource(R.string.common_confirm)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }
 
-private val DESCRIBE_FORMATTER = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
-
+@Composable
 private fun describe(schedule: Schedule): String {
-    val time = DESCRIBE_FORMATTER.format(Date(schedule.triggerAtMillis))
+    val time = formatMonthDayTime(schedule.triggerAtMillis)
     return if (schedule.intervalMinutes > 0) {
-        "下次 $time · 每 ${schedule.intervalMinutes} 分钟"
+        stringResource(R.string.schedule_next_interval, time, schedule.intervalMinutes)
     } else {
-        "仅一次 · $time"
+        stringResource(R.string.schedule_next_once, time)
     }
 }
 

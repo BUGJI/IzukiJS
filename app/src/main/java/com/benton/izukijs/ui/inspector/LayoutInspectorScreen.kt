@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -35,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,10 +53,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.unit.dp
+import com.benton.izukijs.R
 import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ui.rememberAppContainer
@@ -100,6 +104,12 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var refreshKey by remember { mutableStateOf(0) }
 
+    // 刷新替换或离开页面时回收旧截图，避免 native 内存累积。
+    DisposableEffect(bitmap) {
+        val current = bitmap
+        onDispose { current?.recycle() }
+    }
+
     LaunchedEffect(refreshKey) {
         loading = true
         message = null
@@ -113,8 +123,8 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
         nodes = buildList { tree?.let { flatten(it, 0, this) } }
         selected = null
         message = when {
-            tree == null -> "无法读取控件树，请先开启无障碍服务"
-            nodes.isEmpty() -> "当前界面没有可分析的节点"
+            tree == null -> context.getString(R.string.inspector_no_tree)
+            nodes.isEmpty() -> context.getString(R.string.inspector_no_nodes)
             else -> null
         }
         loading = false
@@ -123,21 +133,25 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("布局分析") },
+                title = { Text(stringResource(R.string.inspector_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
                     IconButton(onClick = { refreshKey++ }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "刷新")
+                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
                     }
                 },
             )
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Column(modifier = Modifier.fillMaxSize().widthIn(max = 840.dp)) {
             message?.let {
                 Text(
                     it,
@@ -227,7 +241,9 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
             val current = selected
             if (current == null) {
                 Text(
-                    if (bitmap != null) "点击屏幕截图中的控件查看选择器" else "选择节点查看选择器",
+                    stringResource(
+                        if (bitmap != null) R.string.inspector_tap_hint else R.string.inspector_select_hint,
+                    ),
                     modifier = Modifier.padding(16.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,
@@ -237,11 +253,11 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(current.label, style = MaterialTheme.typography.titleSmall)
                         Spacer(Modifier.height(4.dp))
-                        InfoLine("id", current.viewId)
-                        InfoLine("text", current.text)
-                        InfoLine("desc", current.desc)
+                        InfoLine(stringResource(R.string.inspector_field_id), current.viewId)
+                        InfoLine(stringResource(R.string.inspector_field_text), current.text)
+                        InfoLine(stringResource(R.string.inspector_field_desc), current.desc)
                         InfoLine(
-                            "bounds",
+                            stringResource(R.string.inspector_field_bounds),
                             "${current.left},${current.top} - ${current.right},${current.bottom}",
                         )
                         Spacer(Modifier.height(8.dp))
@@ -255,11 +271,12 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = {
                                 copyToClipboard(context, current.selector())
-                                Toast.makeText(context, "已复制选择器", Toast.LENGTH_SHORT).show()
-                            }) { Text("复制选择器") }
+                                Toast.makeText(context, context.getString(R.string.inspector_copied), Toast.LENGTH_SHORT).show()
+                            }) { Text(stringResource(R.string.inspector_copy_selector)) }
                         }
                     }
                 }
+            }
             }
         }
     }
@@ -299,5 +316,5 @@ private fun flatten(snapshot: NodeSnapshot, depth: Int, out: MutableList<NodeBox
 
 private fun copyToClipboard(context: Context, text: String) {
     val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
-    manager.setPrimaryClip(ClipData.newPlainText("selector", text))
+    manager.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.inspector_copy_selector), text))
 }

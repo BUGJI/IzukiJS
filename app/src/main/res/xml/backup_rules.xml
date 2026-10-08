@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-   Sample backup rules file; uncomment and customize as necessary.
-   See https://developer.android.com/guide/topics/data/autobackup
-   for details.
-   Note: This file is ignored for devices older than API 31
-   See https://developer.android.com/about/versions/12/backup-restore
+   自动备份规则（API 31 以下使用；API 31+ 见 data_extraction_rules.xml）。
+
+   密钥类字段（AI API Key / OCR 密钥等）经 Android Keystore 加密后写入 SharedPreferences，
+   而 Keystore 密钥不可备份。若把这些密文备份到新设备，恢复后会因无法解密而静默变为空串，
+   造成「配置看似已恢复、密钥却失效」的困扰。因此这里排除承载密文的 prefs，
+   跨设备迁移请改用应用内的「配置导出 / 导入」（导出为明文 JSON，导入时会重新加密）。
 -->
 <full-backup-content>
-    <!--
-   <include domain="sharedpref" path="."/>
-   <exclude domain="sharedpref" path="device.xml"/>
--->
+    <exclude domain="sharedpref" path="izukijs_ai.xml" />
+    <exclude domain="sharedpref" path="izukijs_ocr.xml" />
 </full-backup-content>

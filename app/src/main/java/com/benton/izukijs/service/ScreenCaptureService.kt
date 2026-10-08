@@ -51,8 +51,8 @@ class ScreenCaptureService : Service() {
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_script)
-            .setContentTitle("Izuki JS 录屏中")
-            .setContentText("持续截图服务运行中")
+            .setContentTitle(getString(R.string.notif_capture_title))
+            .setContentText(getString(R.string.notif_capture_text))
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -73,7 +73,7 @@ class ScreenCaptureService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "持续录屏",
+                getString(R.string.notif_capture_channel),
                 NotificationManager.IMPORTANCE_LOW,
             ),
         )

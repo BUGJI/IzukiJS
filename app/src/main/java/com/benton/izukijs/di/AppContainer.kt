@@ -13,6 +13,7 @@ import com.benton.izukijs.data.ConfigBackupManager
 import com.benton.izukijs.data.EditorSettingsRepository
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptRepository
+import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.LogBus
@@ -60,6 +61,8 @@ class AppContainer(private val application: Application) {
     val aiConfigRepository = AiConfigRepository(application)
 
     val editorSettingsRepository = EditorSettingsRepository(application)
+
+    val languageRepository = LanguageRepository(application)
 
     val configBackupManager = ConfigBackupManager(
         aiConfigRepository = aiConfigRepository,
