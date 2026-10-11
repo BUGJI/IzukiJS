@@ -108,6 +108,7 @@ class AgentTools(
                         "long" to booleanProp("是否长按"),
                         "duration_ms" to numberProp("长按时长（毫秒）"),
                         "settle" to booleanProp("点击后等待界面稳定再返回"),
+                        "hit" to booleanProp("返回命中的控件（需读控件树，较慢；默认关闭）"),
                         "dry_run" to booleanProp("只返回将要点击的位置，不真正执行"),
                     ),
                 ),
@@ -322,8 +323,11 @@ class AgentTools(
         val x = resolveX(args)
         val y = resolveY(args)
         if (x == null || y == null) return errorJson("click: 坐标无效（x/y 缺失或 normalized 越界）")
-        val hit = hitAt(x, y)
-        if (args.optBoolean("dry_run", false)) {
+        // 命中测试要读控件树（无无障碍时是一次较慢的 uiautomator dump），仅用于自校验，
+        // 默认不做，避免每次坐标点击都白白等一次 dump。
+        val dryRun = args.optBoolean("dry_run", false)
+        val hit = if (dryRun || args.optBoolean("hit", false)) hitAt(x, y) else null
+        if (dryRun) {
             return jsonOf {
                 put("ok", true)
                 put("dry_run", true)

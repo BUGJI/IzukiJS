@@ -128,17 +128,14 @@ class AppContainer(private val application: Application) {
     val mcpServerController = McpServerController(
         logBus = logBus,
         configProvider = { mcpConfigRepository.current() },
-        registryFactory = { config, operations ->
+        registryFactory = { operations ->
             McpToolRegistry(
                 bundle = deviceApiBundle,
                 nodeTreeProvider = nodeTreeProvider,
                 scriptRepository = scriptRepository,
                 executionManager = scriptExecutionManager,
                 operations = operations,
-                allowShell = config.allowShell,
-                allowScripts = config.allowScripts,
-                allowDangerousShell = config.allowDangerousShell,
-                isPackageBlocked = { config.isPackageBlocked(it) },
+                configProvider = { mcpConfigRepository.current() },
             )
         },
         resourcesFactory = {

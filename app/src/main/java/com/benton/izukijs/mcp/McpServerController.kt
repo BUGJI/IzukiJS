@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.net.Inet4Address
 import java.net.NetworkInterface
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -32,7 +33,7 @@ data class McpStatus(
 class McpServerController(
     private val logBus: LogBus,
     private val configProvider: () -> McpConfig,
-    private val registryFactory: (McpConfig, OperationRegistry) -> McpToolRegistry,
+    private val registryFactory: (OperationRegistry) -> McpToolRegistry,
     private val resourcesFactory: () -> McpResources,
     private val serverVersion: String,
 ) {
@@ -43,9 +44,16 @@ class McpServerController(
     /** 异步操作登记表；跨重启保留，便于客户端重连后回查结果。 */
     private val operations = OperationRegistry()
 
+    /**
+     * 会话表；同样跨 restart 保留。配置变更 / 服务重建只换监听与工具目录，
+     * 不使在线客户端的 Mcp-Session-Id 失效。
+     */
+    private val sessions = ConcurrentHashMap<String, Long>()
+
     private var server: HttpServer? = null
     private var handler: McpHttpHandler? = null
     private var toolDispatcher: ExecutorService? = null
+    private var waitDispatcher: ExecutorService? = null
 
     @Synchronized
     fun start() {
@@ -56,13 +64,25 @@ class McpServerController(
             return
         }
 
-        val registry = registryFactory(config, operations)
+        val registry = registryFactory(operations)
         val resources = resourcesFactory()
         val dispatcher = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "izuki-mcp-tools").apply { isDaemon = true }
         }
-        val protocol = McpProtocolHandler(registry, resources, operations, logBus, dispatcher, serverVersion)
-        val httpHandler = McpHttpHandler(protocol, config.token, logBus)
+        // 不占用设备的阻塞工具（如 wait）单独一条队列，避免长时间等待堵住后续快工具。
+        val waiter = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "izuki-mcp-wait").apply { isDaemon = true }
+        }
+        val protocol = McpProtocolHandler(
+            registry = registry,
+            resources = resources,
+            operations = operations,
+            logBus = logBus,
+            toolDispatcher = dispatcher,
+            waitDispatcher = waiter,
+            serverVersion = serverVersion,
+        )
+        val httpHandler = McpHttpHandler(protocol, config.token, logBus, sessions)
         val bindAddress = if (config.bindMode == McpBindMode.LAN) LAN_BIND else LOOPBACK_BIND
 
         val httpServer = HttpServer(bindAddress, config.port) { request ->
@@ -78,6 +98,7 @@ class McpServerController(
             logBus.error("MCP 服务启动失败：${t.message}")
             runCatching { httpServer.stop() }
             runCatching { dispatcher.shutdownNow() }
+            runCatching { waiter.shutdownNow() }
             _status.value = McpStatus(error = "启动失败：${t.message}")
             return
         }
@@ -85,9 +106,10 @@ class McpServerController(
         server = httpServer
         handler = httpHandler
         toolDispatcher = dispatcher
+        waitDispatcher = waiter
 
         val urls = buildUrls(config.bindMode, port)
-        _status.value = McpStatus(running = true, port = port, addresses = urls)
+        _status.value = McpStatus(running = true, port = port, addresses = urls, sessions = sessions.size)
         logBus.success("🔌 MCP 服务已启动：${urls.joinToString(", ")}")
     }
 
@@ -96,9 +118,11 @@ class McpServerController(
         val wasRunning = server != null || toolDispatcher != null
         runCatching { server?.stop() }
         runCatching { toolDispatcher?.shutdownNow() }
+        runCatching { waitDispatcher?.shutdownNow() }
         server = null
         handler = null
         toolDispatcher = null
+        waitDispatcher = null
         _status.value = McpStatus()
         if (wasRunning) logBus.info("🔌 MCP 服务已停止")
     }

@@ -71,10 +71,11 @@ fun McpServerScreen(onBack: () -> Unit) {
 
     fun current() = container.mcpConfigRepository.current()
 
-    /** 保存配置；若服务正在运行则按需重建监听。 */
+    /** 保存配置；仅当影响监听（端口 / 绑定 / 令牌）的字段变化时才按需重建监听。 */
     fun apply(new: McpConfig, restart: Boolean = true) {
+        val old = current()
         container.mcpConfigRepository.save(new)
-        if (restart && current().enabled) McpServerService.restart(context)
+        if (restart && new.enabled && needsRestart(old, new)) McpServerService.restart(context)
     }
 
     fun copy(label: String, text: String) {
@@ -192,6 +193,7 @@ fun McpServerScreen(onBack: () -> Unit) {
                 SecretField(
                     label = stringResource(R.string.mcp_token_label),
                     value = config.token,
+                    commitOnBlur = true,
                 ) { apply(config.copy(token = it)) }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = {
@@ -240,6 +242,7 @@ fun McpServerScreen(onBack: () -> Unit) {
                     label = stringResource(R.string.mcp_port),
                     value = config.port,
                     range = McpConfig.MIN_PORT..McpConfig.MAX_PORT,
+                    commitOnBlur = true,
                 ) { apply(config.copy(port = it)) }
             }
 
@@ -353,6 +356,10 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
     val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
     return manager.isIgnoringBatteryOptimizations(context.packageName)
 }
+
+/** 只有影响监听行为的字段变化才需要重建监听；工具开关 / 黑名单由实时配置即时生效。 */
+private fun needsRestart(old: McpConfig, new: McpConfig): Boolean =
+    old.port != new.port || old.bindMode != new.bindMode || old.token != new.token
 
 /** 生成可直接粘贴到 MCP 客户端的配置 JSON。 */
 private fun buildClientConfig(endpoint: String, token: String): String {

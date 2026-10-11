@@ -9,7 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import com.benton.izukijs.MainActivity
 import com.benton.izukijs.R
@@ -18,11 +20,20 @@ import com.benton.izukijs.di.appContainer
 /**
  * MCP 服务的前台服务：在服务运行期间保活进程并显示常驻通知（含访问地址与停止入口）。
  *
- * 启停由 UI 触发；[ACTION_RESTART] 用于配置变更（端口 / 绑定 / 工具开关）后重建监听。
+ * 启停由 UI 触发；[ACTION_RESTART] 用于影响监听的配置变更（端口 / 绑定 / 令牌）后重建监听，
+ * 并做防抖以合并连续改动。工具开关 / 黑名单由实时配置即时生效，无需重建。
  */
 class McpServerService : Service() {
 
     private val controller get() = applicationContext.appContainer.mcpServerController
+
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    /** 防抖后的重建任务：合并短时间内的连续配置改动，避免同一秒内多次 stop/start。 */
+    private val pendingRestart = Runnable {
+        controller.restart()
+        updateNotification()
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -31,18 +42,29 @@ class McpServerService : Service() {
         createChannel()
     }
 
+    override fun onDestroy() {
+        mainHandler.removeCallbacks(pendingRestart)
+        super.onDestroy()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                mainHandler.removeCallbacks(pendingRestart)
                 controller.stop()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
 
-            ACTION_RESTART -> controller.restart()
+            ACTION_RESTART -> {
+                mainHandler.removeCallbacks(pendingRestart)
+                mainHandler.postDelayed(pendingRestart, RESTART_DEBOUNCE_MS)
+                return START_STICKY
+            }
 
             else -> {
+                mainHandler.removeCallbacks(pendingRestart)
                 startForegroundInternal()
                 controller.start()
             }
@@ -118,6 +140,9 @@ class McpServerService : Service() {
         const val ACTION_START = "com.benton.izukijs.action.START_MCP"
         const val ACTION_STOP = "com.benton.izukijs.action.STOP_MCP"
         const val ACTION_RESTART = "com.benton.izukijs.action.RESTART_MCP"
+
+        /** 重建监听的防抖窗口。 */
+        private const val RESTART_DEBOUNCE_MS = 400L
 
         fun start(context: Context) = send(context, ACTION_START)
 

@@ -5,6 +5,7 @@ import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.ai.ShellGuard
 import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.data.ScriptRepository
+import com.benton.izukijs.mcp.McpConfig
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import org.json.JSONArray
@@ -16,7 +17,9 @@ import org.json.JSONObject
  * 读屏 / 控制类工具直接复用 [AgentTools] 的 schema 与执行逻辑，保证与脚本、AI Agent
  * 行为一致；这里只额外提供 MCP 专属的截图（图像内容块）、异步结果查询与脚本管理。
  *
- * [allowShell] / [allowScripts] 由当前配置决定；配置变更时会重建本对象（服务随配置重启）。
+ * 目录按 [configProvider] 的当前配置惰性重建：`allowShell` / `allowScripts` /
+ * `allowDangerousShell` / 黑名单变更后，下一次 `tools/list` 即反映新配置，
+ * 无需重建监听（也就不会打断在线会话）。
  */
 class McpToolRegistry(
     private val bundle: DeviceApiBundle,
@@ -24,41 +27,54 @@ class McpToolRegistry(
     private val scriptRepository: ScriptRepository,
     private val executionManager: ScriptExecutionManager,
     private val operations: OperationRegistry,
-    private val allowShell: Boolean,
-    private val allowScripts: Boolean,
-    private val allowDangerousShell: Boolean,
-    private val isPackageBlocked: (String) -> Boolean,
+    private val configProvider: () -> McpConfig,
 ) {
 
-    private val agentTools = AgentTools(
-        inputApi = bundle.inputApi,
-        selectorApi = bundle.selectorApi,
-        ocrApi = bundle.ocrApi,
-        appApi = bundle.appApi,
-        shellApi = bundle.shellApi,
-        deviceApi = bundle.deviceApi,
-        screenshotPathProvider = { null },
-        nodeTreeProvider = nodeTreeProvider,
-        allowShell = allowShell,
-    )
+    @Volatile
+    private var cachedConfig: McpConfig? = null
 
-    private val catalog: List<McpTool> by lazy { buildCatalog() }
+    @Volatile
+    private var cachedTools: List<McpTool> = emptyList()
 
-    fun tools(): List<McpTool> = catalog
+    fun tools(): List<McpTool> {
+        val config = configProvider()
+        if (config != cachedConfig) {
+            synchronized(this) {
+                if (config != cachedConfig) {
+                    cachedTools = buildCatalog(config)
+                    cachedConfig = config
+                }
+            }
+        }
+        return cachedTools
+    }
 
-    fun find(name: String): McpTool? = catalog.firstOrNull { it.name == name }
+    fun find(name: String): McpTool? = tools().firstOrNull { it.name == name }
 
-    private fun buildCatalog(): List<McpTool> = buildList {
-        addAll(sharedTools())
-        add(screenshotTool())
-        add(getResultTool())
-        add(listOperationsTool())
-        if (allowScripts) addAll(scriptTools())
+    private fun buildCatalog(config: McpConfig): List<McpTool> {
+        val agentTools = AgentTools(
+            inputApi = bundle.inputApi,
+            selectorApi = bundle.selectorApi,
+            ocrApi = bundle.ocrApi,
+            appApi = bundle.appApi,
+            shellApi = bundle.shellApi,
+            deviceApi = bundle.deviceApi,
+            screenshotPathProvider = { null },
+            nodeTreeProvider = nodeTreeProvider,
+            allowShell = config.allowShell,
+        )
+        return buildList {
+            addAll(sharedTools(agentTools, config))
+            add(screenshotTool())
+            add(getResultTool())
+            add(listOperationsTool())
+            if (config.allowScripts) addAll(scriptTools())
+        }
     }
 
     // ---- 复用 AgentTools 的工具 ----
 
-    private fun sharedTools(): List<McpTool> =
+    private fun sharedTools(agentTools: AgentTools, config: McpConfig): List<McpTool> =
         agentTools.specs()
             .filter { it.name != "screenshot" }
             .map { spec ->
@@ -67,14 +83,20 @@ class McpToolRegistry(
                     description = spec.description,
                     inputSchema = spec.parameters,
                     readOnly = spec.name in READ_ONLY_SHARED,
-                ) { args -> runShared(spec.name, args) }
+                    blocking = spec.name in BLOCKING_SHARED,
+                ) { args -> runShared(agentTools, config, spec.name, args) }
             }
 
     /** 共用工具的执行入口，叠加安全护栏（危险 shell / 敏感 App 启动）。 */
-    private fun runShared(name: String, args: JSONObject): McpToolResult {
+    private fun runShared(
+        agentTools: AgentTools,
+        config: McpConfig,
+        name: String,
+        args: JSONObject,
+    ): McpToolResult {
         when (name) {
             "shell" -> {
-                if (!allowDangerousShell) {
+                if (!config.allowDangerousShell) {
                     val reason = ShellGuard.reason(args.optString("command"))
                     if (reason != null) return blocked("命令被安全策略拦截（$reason）")
                 }
@@ -83,7 +105,7 @@ class McpToolRegistry(
             "app" -> {
                 if (args.optString("action") == "launch") {
                     val pkg = args.optString("package")
-                    if (pkg.isNotBlank() && isPackageBlocked(pkg)) {
+                    if (pkg.isNotBlank() && config.isPackageBlocked(pkg)) {
                         return blocked("目标应用 $pkg 在敏感应用黑名单中，已拒绝启动")
                     }
                 }
@@ -291,5 +313,8 @@ class McpToolRegistry(
             "find",
             "info",
         )
+
+        /** 不占用设备的纯阻塞工具：走独立队列，避免长时间等待堵住设备操作。 */
+        val BLOCKING_SHARED = setOf("wait")
     }
 }

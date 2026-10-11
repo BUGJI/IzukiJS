@@ -96,16 +96,28 @@ fun SecretField(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
+    commitOnBlur: Boolean = false,
     onChange: (String) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf(value) }
+    var editing by remember { mutableStateOf(false) }
+    LaunchedEffect(value) { if (!editing) text = value }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
+        value = text,
+        onValueChange = { input ->
+            text = input
+            if (!commitOnBlur) onChange(input)
+        },
         label = { Text(label) },
         singleLine = true,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { state ->
+                if (editing && !state.isFocused && commitOnBlur && text != value) onChange(text)
+                editing = state.isFocused
+            },
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
         trailingIcon = {
             TextButton(onClick = { visible = !visible }) {
@@ -118,6 +130,9 @@ fun SecretField(
 /**
  * 整数输入框：本地保留用户正在输入的文本，仅在能解析且落在 [range] 内时才回写，
  * 避免「清空 / 中间态」被外部值立刻回弹；失焦时把非法输入还原为当前值。
+ *
+ * [commitOnBlur] 为 true 时改为「失焦后才回写」，用于回写会触发重活（如重启监听）的字段，
+ * 避免逐位输入时连发多次。
  */
 @Composable
 fun NumberField(
@@ -126,6 +141,7 @@ fun NumberField(
     range: IntRange,
     modifier: Modifier = Modifier,
     placeholder: String = "",
+    commitOnBlur: Boolean = false,
     onChange: (Int) -> Unit,
 ) {
     var text by remember { mutableStateOf(value.toString()) }
@@ -137,7 +153,7 @@ fun NumberField(
         onValueChange = { input ->
             val filtered = input.filter(Char::isDigit)
             text = filtered
-            filtered.toIntOrNull()?.takeIf { it in range }?.let(onChange)
+            if (!commitOnBlur) filtered.toIntOrNull()?.takeIf { it in range }?.let(onChange)
         },
         label = { Text(label) },
         placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder) }),

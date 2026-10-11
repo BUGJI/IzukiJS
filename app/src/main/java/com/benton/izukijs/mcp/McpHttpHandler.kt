@@ -21,10 +21,10 @@ class McpHttpHandler(
     private val protocol: McpProtocolHandler,
     private val token: String,
     private val logBus: LogBus,
+    // 会话 id -> 最近访问时间。由 [McpServerController] 持有并跨 restart 复用，
+    // 使配置变更 / 服务重建后客户端手里的 Mcp-Session-Id 依然有效。
+    private val sessions: ConcurrentHashMap<String, Long>,
 ) {
-
-    // 会话 id -> 最近访问时间，用于空闲过期与容量控制，避免长期运行下无界增长。
-    private val sessions = ConcurrentHashMap<String, Long>()
 
     val sessionCount: Int get() = sessions.size
 
@@ -91,8 +91,14 @@ class McpHttpHandler(
         }
     }
 
-    /** 清理超过空闲时限的会话，避免长期运行下会话表无界增长。 */
+    /**
+     * 清理空闲过久的会话，避免长期运行下会话表无界增长。
+     *
+     * 仅在会话数接近容量上限时才按空闲时间清理：会话表已跨 restart 保留，若每次请求都按
+     * 短 TTL 清理，会把「停顿超过 TTL 后回来继续用」的合法会话误踢成 404。
+     */
     private fun pruneSessions() {
+        if (sessions.size < PRUNE_THRESHOLD) return
         val cutoff = System.currentTimeMillis() - SESSION_TTL_MS
         sessions.entries.removeIf { it.value < cutoff }
     }
@@ -112,10 +118,13 @@ class McpHttpHandler(
 
         private const val BEARER = "Bearer "
 
-        /** 会话空闲过期时长。 */
-        private const val SESSION_TTL_MS = 10 * 60 * 1000L
+        /** 会话空闲过期时长；仅在容量接近上限时才会据此清理。 */
+        private const val SESSION_TTL_MS = 24 * 60 * 60 * 1000L
 
         /** 会话表容量上限。 */
         private const val MAX_SESSIONS = 256
+
+        /** 达到该数量后才开始按空闲时间清理，避免误踢长时间停顿的会话。 */
+        private const val PRUNE_THRESHOLD = 128
     }
 }
