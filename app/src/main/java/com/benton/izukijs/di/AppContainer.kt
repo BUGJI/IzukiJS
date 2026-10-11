@@ -7,12 +7,11 @@ import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.ControllerSettingsRepository
-import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.controller.UiautomatorDumper
 import com.benton.izukijs.controller.hid.HidManager
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
-import com.benton.izukijs.model.Capability
 import com.benton.izukijs.data.AppearanceRepository
 import com.benton.izukijs.data.ConfigBackupManager
 import com.benton.izukijs.data.EditorSettingsRepository
@@ -118,11 +117,9 @@ class AppContainer(private val application: Application) {
         DeviceApiBundle.create(application, controllerManager, screenCapture, ocrProcessor, logBus)
     }
 
-    private val uiautomatorDumper = UiautomatorDumper(controllerManager, logBus)
-
     /** 读控件树：无障碍优先，Shizuku / Root 的 uiautomator dump 兜底。 */
-    private val nodeTreeProvider: () -> NodeSnapshot? = {
-        controllerManager.controllerFor(Capability.NODE_TREE)?.nodeTree() ?: uiautomatorDumper.dump()
+    private val nodeTreeProvider: () -> NodeTreeResult = {
+        UiautomatorDumper.read(controllerManager, logBus)
     }
 
     val mcpServerController = McpServerController(

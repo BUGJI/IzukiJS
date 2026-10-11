@@ -3,7 +3,7 @@ package com.benton.izukijs.mcp.tools
 import android.graphics.Rect
 import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.ai.ShellGuard
-import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.McpConfig
 import com.benton.izukijs.runtime.ScriptExecutionManager
@@ -23,7 +23,7 @@ import org.json.JSONObject
  */
 class McpToolRegistry(
     private val bundle: DeviceApiBundle,
-    private val nodeTreeProvider: () -> NodeSnapshot?,
+    private val nodeTreeProvider: () -> NodeTreeResult,
     private val scriptRepository: ScriptRepository,
     private val executionManager: ScriptExecutionManager,
     private val operations: OperationRegistry,

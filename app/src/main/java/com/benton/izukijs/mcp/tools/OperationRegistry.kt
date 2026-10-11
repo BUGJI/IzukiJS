@@ -68,13 +68,24 @@ class OperationRegistry(
     private fun prune() {
         val cutoff = System.currentTimeMillis() - ttlMs
         ops.entries.removeIf { it.value.finishedAt?.let { f -> f < cutoff } == true }
-        if (ops.size <= maxEntries) return
+        var excess = ops.size - maxEntries
+        if (excess <= 0) return
         // 超限时优先清理最旧的已完成项，仍在运行的保留。
-        ops.values
+        val finished = ops.values
             .filter { it.status != OperationStatus.RUNNING }
             .sortedBy { it.startedAt }
-            .take(ops.size - maxEntries)
-            .forEach { ops.remove(it.id) }
+        for (op in finished) {
+            if (excess <= 0) return
+            ops.remove(op.id)
+            excess--
+        }
+        // 极端情况下（RUNNING 占比过高、已完成的不足以腾出空间）仍需回收到上限，
+        // 否则登记表会缓慢超过 maxEntries。此时按最旧优先腾退。
+        for (op in ops.values.sortedBy { it.startedAt }) {
+            if (excess <= 0) return
+            ops.remove(op.id)
+            excess--
+        }
     }
 
     private companion object {

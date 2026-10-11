@@ -12,11 +12,30 @@ object ShellGuard {
 
     private val RULES: List<Rule> = listOf(
         Rule(Regex("""(^|[\s;&|])(reboot|shutdown|poweroff|halt)(\s|$)""", RegexOption.IGNORE_CASE), "重启 / 关机"),
+        Rule(Regex("""\bsvc\s+power\s+(reboot|shutdown)\b""", RegexOption.IGNORE_CASE), "重启 / 关机"),
+        Rule(
+            Regex("""\b(am|cmd)\b[\s\S]*\bandroid\.intent\.action\.REBOOT\b""", RegexOption.IGNORE_CASE),
+            "重启 / 关机",
+        ),
         Rule(Regex("""(^|[\s;&|])mkfs(\.\w+)?(\s|$)""", RegexOption.IGNORE_CASE), "格式化分区"),
         Rule(Regex("""\bdd\b[\s\S]*\bof\s*=\s*/dev/""", RegexOption.IGNORE_CASE), "写入块设备"),
-        Rule(Regex("""\brm\b[\s\S]*\s-[a-z]*(rf|fr)[a-z]*\s+/(\s|$|\*)""", RegexOption.IGNORE_CASE), "递归删除根目录"),
-        Rule(Regex("""\bpm\s+(uninstall|clear)\b""", RegexOption.IGNORE_CASE), "卸载 / 清除应用数据"),
-        Rule(Regex("""\bsettings\s+put\b""", RegexOption.IGNORE_CASE), "修改系统设置"),
+        // 递归 + 强制删除，且操作数是根目录或顶层目录（如 `/`、`/bin`、`/data`）。
+        // 同时覆盖 `-rf` / `-r -f` / `--recursive --force` 等拆分写法。
+        Rule(
+            Regex(
+                """\brm\b""" +
+                    """(?=[\s\S]*?(^|[\s;&|])(-[a-zA-Z]*r[a-zA-Z]*|--recursive)(?=\s|$))""" +
+                    """(?=[\s\S]*?(^|[\s;&|])(-[a-zA-Z]*f[a-zA-Z]*|--force)(?=\s|$))""" +
+                    """[\s\S]*?(^|[\s;&|])\s*(/|/[A-Za-z0-9._-]+)(?=\s|$|\*)""",
+                RegexOption.IGNORE_CASE,
+            ),
+            "递归删除根目录",
+        ),
+        Rule(
+            Regex("""\b(cmd\s+package|pm)\s+(uninstall|clear)\b""", RegexOption.IGNORE_CASE),
+            "卸载 / 清除应用数据",
+        ),
+        Rule(Regex("""\bsettings\s+(put|delete)\b""", RegexOption.IGNORE_CASE), "修改系统设置"),
         Rule(Regex("""\bmount\b[\s\S]*\bremount\b""", RegexOption.IGNORE_CASE), "重挂载系统分区"),
         Rule(Regex(""">\s*/dev/block/""", RegexOption.IGNORE_CASE), "写入块设备"),
     )

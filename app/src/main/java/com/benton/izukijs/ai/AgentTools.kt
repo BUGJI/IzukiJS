@@ -2,6 +2,7 @@ package com.benton.izukijs.ai
 
 import android.view.KeyEvent
 import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.runtime.api.AppApi
 import com.benton.izukijs.runtime.api.DeviceApi
 import com.benton.izukijs.runtime.api.InputApi
@@ -28,7 +29,7 @@ class AgentTools(
     private val shellApi: ShellApi,
     private val deviceApi: DeviceApi,
     private val screenshotPathProvider: () -> String?,
-    private val nodeTreeProvider: () -> NodeSnapshot?,
+    private val nodeTreeProvider: () -> NodeTreeResult,
     private val allowShell: Boolean,
 ) {
 
@@ -97,7 +98,7 @@ class AgentTools(
         add(
             ToolSpec(
                 "click",
-                "点击或长按。by=coord（默认）用 x/y 像素坐标；normalized=true 时 x/y 为 0~1 比例（推荐，免疫截图缩放）。by=text|id|desc 时按 value 匹配控件。long=true 长按。返回实际位置与命中的元素，便于自校验。",
+                "点击或长按。by=coord（默认）用 x/y 像素坐标；normalized=true 时 x/y 为 0~1 比例（推荐，免疫截图缩放）。by=text|id|desc 时按 value 匹配控件。long=true 长按。默认只返回实际点击位置；需要命中的控件做自校验时传 hit=true（代价是一次控件树读取）。",
                 objectSchema(
                     mapOf(
                         "by" to enumProp("定位方式", listOf("coord", "text", "id", "desc")),
@@ -668,7 +669,7 @@ class AgentTools(
 
     /** 返回屏幕坐标 (x,y) 下最深的控件快照标签；无控件树或无命中返回 null。 */
     private fun hitAt(x: Double, y: Double): JSONObject? {
-        val root = nodeTreeProvider() ?: return null
+        val root = nodeTreeProvider().rootOrNull() ?: return null
         val node = deepestAt(root, x.toInt(), y.toInt()) ?: return null
         return nodeLabel(node)
     }
@@ -683,7 +684,7 @@ class AgentTools(
     }
 
     private fun collectNodes(predicate: (NodeSnapshot) -> Boolean): List<NodeSnapshot> {
-        val root = nodeTreeProvider() ?: return emptyList()
+        val root = nodeTreeProvider().rootOrNull() ?: return emptyList()
         val out = ArrayList<NodeSnapshot>()
         fun walk(node: NodeSnapshot) {
             if (predicate(node)) out.add(node)
@@ -706,7 +707,7 @@ class AgentTools(
 
     /** 控件树签名，用于判定界面是否稳定。 */
     private fun treeSignature(): String? {
-        val root = nodeTreeProvider() ?: return null
+        val root = nodeTreeProvider().rootOrNull() ?: return null
         val out = StringBuilder()
         fun walk(node: NodeSnapshot) {
             out.append(node.viewId).append('|')
@@ -754,12 +755,20 @@ class AgentTools(
         runCatching { Thread.sleep(millis) }
     }
 
-    private fun formatNodeTree(root: NodeSnapshot?): String {
-        root ?: return "（无法读取控件树，需开启无障碍或 Shizuku）"
-        val out = StringBuilder()
-        appendNode(root, 0, out)
-        return if (out.isEmpty()) "（控件树为空）" else out.toString().trimEnd()
+    private fun formatNodeTree(result: NodeTreeResult): String = when (result) {
+        is NodeTreeResult.Success -> {
+            val out = StringBuilder()
+            appendNode(result.root, 0, out)
+            if (out.isEmpty()) "（控件树为空）" else out.toString().trimEnd()
+        }
+
+        NodeTreeResult.NoBackend -> "（无法读取控件树，需开启无障碍或 Shizuku）"
+
+        is NodeTreeResult.Failure -> "（控件树读取失败：${result.message}）"
     }
+
+    /** 从读取结果中取出控件树；无后端或读取失败时返回 null。 */
+    private fun NodeTreeResult.rootOrNull(): NodeSnapshot? = (this as? NodeTreeResult.Success)?.root
 
     private fun appendNode(node: NodeSnapshot, depth: Int, out: StringBuilder) {
         if (out.length > MAX_DUMP_CHARS) return

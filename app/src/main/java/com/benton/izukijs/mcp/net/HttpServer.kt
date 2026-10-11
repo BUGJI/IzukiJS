@@ -9,7 +9,10 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /** 一个已解析的 HTTP 请求。 */
 data class HttpRequest(
@@ -59,9 +62,20 @@ class HttpServer(
     @Volatile
     private var running = false
 
-    private val clients: ExecutorService = Executors.newCachedThreadPool { runnable ->
-        Thread(runnable, "izuki-mcp-http").apply { isDaemon = true }
-    }
+    /**
+     * keep-alive 连接会长时间占用工作线程（最长 [IDLE_TIMEOUT_MS]），因此不能用无上限的
+     * 缓存线程池：异常 / 恶意客户端可直接把线程数打上去。改用带并发上限的线程池，
+     * 超出上限的请求由 [ThreadPoolExecutor.AbortPolicy] 拒绝（连接随即可被关闭）。
+     */
+    private val clients: ExecutorService = ThreadPoolExecutor(
+        0,
+        MAX_CLIENT_THREADS,
+        CLIENT_IDLE_SECONDS,
+        TimeUnit.SECONDS,
+        SynchronousQueue(),
+        { runnable -> Thread(runnable, "izuki-mcp-http").apply { isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy(),
+    )
 
     /** 已接受的连接，用于停止时主动关闭，避免 keep-alive 连接拖到空闲超时。 */
     private val activeClients: MutableSet<Socket> = ConcurrentHashMap.newKeySet()
@@ -102,7 +116,13 @@ class HttpServer(
                 if (running) continue else break
             }
             activeClients.add(client)
-            runCatching { clients.execute { handleClient(client) } }
+            try {
+                clients.execute { handleClient(client) }
+            } catch (_: RejectedExecutionException) {
+                // 并发已达上限：直接关闭该连接，避免半开连接泄漏。
+                activeClients.remove(client)
+                runCatching { client.close() }
+            }
         }
     }
 
@@ -272,6 +292,12 @@ class HttpServer(
     private companion object {
         /** keep-alive 连接的空闲超时；超过则关闭连接。 */
         const val IDLE_TIMEOUT_MS = 120_000
+
+        /** 并发处理的连接上限；超出则拒绝并关闭新连接。 */
+        const val MAX_CLIENT_THREADS = 32
+
+        /** 空闲工作线程的存活时长（秒）。 */
+        const val CLIENT_IDLE_SECONDS = 60L
 
         /** 内部伪请求头：记录 HTTP 版本，不参与业务逻辑。 */
         const val HEADER_VERSION = ":http-version"

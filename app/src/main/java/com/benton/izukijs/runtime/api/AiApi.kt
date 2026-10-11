@@ -5,7 +5,7 @@ import com.benton.izukijs.ai.AiAgent
 import com.benton.izukijs.ai.AiClient
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.ai.AgentTools
-import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.runtime.LogBus
 import com.benton.izukijs.runtime.ScriptExitException
 import com.quickjs.JSArray
@@ -27,7 +27,7 @@ class AiApi(
     private val shellApi: ShellApi,
     private val deviceApi: DeviceApi,
     private val screenshotPathProvider: () -> String?,
-    private val nodeTreeProvider: () -> NodeSnapshot?,
+    private val nodeTreeProvider: () -> NodeTreeResult,
     private val logBus: LogBus,
     private val isExitRequested: () -> Boolean,
 ) {

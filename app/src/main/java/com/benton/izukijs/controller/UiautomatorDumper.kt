@@ -1,35 +1,67 @@
 package com.benton.izukijs.controller
 
+import android.os.Process
 import android.util.Xml
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.runtime.LogBus
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 通过 Shizuku / Root 的 Shell 后端执行 `uiautomator dump`，把控件树 XML 解析为 [NodeSnapshot]。
  *
  * 用作无障碍不可用时的读屏兜底：底层通道（Shizuku）本就能执行 shell，因此无需开启无障碍
  * 也能拿到精确控件树。代价是 `uiautomator dump` 较慢（约 1~2s）且偶发失败，仅作 fallback。
+ *
+ * 无状态单例：所有方法按调用传入 [ControllerManager] / [LogBus]，避免多实例各自持有状态。
  */
-class UiautomatorDumper(
-    private val controllers: ControllerManager,
-    private val logBus: LogBus,
-) {
+object UiautomatorDumper {
 
-    fun dump(): NodeSnapshot? {
-        val shell = controllers.controllerFor(Capability.SHELL) ?: return null
-        val path = DUMP_PATH
+    /**
+     * 读取控件树：无障碍优先，Shizuku / Root 的 `uiautomator dump` 兜底。
+     *
+     * 返回 [NodeTreeResult] 以区分「无可用后端」与「后端存在但读取失败」，供上层生成准确提示。
+     */
+    fun read(controllers: ControllerManager, logBus: LogBus): NodeTreeResult {
+        val accessibility = controllers.controllerFor(Capability.NODE_TREE)
+        if (accessibility != null) {
+            accessibility.nodeTree()?.let { return NodeTreeResult.Success(it) }
+        }
+        return dump(controllers, logBus, accessibilityAvailable = accessibility != null)
+    }
+
+    private fun dump(
+        controllers: ControllerManager,
+        logBus: LogBus,
+        accessibilityAvailable: Boolean,
+    ): NodeTreeResult {
+        val shell = controllers.controllerFor(Capability.SHELL)
+            ?: return if (accessibilityAvailable) {
+                NodeTreeResult.Failure("无障碍读取为空，且无 Shell 后端可回退")
+            } else {
+                NodeTreeResult.NoBackend
+            }
+
+        // 每次 dump 使用唯一临时文件，避免多实例 / 多用户 / 并发 dump 相互覆盖。
+        val path = "/data/local/tmp/izuki_ui_dump_${Process.myPid()}_${SEQ.incrementAndGet()}.xml"
         val dumped = shell.shell("uiautomator dump $path")
         // uiautomator dump 的退出码不可靠（不同 ROM 文案不同），以能否读到文件为准。
         val xml = shell.shell("cat $path; rm -f $path")?.stdout
         if (xml.isNullOrBlank() || !xml.contains("<hierarchy")) {
-            logBus.debug("uiautomator dump 无输出（exit=${dumped?.exitCode}）")
-            return null
+            val raw = listOfNotNull(dumped?.stdout, dumped?.stderr)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .joinToString(" ")
+            val message = raw.ifBlank { "uiautomator dump 无输出（exit=${dumped?.exitCode}）" }
+            logBus.debug("uiautomator dump 失败：$message")
+            return NodeTreeResult.Failure(message)
         }
-        return runCatching { parse(xml) }
+        val root = runCatching { parse(xml) }
             .onFailure { logBus.warn("uiautomator dump 解析失败：${it.message}") }
             .getOrNull()
+            ?: return NodeTreeResult.Failure("控件树解析失败")
+        return NodeTreeResult.Success(root)
     }
 
     private fun parse(xml: String): NodeSnapshot? {
@@ -106,10 +138,9 @@ class UiautomatorDumper(
         )
     }
 
-    private companion object {
-        const val DUMP_PATH = "/data/local/tmp/izuki_ui_dump.xml"
-        const val MAX_DEPTH = 24
+    private val SEQ = AtomicLong(0)
 
-        val BOUNDS_REGEX = Regex("""\[(-?\d+),(-?\d+)]\[(-?\d+),(-?\d+)]""")
-    }
+    private const val MAX_DEPTH = 24
+
+    private val BOUNDS_REGEX = Regex("""\[(-?\d+),(-?\d+)]\[(-?\d+),(-?\d+)]""")
 }

@@ -123,7 +123,8 @@ class McpServerController(
         handler = null
         toolDispatcher = null
         waitDispatcher = null
-        _status.value = McpStatus()
+        // 会话表跨 restart 保留，停止时也应如实反映其大小，避免 UI 显示 0 而实际仍有留存会话。
+        _status.value = McpStatus(sessions = sessions.size)
         if (wasRunning) logBus.info("🔌 MCP 服务已停止")
     }
 

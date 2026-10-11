@@ -34,6 +34,21 @@ enum class TextInputMethod {
     }
 }
 
+/**
+ * 控件树读取结果。区分「成功」「无可用后端」「后端存在但读取失败」三种语义，
+ * 避免把 Shizuku 已连接但 `uiautomator dump` 失败的情况误报为「需开启无障碍或 Shizuku」。
+ */
+sealed interface NodeTreeResult {
+    /** 成功读到控件树。 */
+    data class Success(val root: NodeSnapshot) : NodeTreeResult
+
+    /** 没有任何可用后端（无障碍未开启，且无 Shizuku / Root）。 */
+    data object NoBackend : NodeTreeResult
+
+    /** 后端存在但读取失败，[message] 为底层原始错误。 */
+    data class Failure(val message: String) : NodeTreeResult
+}
+
 /** 控件树节点快照。 */
 data class NodeSnapshot(
     val className: String?,
