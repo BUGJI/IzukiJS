@@ -74,19 +74,20 @@ adb forward tcp:8765 tcp:8765
 
 ## 工具
 
-读屏 / 控制类工具经过聚合（同类操作合并为单工具 + 判别参数），降低模型选错概率：
+读屏 / 控制类工具经过聚合（同类操作合并为单工具 + 判别参数），降低模型选错概率。
+每个 `tools/call` 的 JSON 结果都会附带 `elapsed_ms`（本次调用耗时，含设备队列等待）：
 
 | 工具 | 说明 |
 |---|---|
 | `screenshot` | 截图，返回图像块及 `{image_size, screen_size}`（带 region 时附 `region`）；可用 `scale` / `quality` / `region=[l,t,r,b]` / `format=jpeg\|webp` 控制体积 |
-| `ocr` | 识别整屏文字，返回结构化文本块（含中心坐标 x/y、宽高、置信度） |
+| `ocr` | 识别整屏文字，返回结构化文本块（含中心坐标 x/y、宽高、置信度）。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证 |
 | `ui_dump` | 控件树（无障碍优先；Shizuku / Root 下走 `uiautomator dump` 兜底） |
-| `find` | 查找元素并返回匹配项（中心坐标 + 边界）；`text` 模糊匹配，或 `by=id\|desc` + `value` |
-| `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run`，返回实际位置与命中元素 |
+| `find` | 查找元素并返回匹配项（中心坐标 + 边界）；`text` 模糊匹配，或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证） |
+| `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true` |
 | `swipe` | 滑动（支持 `normalized`） |
 | `gesture` | 复杂轨迹（曲线 / 多段 / 多指 / 停顿） |
-| `text` | 输入文本；`by=id` + `value` 时给指定控件设值；`method` 选 `auto`/`input`/`clipboard`/`broadcast`（无障碍优先，Shizuku/Root 下用控件树定位并聚焦后输入） |
-| `press` | 按键：`key` 为 back / home / recents / enter，或 Android KeyEvent 键码 |
+| `text` | 输入文本；`by=id` + `value` 时给指定控件设值；`method` 选 `auto`/`input`/`clipboard`/`broadcast`（无障碍优先，Shizuku/Root 下用控件树定位并聚焦后输入）；`dismiss_ime=true` 输入后收起软键盘 |
+| `press` | 按键：`key` 为 back / home / recents / enter / esc，或 Android KeyEvent 键码；收软键盘用 esc（`back` 通常收不掉） |
 | `wait` | 等待：`for=text` 等文字出现，`for=idle` 等界面稳定 |
 | `info` | 设备信息：`what=device\|battery\|current_app` |
 | `app` | `action=launch`（package；命中黑名单则拒绝）或 `action=open_url`（url） |
@@ -125,6 +126,9 @@ adb forward tcp:8765 tcp:8765
 - 默认 **失败即停**，返回 `{ok, executed, stopped_early, steps:[{index,tool,ok,result}]}`；
   传 `continue_on_error=true` 可继续执行后续动作。
 - 建议只放点击 / 按键 / 等待等轻量动作；`ocr` / `ui_dump` 输出大，单独调用更好。
+- **界面会跳转的连续操作要显式 `settle`**：批内前一步若触发页面切换 / 过渡动画，后一步很可能在界面
+  尚未稳定时落空。给相关 `click` 传 `settle=true`（等待控件树稳定后再返回）通常即可；必要时在两步
+  之间插入 `wait(for=text/idle)`。
 - 不支持嵌套 `batch`；动作数上限 20，超出的部分会被截断并标注 `truncated`。
 - 整批仍走单线程设备队列，超过同步窗口同样会返回 `request_id` 转异步。
 
@@ -171,7 +175,9 @@ adb forward tcp:8765 tcp:8765
 - 截图统一走「持续录屏优先、控制后端兜底」，并会自动隐藏悬浮层以免被截入画面；MCP 截图
   不再复用「保存截图」的压缩设置，避免图像被缩放而坐标未缩放。
 - 控件树读取：无障碍优先；当无障碍未开启但 Shizuku / Root 就绪时，回退到 Shell 执行
-  `uiautomator dump` 并解析控件树。
+  `uiautomator dump` 并解析控件树。`uiautomator dump` 依赖界面 idle，持续动画时会一直等到其
+  内部超时（可达 11s+）；因此 dump 有 6s 上限，超时即终止进程并返回失败（此时 `find` 的
+  `source=auto` 会自动走 OCR 快路径），避免把设备队列堵在无意义的空转上。
 - 文本输入：无障碍优先（`ACTION_SET_TEXT`）。Shizuku / Root 下的 `text.method`：
   - `auto`（默认）：ASCII 走 `input text`，非 ASCII 优先「剪贴板 + 粘贴」（无需额外 App），
     失败再退回 ADBKeyboard 广播；

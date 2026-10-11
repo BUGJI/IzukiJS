@@ -1,6 +1,7 @@
 package com.benton.izukijs.mcp.protocol
 
 import com.benton.izukijs.mcp.resources.McpResources
+import com.benton.izukijs.mcp.tools.McpContent
 import com.benton.izukijs.mcp.tools.McpToolResult
 import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.mcp.tools.OperationRegistry
@@ -135,9 +136,10 @@ class McpProtocolHandler(
         // 结果查询类工具在请求线程直接执行：它们只读登记表，若排到设备队列末尾，
         // 一旦前面的操作卡住就永远查不到结果。
         if (tool.synchronous) {
+            val started = System.currentTimeMillis()
             val result = runCatching { tool.call(arguments) }
                 .getOrElse { McpToolResult.error("工具执行失败：${it.message}") }
-            return success(id, result.toJson())
+            return success(id, withElapsed(result, System.currentTimeMillis() - started).toJson())
         }
 
         logBus.info("🔌 MCP 调用工具 $name")
@@ -165,8 +167,9 @@ class McpProtocolHandler(
         }
 
         return try {
+            val started = System.currentTimeMillis()
             val result = future.get(SYNC_WAIT_SEC, TimeUnit.SECONDS)
-            success(id, result.toJson())
+            success(id, withElapsed(result, System.currentTimeMillis() - started).toJson())
         } catch (t: TimeoutException) {
             // 操作已提交到设备队列，是否已真正执行未知——返回句柄而非报错。
             logBus.warn("MCP 工具 $name 超过 ${SYNC_WAIT_SEC}s 仍未返回，转异步（request_id=$requestId）")
@@ -176,6 +179,24 @@ class McpProtocolHandler(
             logBus.warn("MCP 工具 $name 执行异常：${cause.message}")
             failure(id, INTERNAL_ERROR, "工具执行异常：${cause.message}")
         }
+    }
+
+    /**
+     * 把本次调用的耗时（含设备队列等待）注入工具返回文本块中的 JSON。
+     *
+     * 仅处理能解析为 JSON 对象的文本块；对图片块（screenshot）与纯文本结果保持不变，
+     * 因此不会影响既有返回结构。
+     */
+    private fun withElapsed(result: McpToolResult, elapsedMs: Long): McpToolResult {
+        val updated = result.content.map { content ->
+            if (content.type != "text") return@map content
+            val text = content.text?.trim()
+            val json = text?.takeIf { it.startsWith("{") }
+                ?.let { runCatching { JSONObject(it) }.getOrNull() }
+                ?: return@map content
+            content.copy(text = json.put("elapsed_ms", elapsedMs).toString())
+        }
+        return result.copy(content = updated)
     }
 
     /** 异步句柄：说明操作已提交、结果未知，并给出回查方式。 */

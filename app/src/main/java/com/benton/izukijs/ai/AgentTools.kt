@@ -53,7 +53,9 @@ class AgentTools(
         add(
             ToolSpec(
                 "ocr",
-                "识别当前屏幕文字，返回结构化文本块：每块含文字与中心坐标 (x,y)、宽高、置信度。坐标为屏幕像素，可直接用于 click。",
+                "识别当前屏幕文字，返回结构化文本块：每块含文字与中心坐标 (x,y)、宽高、置信度。坐标为屏幕像素，可直接用于 click。" +
+                    "注意本地 OCR 有精度边界（0/O、I/l、简繁、生僻字形易混，置信度常为 0.5~0.8），" +
+                    "不要用 OCR 文本做精确匹配或关键分支判断，优先用 ui_dump / find(source=ui) 的控件文本交叉验证。",
                 objectSchema(emptyMap()),
             ),
         )
@@ -67,12 +69,14 @@ class AgentTools(
         add(
             ToolSpec(
                 "find",
-                "查找屏幕元素并返回匹配项（中心坐标 + 边界）。text 为模糊包含匹配（OCR 文字与控件文本/描述）；也可用 by=id|desc + value 精确匹配控件。",
+                "查找屏幕元素并返回匹配项（中心坐标 + 边界）。text 为模糊包含匹配（OCR 文字与控件文本/描述）；也可用 by=id|desc + value 精确匹配控件。" +
+                    "纯文字查找建议 source=auto（默认）：优先走 OCR（约 0.6~1s），未命中再回退控件树；source=ocr 最快，source=ui 只读控件树（较慢但精确），source=both 双源交叉验证。",
                 objectSchema(
                     mapOf(
                         "text" to stringProp("要查找的文字（模糊包含）"),
                         "by" to enumProp("按控件属性精确匹配", listOf("id", "desc")),
                         "value" to stringProp("by 对应的匹配值"),
+                        "source" to enumProp("查找来源", listOf("auto", "ocr", "ui", "both")),
                     ),
                 ),
             ),
@@ -98,7 +102,8 @@ class AgentTools(
         add(
             ToolSpec(
                 "click",
-                "点击或长按。by=coord（默认）用 x/y 像素坐标；normalized=true 时 x/y 为 0~1 比例（推荐，免疫截图缩放）。by=text|id|desc 时按 value 匹配控件。long=true 长按。默认只返回实际点击位置；需要命中的控件做自校验时传 hit=true（代价是一次控件树读取）。",
+                "点击或长按。by=coord（默认）用 x/y 像素坐标；normalized=true 时 x/y 为 0~1 比例（推荐，免疫截图缩放）。by=text|id|desc 时按 value 匹配控件。long=true 长按。" +
+                    "坐标点击默认不做命中校验，结果含 hit_checked=false；需要命中的控件做自校验时传 hit=true（代价是一次控件树读取），结果会返回 hit 并置 hit_checked=true。",
                 objectSchema(
                     mapOf(
                         "by" to enumProp("定位方式", listOf("coord", "text", "id", "desc")),
@@ -158,6 +163,7 @@ class AgentTools(
                         "by" to enumProp("按控件属性设置", listOf("id")),
                         "value" to stringProp("by=id 时的控件 id"),
                         "method" to enumProp("输入方式", listOf("auto", "input", "clipboard", "broadcast")),
+                        "dismiss_ime" to booleanProp("输入后收起软键盘（Shizuku/Root 下发送 ESC keyevent 111 生效；无障碍后端忽略）"),
                         "dry_run" to booleanProp("只返回将要执行的操作，不真正输入"),
                     ),
                     required = listOf("text"),
@@ -167,7 +173,7 @@ class AgentTools(
         add(
             ToolSpec(
                 "press",
-                "发送按键。key 可为 back / home / recents / enter，或 Android KeyEvent 键码（整数，如返回=4、回车=66）。",
+                "发送按键。key 可为 back / home / recents / enter / esc，或 Android KeyEvent 键码（整数，如返回=4、回车=66）。收软键盘一般用 esc（Shizuku/Root 下 keyevent 111），back 往往无效。",
                 objectSchema(
                     mapOf(
                         "key" to anyKeyProp("按键名称或键码"),
@@ -211,7 +217,9 @@ class AgentTools(
             ToolSpec(
                 "batch",
                 "顺序执行多个动作，一次调用完成，省去多轮往返。默认遇错即停并返回已完成步骤；" +
-                    "不适合把 ocr / ui_dump 等大输出放进批内。actions 为 [{tool,arguments}]。",
+                    "不适合把 ocr / ui_dump 等大输出放进批内。actions 为 [{tool,arguments}]。" +
+                    "批内若含多个会造成界面跳转的 UI 操作（点击 / 按键 / 滑动），后一步常会因前一步的过渡动画尚未结束而落空，" +
+                    "请给相关 click 传 settle=true 等待界面稳定。",
                 objectSchema(
                     mapOf(
                         "actions" to batchActionsProp(),
@@ -334,6 +342,7 @@ class AgentTools(
                 put("dry_run", true)
                 put("x", x)
                 put("y", y)
+                put("hit_checked", hit != null)
                 hit?.let { put("hit", it) }
             }
         }
@@ -344,6 +353,7 @@ class AgentTools(
             put("x", x)
             put("y", y)
             put("long", long)
+            put("hit_checked", hit != null)
             hit?.let { put("hit", it) }
         }
     }
@@ -381,6 +391,7 @@ class AgentTools(
         val by = args.optString("by").takeIf { it.isNotBlank() }
         val id = args.optString("value").takeIf { it.isNotBlank() }
         val method = args.optString("method").ifBlank { "auto" }
+        val dismissIme = args.optBoolean("dismiss_ime", false)
         if (by == "id" && id == null) return errorJson("text: by=id 需要 value")
         if (args.optBoolean("dry_run", false)) {
             return jsonOf {
@@ -389,6 +400,7 @@ class AgentTools(
                 put("text", text)
                 put("by", by ?: "focus")
                 put("method", method)
+                put("dismiss_ime", dismissIme)
                 id?.let { put("value", it) }
             }
         }
@@ -397,7 +409,14 @@ class AgentTools(
         } else {
             inputApi.inputWithMethod(text, method)
         }
-        return jsonOf { put("ok", ok); put("method", method) }
+        // 输入后收起软键盘：ESC（keyevent 111）比 back 更可靠；无障碍后端不支持该键，会静默无效果。
+        val imeDismissed = ok && dismissIme && inputApi.press(KeyEvent.KEYCODE_ESCAPE)
+        return jsonOf {
+            put("ok", ok)
+            put("method", method)
+            put("dismiss_ime", dismissIme)
+            if (dismissIme) put("ime_dismissed", imeDismissed)
+        }
     }
 
     /**
@@ -424,6 +443,7 @@ class AgentTools(
                 "home" -> inputApi.home()
                 "recents", "recent", "app_switch" -> inputApi.recents()
                 "enter" -> inputApi.press(KeyEvent.KEYCODE_ENTER)
+                "esc", "escape" -> inputApi.press(KeyEvent.KEYCODE_ESCAPE)
                 else -> raw.trim().toIntOrNull()?.let { inputApi.press(it) } ?: false
             }
             else -> false
@@ -613,28 +633,56 @@ class AgentTools(
         if (by == null && value == null && text == null) {
             return errorJson("find: 需要 text，或 by + value")
         }
-        val matches = search(by, value, text)
+        val source = args.optString("source").ifBlank { SOURCE_AUTO }
+        val matches = search(by, value, text, source)
         return jsonOf {
             put("ok", true)
             put("query", text ?: value ?: by)
+            put("source", source)
             put("count", matches.length())
             put("matches", matches)
         }
     }
 
-    /** 统一的元素查找：by=id/desc 精确匹配控件，否则按 text 模糊匹配控件与 OCR。 */
-    private fun search(by: String?, value: String?, text: String?): JSONArray {
+    /**
+     * 统一的元素查找：by=id/desc 精确匹配控件，否则按 text 模糊匹配控件与 OCR。
+     *
+     * [source] 控制取数来源：`ui` 只读控件树（较慢但精确），`ocr` 只识别屏幕文字（最快），
+     * `both` 双源交叉验证，`auto` 先 OCR、未命中再回退控件树（纯文字查找的推荐默认值，可避免
+     * 在有动画的界面上白等一次 `uiautomator dump`）。
+     */
+    private fun search(
+        by: String?,
+        value: String?,
+        text: String?,
+        source: String = SOURCE_BOTH,
+    ): JSONArray {
         val matches = JSONArray()
         if (by == "id" && value != null) {
             collectNodes { it.viewId == value }.forEach { matches.put(nodeLabel(it)) }
-        } else if (by == "desc" && value != null) {
+            return matches
+        }
+        if (by == "desc" && value != null) {
             collectNodes { it.contentDescription?.contains(value) == true }.forEach { matches.put(nodeLabel(it)) }
-        } else {
-            val query = text ?: value ?: return matches
+            return matches
+        }
+        val query = text ?: value ?: return matches
+        fun uiMatches() {
             collectNodes {
                 it.text?.contains(query) == true || it.contentDescription?.contains(query) == true
             }.forEach { matches.put(nodeLabel(it)) }
-            ocrBlocks(query).forEach { matches.put(it) }
+        }
+        when (source) {
+            SOURCE_UI -> uiMatches()
+            SOURCE_OCR -> ocrBlocks(query).forEach { matches.put(it) }
+            SOURCE_AUTO -> {
+                ocrBlocks(query).forEach { matches.put(it) }
+                if (matches.length() == 0) uiMatches()
+            }
+            else -> {
+                uiMatches()
+                ocrBlocks(query).forEach { matches.put(it) }
+            }
         }
         return matches
     }
@@ -855,5 +903,10 @@ class AgentTools(
         const val SETTLE_DEFAULT_MS = 600L
         const val SETTLE_POLL_MS = 150L
         const val SETTLE_MAX_MS = 4_000L
+
+        const val SOURCE_AUTO = "auto"
+        const val SOURCE_UI = "ui"
+        const val SOURCE_OCR = "ocr"
+        const val SOURCE_BOTH = "both"
     }
 }

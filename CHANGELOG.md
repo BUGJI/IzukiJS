@@ -12,6 +12,20 @@
 - 脚本中心支持扫码导入：识别二维码链接并下载脚本。
 - MCP 工程化完善：坐标处理、超时控制、连接保活、读屏兜底与工具聚合。
 
+### 修复
+
+- MCP `find` 支持 `source=auto|ocr|ui|both`，纯文字查找默认先走 OCR 快路径（约 0.6~1s），
+  未命中再回退控件树，避免在动画界面上白等一次 `uiautomator dump`。
+- MCP `click` 坐标点击返回 `hit_checked` 明确标识是否做过命中校验；`docs/MCP.md` 与工具描述同步。
+- MCP `text` 支持 `dismiss_ime`，`press` 支持 `esc`，输入后可收起软键盘（`back` 通常无效）。
+- MCP 工具调用结果附带 `elapsed_ms`，无需再额外查询 `list_operations`。
+- `uiautomator dump` 增加 6s 超时并主动放弃：界面持续动画时不再空转 11s+，超时即终止进程
+  并返回失败（`find` 的 `source=auto` 会自然回退到 OCR 快路径）。
+- MCP 服务重启改为有界优雅关闭：给在途请求 1s 宽限期完成并写回响应，减少「改配置瞬间
+  掐断正在进行的调用」。
+- 文档补充本地 OCR 精度边界（`0/O`、`I/l`、简繁易混，勿用于精确匹配）与 `batch` 连续
+  UI 操作需显式 `settle` 的提示。
+
 ## [1.1.0] - 2026-10-08
 
 ### 新增

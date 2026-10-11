@@ -13,6 +13,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /** 一个已解析的 HTTP 请求。 */
 data class HttpRequest(
@@ -80,6 +81,9 @@ class HttpServer(
     /** 已接受的连接，用于停止时主动关闭，避免 keep-alive 连接拖到空闲超时。 */
     private val activeClients: MutableSet<Socket> = ConcurrentHashMap.newKeySet()
 
+    /** 正在执行 [handler] 的请求数。停止时据此做有界优雅关闭——只等在途请求，不等空闲连接。 */
+    private val inFlight = AtomicInteger(0)
+
     val localPort: Int get() = serverSocket?.localPort ?: port
 
     fun start() {
@@ -102,7 +106,13 @@ class HttpServer(
         serverSocket = null
         acceptThread?.interrupt()
         acceptThread = null
-        // 主动关闭在途连接并终止工作线程，避免 keep-alive 连接阻塞到空闲超时。
+        // 优雅关闭：给正在处理中的请求一个短宽限期完成并写回响应，避免「改配置的一瞬间掐断在途调用」。
+        // 只统计 handler 执行中的请求（空闲 keep-alive 连接不计入），因此无在途请求时会立即返回。
+        val deadline = System.currentTimeMillis() + SHUTDOWN_GRACE_MS
+        while (inFlight.get() > 0 && System.currentTimeMillis() < deadline) {
+            runCatching { Thread.sleep(SHUTDOWN_POLL_MS) }
+        }
+        // 宽限期结束后，强制关闭所有残留连接（含空闲 keep-alive）并终止工作线程。
         activeClients.forEach { runCatching { it.close() } }
         activeClients.clear()
         clients.shutdownNow()
@@ -149,8 +159,14 @@ class HttpServer(
                     return
                 } ?: return
 
-                val response = runCatching { handler(request) }
-                    .getOrElse { HttpResponse.text(500, "Internal Server Error: ${it.message}") }
+                // 标记在途请求，供 stop() 做有界优雅关闭；handler 抛异常也要保证计数回落。
+                inFlight.incrementAndGet()
+                val response = try {
+                    runCatching { handler(request) }
+                        .getOrElse { HttpResponse.text(500, "Internal Server Error: ${it.message}") }
+                } finally {
+                    inFlight.decrementAndGet()
+                }
                 val keepAlive = shouldKeepAlive(request, response)
                 if (!runCatching { writeResponse(output, response, keepAlive) }.isSuccess) return
                 if (!keepAlive) return
@@ -301,5 +317,14 @@ class HttpServer(
 
         /** 内部伪请求头：记录 HTTP 版本，不参与业务逻辑。 */
         const val HEADER_VERSION = ":http-version"
+
+        /**
+         * 停止时等待在途请求完成的上限。取值较短——配置变更触发的重启发生在主线程上，
+         * 过长的等待会卡 UI；1s 足以覆盖绝大多数快速请求，超时后仍会强制关闭。
+         */
+        const val SHUTDOWN_GRACE_MS = 1_000L
+
+        /** 优雅关闭轮询间隔。 */
+        const val SHUTDOWN_POLL_MS = 20L
     }
 }
