@@ -56,8 +56,6 @@ class McpTool(
     val readOnly: Boolean = false,
     /** 是否绕过单线程设备队列、在请求线程直接执行（用于查询异步结果，避免被阻塞任务堵死）。 */
     val synchronous: Boolean = false,
-    /** 是否为不占用设备的纯阻塞工具（如 wait）：走独立队列，避免堵住后续设备操作。 */
-    val blocking: Boolean = false,
     private val handler: (JSONObject) -> McpToolResult,
 ) {
     fun call(arguments: JSONObject): McpToolResult =

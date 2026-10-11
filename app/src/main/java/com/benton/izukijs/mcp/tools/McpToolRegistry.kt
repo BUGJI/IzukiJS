@@ -83,7 +83,6 @@ class McpToolRegistry(
                     description = spec.description,
                     inputSchema = spec.parameters,
                     readOnly = spec.name in READ_ONLY_SHARED,
-                    blocking = spec.name in BLOCKING_SHARED,
                 ) { args -> runShared(agentTools, config, spec.name, args) }
             }
 
@@ -313,8 +312,5 @@ class McpToolRegistry(
             "find",
             "info",
         )
-
-        /** 不占用设备的纯阻塞工具：走独立队列，避免长时间等待堵住设备操作。 */
-        val BLOCKING_SHARED = setOf("wait")
     }
 }

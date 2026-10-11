@@ -53,7 +53,6 @@ class McpServerController(
     private var server: HttpServer? = null
     private var handler: McpHttpHandler? = null
     private var toolDispatcher: ExecutorService? = null
-    private var waitDispatcher: ExecutorService? = null
 
     @Synchronized
     fun start() {
@@ -69,17 +68,12 @@ class McpServerController(
         val dispatcher = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "izuki-mcp-tools").apply { isDaemon = true }
         }
-        // 不占用设备的阻塞工具（如 wait）单独一条队列，避免长时间等待堵住后续快工具。
-        val waiter = Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "izuki-mcp-wait").apply { isDaemon = true }
-        }
         val protocol = McpProtocolHandler(
             registry = registry,
             resources = resources,
             operations = operations,
             logBus = logBus,
             toolDispatcher = dispatcher,
-            waitDispatcher = waiter,
             serverVersion = serverVersion,
         )
         val httpHandler = McpHttpHandler(protocol, config.token, logBus, sessions)
@@ -98,7 +92,6 @@ class McpServerController(
             logBus.error("MCP 服务启动失败：${t.message}")
             runCatching { httpServer.stop() }
             runCatching { dispatcher.shutdownNow() }
-            runCatching { waiter.shutdownNow() }
             _status.value = McpStatus(error = "启动失败：${t.message}")
             return
         }
@@ -106,7 +99,6 @@ class McpServerController(
         server = httpServer
         handler = httpHandler
         toolDispatcher = dispatcher
-        waitDispatcher = waiter
 
         val urls = buildUrls(config.bindMode, port)
         _status.value = McpStatus(running = true, port = port, addresses = urls, sessions = sessions.size)
@@ -118,11 +110,9 @@ class McpServerController(
         val wasRunning = server != null || toolDispatcher != null
         runCatching { server?.stop() }
         runCatching { toolDispatcher?.shutdownNow() }
-        runCatching { waitDispatcher?.shutdownNow() }
         server = null
         handler = null
         toolDispatcher = null
-        waitDispatcher = null
         // 会话表跨 restart 保留，停止时也应如实反映其大小，避免 UI 显示 0 而实际仍有留存会话。
         _status.value = McpStatus(sessions = sessions.size)
         if (wasRunning) logBus.info("🔌 MCP 服务已停止")

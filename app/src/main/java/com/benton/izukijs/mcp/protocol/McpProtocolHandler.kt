@@ -25,8 +25,6 @@ class McpProtocolHandler(
     private val operations: OperationRegistry,
     private val logBus: LogBus,
     private val toolDispatcher: ExecutorService,
-    /** 不占用设备的阻塞工具（如 wait）专用队列：避免长时间等待堵住后续设备操作。 */
-    private val waitDispatcher: ExecutorService,
     private val serverVersion: String,
 ) {
 
@@ -144,7 +142,7 @@ class McpProtocolHandler(
 
         logBus.info("🔌 MCP 调用工具 $name")
         val requestId = operations.create(name)
-        val executor = if (tool.blocking) waitDispatcher else toolDispatcher
+        val executor = toolDispatcher
         val future = try {
             executor.submit<McpToolResult> {
                 val result = try {
