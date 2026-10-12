@@ -7,6 +7,8 @@
 
 ## [未发布]
 
+## [1.1.1] - 2026-10-12
+
 ### 新增
 
 - 脚本中心支持扫码导入：识别二维码链接并下载脚本。
@@ -25,6 +27,11 @@
   掐断正在进行的调用」。
 - 文档补充本地 OCR 精度边界（`0/O`、`I/l`、简繁易混，勿用于精确匹配）与 `batch` 连续
   UI 操作需显式 `settle` 的提示。
+
+### 构建 / CI
+
+- 修复 Compose 新增的 `LocalContextGetResourceValueCall` lint 报错：界面读字符串资源
+  统一改用 `LocalResources.current`，恢复 Android CI 的 `lintDebug` 通过。
 
 ## [1.1.0] - 2026-10-08
 
@@ -59,6 +66,7 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.0...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/BUGJI/IzukiJS/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/BUGJI/IzukiJS/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/BUGJI/IzukiJS/releases/tag/v1.0.0
