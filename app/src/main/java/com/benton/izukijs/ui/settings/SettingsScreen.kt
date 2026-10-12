@@ -46,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -718,6 +719,7 @@ private fun EditorSettingsScreen() {
 private fun BackupSettingsScreen() {
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     var message by remember { mutableStateOf<String?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
@@ -733,13 +735,13 @@ private fun BackupSettingsScreen() {
                 }.getOrNull()
             }
             message = if (text.isNullOrBlank()) {
-                context.getString(R.string.backup_read_failed)
+                resources.getString(R.string.backup_read_failed)
             } else {
                 runCatching { container.configBackupManager.importJson(text) }
                     .fold(
-                        onSuccess = { context.getString(R.string.backup_import_success) },
+                        onSuccess = { resources.getString(R.string.backup_import_success) },
                         onFailure = {
-                            context.getString(R.string.backup_import_failed, it.message.orEmpty())
+                            resources.getString(R.string.backup_import_failed, it.message.orEmpty())
                         },
                     )
             }
@@ -767,7 +769,7 @@ private fun BackupSettingsScreen() {
                             true
                         }.getOrDefault(false)
                     }
-                    if (ok) shareFile(context, file) else message = context.getString(R.string.backup_export_failed)
+                    if (ok) shareFile(context, file) else message = resources.getString(R.string.backup_export_failed)
                 }
             }) { Text(stringResource(R.string.backup_export)) }
             OutlinedButton(onClick = {
@@ -799,7 +801,7 @@ private fun BackupSettingsScreen() {
             confirmButton = {
                 TextButton(onClick = {
                     runCatching { container.configBackupManager.resetAll() }
-                    message = context.getString(R.string.backup_reset_done)
+                    message = resources.getString(R.string.backup_reset_done)
                     confirmReset = false
                 }) { Text(stringResource(R.string.common_confirm)) }
             },

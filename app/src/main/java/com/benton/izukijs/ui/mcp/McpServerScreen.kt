@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,6 +59,7 @@ import org.json.JSONObject
 fun McpServerScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val config by container.mcpConfigRepository.config.collectAsStateWithLifecycle()
     val status by container.mcpServerController.status.collectAsStateWithLifecycle()
 
@@ -81,7 +83,7 @@ fun McpServerScreen(onBack: () -> Unit) {
     fun copy(label: String, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
         clipboard?.setPrimaryClip(ClipData.newPlainText(label, text))
-        message = context.getString(R.string.mcp_copied)
+        message = resources.getString(R.string.mcp_copied)
     }
 
     val endpoint = status.addresses.firstOrNull().orEmpty()
@@ -198,7 +200,7 @@ fun McpServerScreen(onBack: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = {
                     apply(config.copy(token = McpConfig.newToken()))
-                    message = context.getString(R.string.mcp_token_regenerated)
+                    message = resources.getString(R.string.mcp_token_regenerated)
                 }) { Text(stringResource(R.string.mcp_token_regenerate)) }
             }
 

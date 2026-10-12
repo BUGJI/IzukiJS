@@ -53,7 +53,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -68,7 +68,7 @@ import com.benton.izukijs.ui.rememberAppContainer
 @Composable
 fun HidSetupScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
     val manager = container.hidManager
     val client = manager.client
@@ -98,13 +98,13 @@ fun HidSetupScreen(onBack: () -> Unit) {
         if (result.values.all { it }) {
             manager.startScan()
         } else {
-            scope.launch { snackbar.show(context.getString(R.string.hid_need_bt_permission)) }
+            scope.launch { snackbar.show(resources.getString(R.string.hid_need_bt_permission)) }
         }
     }
 
     fun startScan() {
         if (!client.isBluetoothEnabled()) {
-            scope.launch { snackbar.show(context.getString(R.string.hid_enable_bt)) }
+            scope.launch { snackbar.show(resources.getString(R.string.hid_enable_bt)) }
             return
         }
         if (client.hasPermissions()) manager.startScan() else permissionLauncher.launch(requiredPermissions)

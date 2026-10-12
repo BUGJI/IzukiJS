@@ -55,6 +55,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
@@ -101,6 +102,7 @@ private data class NodeBox(
 fun LayoutInspectorScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
 
@@ -131,8 +133,8 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
         nodes = buildList { tree?.let { flatten(it, 0, this) } }
         selected = null
         message = when {
-            tree == null -> context.getString(R.string.inspector_no_tree)
-            nodes.isEmpty() -> context.getString(R.string.inspector_no_nodes)
+            tree == null -> resources.getString(R.string.inspector_no_tree)
+            nodes.isEmpty() -> resources.getString(R.string.inspector_no_nodes)
             else -> null
         }
         loading = false
@@ -282,7 +284,7 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.End) {
                             TextButton(onClick = {
                                 copyToClipboard(context, current.selector())
-                                scope.launch { snackbar.show(context.getString(R.string.inspector_copied)) }
+                                scope.launch { snackbar.show(resources.getString(R.string.inspector_copied)) }
                             }) { Text(stringResource(R.string.inspector_copy_selector)) }
                         }
                     }

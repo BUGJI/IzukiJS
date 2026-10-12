@@ -65,8 +65,8 @@ import androidx.compose.ui.input.key.isShiftPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextRange
@@ -99,7 +99,7 @@ import kotlinx.coroutines.withContext
 fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val container = rememberAppContainer()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
 
@@ -370,7 +370,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                 }
                                 savedCode = fullText
                                 if (isSelection) {
-                                    snackbar.show(context.getString(R.string.editor_run_selection))
+                                    snackbar.show(resources.getString(R.string.editor_run_selection))
                                 }
                                 val spec = ScriptEnvSpec.parse(runText)
                                 val stored = container.scriptEnvRepository.values(current.id)

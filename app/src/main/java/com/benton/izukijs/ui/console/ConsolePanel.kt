@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
@@ -69,6 +70,7 @@ fun ConsolePanel(
     onCollapse: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val listState = rememberLazyListState()
@@ -108,15 +110,15 @@ fun ConsolePanel(
     fun copyAll() {
         if (visible.isEmpty()) return
         val text = visible.joinToString("\n") { it.toLine(showTimestamp) }
-        clipboard()?.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.nav_logs), text))
-        scope.launch { snackbar.show(context.getString(R.string.console_copied_all)) }
+        clipboard()?.setPrimaryClip(ClipData.newPlainText(resources.getString(R.string.nav_logs), text))
+        scope.launch { snackbar.show(resources.getString(R.string.console_copied_all)) }
     }
 
     fun copyLine(entry: LogEntry) {
         clipboard()?.setPrimaryClip(
-            ClipData.newPlainText(context.getString(R.string.nav_logs), entry.toLine(showTimestamp)),
+            ClipData.newPlainText(resources.getString(R.string.nav_logs), entry.toLine(showTimestamp)),
         )
-        scope.launch { snackbar.show(context.getString(R.string.console_copied)) }
+        scope.launch { snackbar.show(resources.getString(R.string.console_copied)) }
     }
 
     Column(modifier = modifier.fillMaxSize()) {

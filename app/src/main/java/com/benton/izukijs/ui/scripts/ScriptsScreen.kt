@@ -60,6 +60,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.Dp
@@ -90,6 +91,7 @@ fun ScriptsScreen(
 ) {
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
@@ -140,9 +142,9 @@ fun ScriptsScreen(
                     writeTextToUri(context, uri, container.scriptRepository.read(target))
                 }
                 val message = if (ok) {
-                    context.getString(R.string.scripts_exported, target.name)
+                    resources.getString(R.string.scripts_exported, target.name)
                 } else {
-                    context.getString(R.string.scripts_export_failed)
+                    resources.getString(R.string.scripts_export_failed)
                 }
                 snackbar.show(message)
             }
@@ -163,9 +165,9 @@ fun ScriptsScreen(
                         .ifBlank { "imported" }
                     container.scriptRepository.createAsync(name, text)
                     refresh()
-                    snackbar.show(context.getString(R.string.scripts_imported, name))
+                    snackbar.show(resources.getString(R.string.scripts_imported, name))
                 } else {
-                    snackbar.show(context.getString(R.string.scripts_import_failed))
+                    snackbar.show(resources.getString(R.string.scripts_import_failed))
                 }
             }
         }
@@ -187,11 +189,11 @@ fun ScriptsScreen(
             val message = when (result) {
                 is ScriptImporter.Result.Success -> {
                     refresh()
-                    context.getString(R.string.scripts_scan_imported, result.name)
+                    resources.getString(R.string.scripts_scan_imported, result.name)
                 }
-                ScriptImporter.Result.NoQrCode -> context.getString(R.string.scripts_scan_no_code)
-                ScriptImporter.Result.InvalidLink -> context.getString(R.string.scripts_scan_invalid_link)
-                ScriptImporter.Result.DownloadFailed -> context.getString(R.string.scripts_scan_download_failed)
+                ScriptImporter.Result.NoQrCode -> resources.getString(R.string.scripts_scan_no_code)
+                ScriptImporter.Result.InvalidLink -> resources.getString(R.string.scripts_scan_invalid_link)
+                ScriptImporter.Result.DownloadFailed -> resources.getString(R.string.scripts_scan_download_failed)
             }
             snackbar.show(message)
         }
@@ -206,7 +208,7 @@ fun ScriptsScreen(
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             scanLauncher.launch(uri)
         }.onFailure {
-            scope.launch { snackbar.show(context.getString(R.string.scripts_scan_failed)) }
+            scope.launch { snackbar.show(resources.getString(R.string.scripts_scan_failed)) }
         }
     }
 
@@ -384,8 +386,8 @@ fun ScriptsScreen(
                         container.scriptEnvRepository.remove(target.id)
                         refresh()
                         val result = snackbar.show(
-                            message = context.getString(R.string.scripts_deleted, target.name),
-                            actionLabel = context.getString(R.string.common_undo),
+                            message = resources.getString(R.string.scripts_deleted, target.name),
+                            actionLabel = resources.getString(R.string.common_undo),
                             duration = SnackbarDuration.Long,
                         )
                         if (result == SnackbarResult.ActionPerformed) {

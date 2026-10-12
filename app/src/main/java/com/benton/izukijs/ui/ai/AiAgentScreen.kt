@@ -25,7 +25,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,7 +51,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun AiAgentScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val config by container.aiConfigRepository.config.collectAsStateWithLifecycle()
 
@@ -219,8 +219,8 @@ fun AiAgentScreen(onBack: () -> Unit) {
                                         tools = emptyList(),
                                     ).content
                                 }.fold(
-                                    onSuccess = { context.getString(R.string.ai_test_success, it.take(120)) },
-                                    onFailure = { context.getString(R.string.ai_test_failure, it.message.orEmpty()) },
+                                    onSuccess = { resources.getString(R.string.ai_test_success, it.take(120)) },
+                                    onFailure = { resources.getString(R.string.ai_test_failure, it.message.orEmpty()) },
                                 )
                             }
                             testing = false
