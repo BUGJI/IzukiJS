@@ -32,7 +32,7 @@ jobs:
           cache: gradle
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
         with:
           # cmdline-tools 16 起已移除 'tools' 包，默认会安装失败，这里只装 platform-tools。
           packages: 'platform-tools'
