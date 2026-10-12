@@ -12,6 +12,19 @@
 [![Platform](https://img.shields.io/badge/Platform-Android%2028%2B-green.svg)]()
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg)]()
 
+## 界面预览
+
+<p align="center">
+  <img src="docs/images/run.png" width="22%" alt="运行页" />
+  <img src="docs/images/editor.png" width="22%" alt="脚本编辑器" />
+  <img src="docs/images/logs.png" width="22%" alt="日志页" />
+  <img src="docs/images/settings.png" width="22%" alt="设置页" />
+</p>
+
+<p align="center">
+  <sub>运行状态与能力 / 脚本编辑器 / 分级日志 / 全局设置</sub>
+</p>
+
 ## 特性
 
 - **多控制后端，能力协商与降级**：无障碍、Shizuku、Root、蓝牙 HID 统一抽象为 `Capability`，
@@ -100,8 +113,13 @@ cd IzukiJS
    - **Shizuku**：先安装并启动 Shizuku，再在 App 内授权（输入注入、截图、Shell）。
    - **Root**：检测 Root 并通过 `su` 授权。
    - **蓝牙 HID**：扫描并连接外部 HID 数位板狗。
+
+   <img src="docs/images/run.png" width="240" alt="权限与能力" />
+
 2. 需要无限截图时，在「运行 → 权限与能力 → 屏幕捕获」授权一次并开始。
-3. 在「脚本」页新建脚本，编辑并运行。
+3. 在「脚本」页新建脚本，编辑并运行；编辑器支持 JS 语法高亮、查找替换与撤销重做。
+
+   <img src="docs/images/editor.png" width="240" alt="脚本编辑器" />
 
 > 提示：脚本运行时可以收回非必要权限，只保留当前脚本真正需要的模式，以降低被风控识别的风险。
 
