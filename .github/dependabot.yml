@@ -9,6 +9,12 @@ updates:
       gradle:
         patterns:
           - "*"
+    ignore:
+      # 13.1.5 起 Shizuku.newProcess 变为 private，需先迁移到 UserService 方案。
+      - dependency-name: "dev.rikka.shizuku:api"
+        versions: [">= 13.1.5"]
+      - dependency-name: "dev.rikka.shizuku:provider"
+        versions: [">= 13.1.5"]
 
   - package-ecosystem: github-actions
     directory: /
