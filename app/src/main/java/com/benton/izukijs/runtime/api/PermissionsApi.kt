@@ -1,11 +1,15 @@
 package com.benton.izukijs.runtime.api
 
 import android.Manifest
+import android.app.AppOpsManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Environment
+import android.os.Process
 import android.provider.Settings
 import android.webkit.JavascriptInterface
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.ControlMode
@@ -18,6 +22,7 @@ class PermissionsApi(
     private val context: Context,
     private val controllers: ControllerManager,
     private val screenCapture: ScreenCapture,
+    private val appListEnabled: () -> Boolean = { true },
 ) {
 
     @JavascriptInterface
@@ -54,6 +59,39 @@ class PermissionsApi(
             isGranted(Manifest.permission.ACCESS_FINE_LOCATION)
         }
 
+    /** 使用情况访问（PACKAGE_USAGE_STATS）。 */
+    @JavascriptInterface
+    fun usageAccess(): Boolean {
+        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+        val mode = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+            } else {
+                @Suppress("DEPRECATION")
+                appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+            }
+        }.getOrDefault(AppOpsManager.MODE_DEFAULT)
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    /** 通知使用权（通知监听服务已开启）。 */
+    @JavascriptInterface
+    fun notificationListener(): Boolean =
+        NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+    /** 全部文件访问（MANAGE_EXTERNAL_STORAGE，或旧版外部存储写权限）。 */
+    @JavascriptInterface
+    fun manageStorage(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
+        } else {
+            isGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+
+    /** 应用列表（QUERY_ALL_PACKAGES + 应用内开关）。 */
+    @JavascriptInterface
+    fun appList(): Boolean = appListEnabled()
+
     /** 已授予的能力，逗号分隔（如 "accessibility,overlay,screenCapture"）。 */
     @JavascriptInterface
     fun granted(): String = statusMap().filterValues { it }.keys.joinToString(",")
@@ -87,6 +125,10 @@ class PermissionsApi(
         "screenCapture" to screenCapture(),
         "notifications" to notifications(),
         "bluetooth" to bluetooth(),
+        "usageAccess" to usageAccess(),
+        "notificationListener" to notificationListener(),
+        "manageStorage" to manageStorage(),
+        "appList" to appList(),
     )
 
     private fun isGranted(permission: String): Boolean =

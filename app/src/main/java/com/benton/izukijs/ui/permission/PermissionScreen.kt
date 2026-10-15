@@ -1,9 +1,14 @@
 package com.benton.izukijs.ui.permission
 
 import android.app.Activity
+import android.app.AppOpsManager
+import android.content.Context
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.os.Process
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -49,6 +54,8 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,9 +71,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.DebugOverlayService
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.IzukiAccessibilityService
@@ -76,7 +89,9 @@ import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 分组维度：读取（获取屏幕 / 控件树）、操作（注入输入 / 执行命令）、其他。
@@ -150,6 +165,31 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             ScreenCaptureService.start(context, result.resultCode, data)
         }
     }
+
+    // ---- 使用情况访问 / 通知监听 / 全部文件访问：系统授予项在返回本页时刷新 ----
+    var permissionRefresh by remember { mutableStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionRefresh++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val usageAccessGranted = remember(permissionRefresh) { hasUsageAccess(context) }
+    val notificationListenerGranted = remember(permissionRefresh) { hasNotificationListener(context) }
+    val allFilesGranted = remember(permissionRefresh) { hasAllFilesAccess(context) }
+    val runtimeSettings by container.runtimeSettingsRepository.settings.collectAsStateWithLifecycle()
+
+    val writeStorageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { permissionRefresh++ }
+
+    fun openSystemSettings(intent: Intent) {
+        runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
+    fun saveRuntimeSettings(new: RuntimeSettings) = container.runtimeSettingsRepository.save(new)
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -440,6 +480,204 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
         )
     }
 
+    @Composable
+    fun UsageAccessCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_usage_title),
+            description = stringResource(R.string.perm_usage_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (usageAccessGranted) R.string.perm_status_authorized else R.string.perm_status_unauthorized,
+            ),
+            ready = usageAccessGranted,
+            onShowInfo = { infoSheet = info },
+            action = {
+                SwitchRow(
+                    label = stringResource(R.string.perm_switch_grant),
+                    checked = usageAccessGranted,
+                ) { openSystemSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+            },
+        )
+    }
+
+    @Composable
+    fun NotificationListenerCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_notify_title),
+            description = stringResource(R.string.perm_notify_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (notificationListenerGranted) R.string.perm_status_authorized else R.string.perm_status_unauthorized,
+            ),
+            ready = notificationListenerGranted,
+            onShowInfo = { infoSheet = info },
+            action = {
+                SwitchRow(
+                    label = stringResource(R.string.perm_switch_grant),
+                    checked = notificationListenerGranted,
+                ) { openSystemSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+            },
+        )
+    }
+
+    @Composable
+    fun AppListCard() {
+        val enabled = runtimeSettings.appList
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_applist_title),
+            description = stringResource(R.string.perm_applist_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(if (enabled) R.string.perm_status_on else R.string.perm_status_off),
+            ready = enabled,
+            onShowInfo = { infoSheet = info },
+            action = {
+                SwitchRow(
+                    label = stringResource(R.string.perm_applist_switch),
+                    checked = enabled,
+                ) { saveRuntimeSettings(runtimeSettings.copy(appList = it)) }
+            },
+        )
+    }
+
+    @Composable
+    fun AllFilesCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_allfiles_title),
+            description = stringResource(R.string.perm_allfiles_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (allFilesGranted) R.string.perm_status_authorized else R.string.perm_status_unauthorized,
+            ),
+            ready = allFilesGranted,
+            onShowInfo = { infoSheet = info },
+            action = {
+                SwitchRow(
+                    label = stringResource(R.string.perm_switch_grant),
+                    checked = allFilesGranted,
+                ) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        openSystemSettings(
+                            Intent(
+                                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                Uri.parse("package:${context.packageName}"),
+                            ),
+                        )
+                    } else {
+                        writeStorageLauncher.launch(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                    }
+                }
+            },
+        )
+    }
+
+    @Composable
+    fun WakeCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_wake_title),
+            description = stringResource(R.string.perm_wake_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (runtimeSettings.keepAwake) R.string.perm_status_on else R.string.perm_status_off,
+            ),
+            ready = runtimeSettings.keepAwake,
+            onShowInfo = { infoSheet = info },
+            action = {
+                Column {
+                    SwitchRow(
+                        label = stringResource(R.string.perm_wake_title),
+                        checked = runtimeSettings.keepAwake,
+                        description = stringResource(R.string.perm_wake_desc),
+                    ) { saveRuntimeSettings(runtimeSettings.copy(keepAwake = it)) }
+                    Spacer(Modifier.height(12.dp))
+                    SwitchRow(
+                        label = stringResource(R.string.perm_wake_screen),
+                        checked = runtimeSettings.wakeScreen,
+                        description = stringResource(R.string.perm_wake_screen_desc),
+                        enabled = runtimeSettings.keepAwake,
+                    ) { saveRuntimeSettings(runtimeSettings.copy(wakeScreen = it)) }
+                }
+            },
+        )
+    }
+
+    @Composable
+    fun TileCard() {
+        val pinnedId by container.tileSettingsRepository.scriptId.collectAsStateWithLifecycle()
+        var pinnedName by remember(pinnedId) { mutableStateOf<String?>(null) }
+        LaunchedEffect(pinnedId) {
+            pinnedName = pinnedId?.let { id ->
+                withContext(Dispatchers.IO) { container.scriptRepository.find(id)?.name }
+            }
+        }
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_tile_title),
+            description = stringResource(R.string.perm_tile_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (runtimeSettings.tileEnabled) R.string.perm_status_on else R.string.perm_status_off,
+            ),
+            ready = runtimeSettings.tileEnabled && pinnedName != null,
+            onShowInfo = { infoSheet = info },
+            action = {
+                Column {
+                    SwitchRow(
+                        label = stringResource(R.string.perm_tile_enable),
+                        checked = runtimeSettings.tileEnabled,
+                    ) { saveRuntimeSettings(runtimeSettings.copy(tileEnabled = it)) }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        pinnedName?.let { stringResource(R.string.perm_tile_pinned, it) }
+                            ?: stringResource(R.string.perm_tile_pick_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(R.string.perm_tile_manual_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+        )
+    }
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -453,7 +691,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { shizukuManager.refresh() }) {
+                    IconButton(onClick = { shizukuManager.refresh(); permissionRefresh++ }) {
                         Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
                     }
                 },
@@ -495,6 +733,12 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             ShizukuCard()
                             Spacer(Modifier.height(12.dp))
                             RootCard()
+                            Spacer(Modifier.height(12.dp))
+                            NotificationListenerCard()
+                            Spacer(Modifier.height(12.dp))
+                            UsageAccessCard()
+                            Spacer(Modifier.height(12.dp))
+                            AppListCard()
                         }
 
                         PermissionGroup.OPERATE -> {
@@ -507,7 +751,15 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             RootCard()
                         }
 
-                        PermissionGroup.OTHER -> FloatingCard()
+                        PermissionGroup.OTHER -> {
+                            FloatingCard()
+                            Spacer(Modifier.height(12.dp))
+                            AllFilesCard()
+                            Spacer(Modifier.height(12.dp))
+                            WakeCard()
+                            Spacer(Modifier.height(12.dp))
+                            TileCard()
+                        }
                     }
                 }
             }
@@ -750,3 +1002,32 @@ private fun CapabilityActions(
 }
 
 private const val SHIZUKU_REQUEST_CODE = 1001
+
+/** 使用情况访问（PACKAGE_USAGE_STATS）是否已授予。 */
+private fun hasUsageAccess(context: Context): Boolean {
+    val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
+    val mode = runCatching {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+        } else {
+            @Suppress("DEPRECATION")
+            appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
+        }
+    }.getOrDefault(AppOpsManager.MODE_DEFAULT)
+    return mode == AppOpsManager.MODE_ALLOWED
+}
+
+/** 通知使用权（通知监听服务）是否已授予。 */
+private fun hasNotificationListener(context: Context): Boolean =
+    NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+/** 全部文件访问是否已授予。 */
+private fun hasAllFilesAccess(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
+    } else {
+        ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }

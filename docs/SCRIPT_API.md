@@ -77,7 +77,50 @@ gesture([
 |---|---|
 | `app.launch(packageName)` | 启动应用 |
 | `app.openUrl(url)` | 打开链接 |
-| `app.currentPackage()` | 当前前台包名（需无障碍） |
+| `app.currentPackage()` | 当前前台包名（无障碍 → Shizuku/Root → 使用情况访问 依次兜底） |
+| `app.list()` | 已安装应用数组 `[{package,label,system,enabled}]`（需「应用列表」开启） |
+| `app.info(packageName)` | 单个应用信息对象，或 `null` |
+| `app.isInstalled(packageName)` | 是否已安装 |
+| `app.foreground()` | 当前前台包名（需「使用情况访问」），否则 `null` |
+| `app.lastUsed(packageName)` | 最后使用时间（毫秒），从未使用返回 -1（需「使用情况访问」） |
+| `app.usageStats(sinceMs, limit)` | 使用统计数组 `[{package,totalTimeMs,lastTimeUsed}]`（需「使用情况访问」） |
+
+## `notify`（通知监听，只读 + 清除）
+
+需在「权限与能力」页开启「通知监听（通知使用权）」。不点击、不回复。
+
+| 方法 | 说明 |
+|---|---|
+| `notify.available()` | 是否已授予通知使用权 |
+| `notify.list()` | 当前通知数组 `[{key,package,title,text,subText,postTime,ongoing}]` |
+| `notify.latest(pkg, timeoutMs=10000)` | 等待 `pkg` 在调用之后出现的新通知，返回该通知对象；超时返回 `null` |
+| `notify.clear(key)` | 清除指定通知 |
+
+```js
+var code = notify.latest("com.example.app", 15000);
+if (code) log("验证码通知: " + code.text);
+```
+
+## `fs`（文件读写）
+
+访问共享存储中的任意路径需在「权限与能力」页开启「全部文件访问」；未授权时受限路径的操作
+返回 `null` / `false`。
+
+| 方法 | 说明 |
+|---|---|
+| `fs.readText(path)` | 读取 UTF-8 文本，失败返回 `null` |
+| `fs.writeText(path, text, append)` | 写入 / 追加文本 |
+| `fs.exists(path)` / `fs.isDirectory(path)` | 判断存在 / 目录 |
+| `fs.list(path)` | 列目录，返回 `[{name,path,dir,size}]` 或 `null` |
+| `fs.size(path)` | 文件字节数，失败返回 -1 |
+| `fs.mkdirs(path)` / `fs.delete(path)` | 建目录 / 删除 |
+| `fs.copy(src, dst)` / `fs.move(src, dst)` | 复制 / 移动 |
+| `fs.readBase64(path)` / `fs.writeBase64(path, b64)` | 读写二进制（Base64） |
+
+```js
+fs.writeText("/sdcard/izuki/out.txt", "hello\n", false);
+var entries = fs.list("/sdcard/izuki");
+```
 
 ## `selector`（需无障碍）
 
@@ -141,6 +184,10 @@ if (hit) click(hit.x, hit.y);
 | `permissions.overlay()` | 悬浮窗权限 |
 | `permissions.screenCapture()` | 持续录屏是否开启 |
 | `permissions.notifications()` / `bluetooth()` | 通知 / 蓝牙权限 |
+| `permissions.usageAccess()` | 使用情况访问 |
+| `permissions.notificationListener()` | 通知使用权 |
+| `permissions.manageStorage()` | 全部文件访问 |
+| `permissions.appList()` | 应用列表是否开启 |
 | `permissions.granted()` | 已授予项，逗号分隔 |
 | `permissions.all()` | 全部项 `key=value` |
 | `permissions.has(name)` | 单项查询 |

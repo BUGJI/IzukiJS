@@ -5,6 +5,23 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+
+- 「权限与能力」页新增多项能力，均为开关式：
+  - **通知监听**（只读 + 清除）：脚本经 `notify.*` 读取通知标题 / 内容 / 包名，支持等待某应用
+    的新通知（抓验证码 / 消息触发）与清除通知。
+  - **使用情况访问**：脚本经 `app.currentPackage()` / `app.foreground()` / `app.lastUsed()` /
+    `app.usageStats()` 读取前台应用与使用记录。
+  - **应用列表**：脚本经 `app.list()` / `app.info()` / `app.isInstalled()` 枚举已安装应用
+    （需 `QUERY_ALL_PACKAGES`，可在本页开关）。
+  - **全部文件访问**：让 `fs.*` 与 `captureScreen(path)` / `images.findImage(path)` 能读写
+    共享存储中的任意路径（新增 `fs` 命名空间：读写文本 / 二进制、列目录、复制移动删除等）。
+  - **保持唤醒 / 点亮屏幕**：脚本运行期间持有 `WAKE_LOCK`，可选同时唤醒屏幕。
+  - **快捷磁贴**：下拉快捷设置一键运行 / 停止「钉到磁贴」的固定脚本（脚本中心菜单可钉选）。
+- AI Agent 与 MCP 新增只读 `notifications` 工具，`info` 工具新增 `foreground` / `usage` 查询。
+
 ## [1.1.3] - 2026-10-16
 
 ### 新增

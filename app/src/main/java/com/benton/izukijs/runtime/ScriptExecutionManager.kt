@@ -5,12 +5,14 @@ import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
+import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.ScriptForegroundService
+import com.benton.izukijs.service.WakeLockController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +35,8 @@ class ScriptExecutionManager(
     private val captureSettingsRepository: CaptureSettingsRepository,
     private val scriptEnvRepository: ScriptEnvRepository,
     private val runHistoryRepository: RunHistoryRepository,
+    private val runtimeSettings: RuntimeSettingsRepository,
+    private val wakeLock: WakeLockController,
     private val moduleSourceProvider: (String) -> String?,
 ) {
 
@@ -72,6 +76,11 @@ class ScriptExecutionManager(
         job = scope.launch {
             var jsEngine: JsEngine? = null
             var failure: Throwable? = null
+            val settings = runtimeSettings.current()
+            if (settings.keepAwake) wakeLock.acquire()
+            if (settings.wakeScreen) {
+                runCatching { controllers.controllerFor(Capability.KEY)?.pressKey(KEYCODE_WAKEUP) }
+            }
             try {
                 jsEngine = JsEngine(
                     appContext,
@@ -82,12 +91,14 @@ class ScriptExecutionManager(
                     aiConfigRepository,
                     captureSettingsRepository,
                     scriptEnv,
+                    runtimeSettings,
                     moduleSourceProvider,
                 ).also { engine = it }
                 jsEngine.execute(source, scriptName)
             } catch (t: Throwable) {
                 failure = t
             } finally {
+                if (settings.keepAwake) wakeLock.release()
                 val exited = jsEngine?.exitRequested == true || isExitThrowable(failure)
                 jsEngine?.let { runCatching { it.close() } }
                 engine = null
@@ -124,5 +135,10 @@ class ScriptExecutionManager(
             guard++
         }
         return false
+    }
+
+    private companion object {
+        /** KEYCODE_WAKEUP：点亮屏幕。 */
+        const val KEYCODE_WAKEUP = 224
     }
 }

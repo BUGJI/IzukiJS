@@ -25,6 +25,7 @@ class DeviceApiBundle(
     val shellApi: ShellApi,
     val ocrApi: OcrApi,
     val selectorApi: SelectorApi,
+    val notificationApi: NotificationApi,
 ) {
     companion object {
         fun create(
@@ -33,6 +34,7 @@ class DeviceApiBundle(
             screenCapture: ScreenCapture,
             ocrProcessor: OcrProcessor,
             logBus: LogBus,
+            appListEnabled: () -> Boolean = { true },
         ): DeviceApiBundle {
             val screenshotProvider: () -> Bitmap? = {
                 OverlayCoordinator.withoutOverlay {
@@ -59,12 +61,13 @@ class DeviceApiBundle(
                 screenshotProvider = screenshotProvider,
                 inputApi = InputApi(controllers, logBus),
                 deviceApi = DeviceApi(context),
-                appApi = AppApi(context, logBus, shellExec),
+                appApi = AppApi(context, logBus, shellExec, appListEnabled),
                 shellApi = ShellApi(controllers, logBus),
                 ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus),
                 selectorApi = SelectorApi(logBus) {
                     controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
                 },
+                notificationApi = NotificationApi(context),
             )
         }
     }

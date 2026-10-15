@@ -20,6 +20,7 @@ import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
+import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.mcp.McpConfigRepository
 import com.benton.izukijs.mcp.McpServerController
@@ -30,12 +31,14 @@ import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.LogBus
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
+import com.benton.izukijs.runtime.RuntimeSettingsRepository
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.schedule.ScheduleManager
 import com.benton.izukijs.schedule.ScheduleRepository
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
+import com.benton.izukijs.service.WakeLockController
 import com.benton.izukijs.update.UpdateManager
 import com.benton.izukijs.update.UpdateSettingsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -71,6 +74,12 @@ class AppContainer(private val application: Application) {
     val scriptEnvRepository = ScriptEnvRepository(application)
 
     val runHistoryRepository = RunHistoryRepository(application)
+
+    val tileSettingsRepository = TileSettingsRepository(application)
+
+    val runtimeSettingsRepository = RuntimeSettingsRepository(application)
+
+    val wakeLockController = WakeLockController(application)
 
     val screenCapture = ScreenCapture(logBus)
 
@@ -111,6 +120,8 @@ class AppContainer(private val application: Application) {
         captureSettingsRepository,
         scriptEnvRepository,
         runHistoryRepository,
+        runtimeSettingsRepository,
+        wakeLockController,
         moduleSourceProvider = { raw ->
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
             scriptRepository.find(id)?.let { scriptRepository.read(it) }
@@ -121,7 +132,14 @@ class AppContainer(private val application: Application) {
 
     /** 脚本与 MCP 共用的设备 API 集合；懒加载，首次使用时组装。 */
     private val deviceApiBundle: DeviceApiBundle by lazy {
-        DeviceApiBundle.create(application, controllerManager, screenCapture, ocrProcessor, logBus)
+        DeviceApiBundle.create(
+            application,
+            controllerManager,
+            screenCapture,
+            ocrProcessor,
+            logBus,
+            appListEnabled = { runtimeSettingsRepository.current().appList },
+        )
     }
 
     /** 读控件树：无障碍优先，Shizuku / Root 的 uiautomator dump 兜底。 */

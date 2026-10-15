@@ -115,6 +115,8 @@
     <string name="scripts_rename">重命名</string>
     <string name="scripts_pin">置顶</string>
     <string name="scripts_unpin">取消置顶</string>
+    <string name="scripts_tile_pin">钉到磁贴</string>
+    <string name="scripts_tile_unpin">取消钉选磁贴</string>
     <string name="scripts_sort_updated">按更新时间排序</string>
     <string name="scripts_sort_name">按名称排序</string>
     <string name="scripts_delete_title">删除脚本</string>
@@ -183,6 +185,30 @@
     <string name="perm_status_unauthorized">未授权</string>
     <string name="perm_detail_open">查看说明</string>
     <string name="perm_detail_close">知道了</string>
+    <string name="perm_switch_grant">已开启该权限</string>
+    <string name="perm_usage_title">使用情况访问</string>
+    <string name="perm_usage_desc">读取应用使用记录，用于判断前台应用与使用时长。</string>
+    <string name="perm_notify_title">通知监听</string>
+    <string name="perm_notify_desc">读取通知标题 / 内容 / 包名，用于抓取验证码或消息触发（只读，不点击、不回复）。</string>
+    <string name="perm_applist_title">应用列表</string>
+    <string name="perm_applist_desc">允许脚本枚举已安装应用（Android 11+ 需此声明）。</string>
+    <string name="perm_applist_switch">允许枚举已安装应用</string>
+    <string name="perm_allfiles_title">全部文件访问</string>
+    <string name="perm_allfiles_desc">允许脚本读写共享存储中的任意文件（如 /sdcard 路径）。</string>
+    <string name="perm_wake_title">保持唤醒</string>
+    <string name="perm_wake_desc">脚本运行期间保持 CPU 唤醒，避免息屏 / 休眠中断。</string>
+    <string name="perm_wake_screen">同时点亮屏幕</string>
+    <string name="perm_wake_screen_desc">运行脚本时唤醒屏幕（可能停留在锁屏界面）。</string>
+    <string name="perm_tile_title">快捷磁贴</string>
+    <string name="perm_tile_desc">在下拉快捷设置中显示一键运行 / 停止固定脚本的磁贴。</string>
+    <string name="perm_tile_enable">启用快捷磁贴</string>
+    <string name="perm_tile_pinned">已绑定脚本：%1$s</string>
+    <string name="perm_tile_pick_hint">尚未绑定脚本，请在脚本中心将某个脚本「钉到磁贴」。</string>
+    <string name="perm_tile_add">添加到快捷设置</string>
+    <string name="perm_tile_manual_hint">请在快捷设置中手动编辑并添加「Izuki 脚本」磁贴。</string>
+
+    <string name="tile_script">Izuki 脚本</string>
+    <string name="tile_script_named">Izuki · %1$s</string>
 
     <string name="dim_accuracy">精准度</string>
     <string name="dim_risk">风控</string>

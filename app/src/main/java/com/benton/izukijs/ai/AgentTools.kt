@@ -6,6 +6,7 @@ import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.runtime.api.AppApi
 import com.benton.izukijs.runtime.api.DeviceApi
 import com.benton.izukijs.runtime.api.InputApi
+import com.benton.izukijs.runtime.api.NotificationApi
 import com.benton.izukijs.runtime.api.OcrApi
 import com.benton.izukijs.runtime.api.SelectorApi
 import com.benton.izukijs.runtime.api.ShellApi
@@ -28,6 +29,7 @@ class AgentTools(
     private val appApi: AppApi,
     private val shellApi: ShellApi,
     private val deviceApi: DeviceApi,
+    private val notificationApi: NotificationApi,
     private val screenshotPathProvider: () -> String?,
     private val nodeTreeProvider: () -> NodeTreeResult,
     private val allowShell: Boolean,
@@ -91,9 +93,29 @@ class AgentTools(
         add(
             ToolSpec(
                 "info",
-                "读取设备信息。what=device：屏幕尺寸/机型/系统；battery：电量；current_app：当前前台包名。",
+                "读取设备信息。what=device：屏幕尺寸/机型/系统；battery：电量；current_app / foreground：当前前台包名；" +
+                    "usage：最近使用过的应用（需使用情况访问）。",
                 objectSchema(
-                    mapOf("what" to enumProp("要读取的信息", listOf("device", "battery", "current_app"))),
+                    mapOf(
+                        "what" to enumProp(
+                            "要读取的信息",
+                            listOf("device", "battery", "current_app", "foreground", "usage"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        add(
+            ToolSpec(
+                "notifications",
+                "读取通知栏（需在「通知使用权」中开启本应用，只读）。action=list：当前通知列表；" +
+                    "action=latest：等待 package 指定的应用在本次调用后出现的新通知（用于抓取验证码 / 消息）。",
+                objectSchema(
+                    mapOf(
+                        "action" to enumProp("操作", listOf("list", "latest")),
+                        "package" to stringProp("action=latest 时的应用包名"),
+                        "timeout_ms" to numberProp("action=latest 的等待超时（毫秒），默认 10000"),
+                    ),
                 ),
             ),
         )
@@ -257,6 +279,8 @@ class AgentTools(
         "screenshot" -> screenshotPathProvider()?.let { "截图已保存：$it" } ?: "截图失败"
 
         "info" -> doInfo(args.optString("what", "device"))
+
+        "notifications" -> doNotifications(args)
 
         "click" -> doClick(args)
 
@@ -456,11 +480,38 @@ class AgentTools(
     private fun doInfo(what: String): String = when (what) {
         "battery" -> "电量 ${deviceApi.batteryLevel()}%"
 
-        "current_app" -> appApi.currentPackage()?.let { "当前前台包名：$it" }
-            ?: "无法获取当前包名（需无障碍或 Shizuku）"
+        "current_app", "foreground" -> appApi.currentPackage()?.let { "当前前台包名：$it" }
+            ?: "无法获取当前包名（需无障碍 / Shizuku / 使用情况访问）"
+
+        "usage" -> if (!appApi.hasUsageAccess()) {
+            "未授予使用情况访问，无法读取应用使用记录"
+        } else {
+            appApi.usageStats(0.0, 20)
+        }
 
         else -> "屏幕 ${deviceApi.screenWidth()}x${deviceApi.screenHeight()}，" +
             "机型 ${deviceApi.brand()} ${deviceApi.model()}，Android SDK ${deviceApi.androidVersion()}"
+    }
+
+    private fun doNotifications(args: JSONObject): String {
+        if (!notificationApi.available()) {
+            return errorJson("通知监听未开启，请在「权限与能力」中授予「通知使用权」")
+        }
+        return when (args.optString("action", "list").ifBlank { "list" }) {
+            "list" -> notificationApi.list()
+
+            "latest" -> {
+                val pkg = args.optString("package")
+                if (pkg.isBlank()) return errorJson("notifications: action=latest 需要 package")
+                val timeout = args.optDouble("timeout_ms", 10_000.0).coerceIn(0.0, 60_000.0)
+                notificationApi.latest(pkg, timeout) ?: jsonOf {
+                    put("ok", false)
+                    put("message", "超时未收到来自 $pkg 的新通知")
+                }
+            }
+
+            else -> errorJson("notifications: 未知 action")
+        }
     }
 
     // ---- app ----

@@ -9,6 +9,7 @@ import com.benton.izukijs.runtime.api.AiApi
 import com.benton.izukijs.runtime.api.ConsoleApi
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.runtime.api.EnvApi
+import com.benton.izukijs.runtime.api.FileApi
 import com.benton.izukijs.runtime.api.GlobalApi
 import com.benton.izukijs.runtime.api.ImageApi
 import com.benton.izukijs.runtime.api.ModuleApi
@@ -32,6 +33,7 @@ class JsEngine(
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
     private val scriptEnv: ScriptEnv,
+    private val runtimeSettings: RuntimeSettingsRepository,
     private val moduleSourceProvider: (String) -> String?,
 ) : Closeable {
 
@@ -63,6 +65,7 @@ class JsEngine(
             screenCapture = screenCapture,
             ocrProcessor = ocrProcessor,
             logBus = logBus,
+            appListEnabled = { runtimeSettings.current().appList },
         )
         val globalApi = GlobalApi(
             context = context,
@@ -87,7 +90,12 @@ class JsEngine(
         ctx.addJavascriptInterface(shellApi, "shell")
         ctx.addJavascriptInterface(ImageApi(bundle.screenshotProvider, logBus), "images")
         ctx.addJavascriptInterface(ocrApi, "ocr")
-        ctx.addJavascriptInterface(PermissionsApi(context, controllers, screenCapture), "permissions")
+        ctx.addJavascriptInterface(bundle.notificationApi, "notify")
+        ctx.addJavascriptInterface(FileApi(logBus), "fs")
+        ctx.addJavascriptInterface(
+            PermissionsApi(context, controllers, screenCapture, { runtimeSettings.current().appList }),
+            "permissions",
+        )
         ctx.addJavascriptInterface(selectorApi, "selector")
         ctx.addJavascriptInterface(EnvApi(scriptEnv), "env")
         ctx.addJavascriptInterface(StateApi(scriptEnv), "state")
@@ -101,6 +109,7 @@ class JsEngine(
                 appApi = appApi,
                 shellApi = shellApi,
                 deviceApi = deviceApi,
+                notificationApi = bundle.notificationApi,
                 screenshotPathProvider = { globalApi.captureScreen("") },
                 nodeTreeProvider = { UiautomatorDumper.read(controllers, logBus) },
                 logBus = logBus,
@@ -177,6 +186,31 @@ class JsEngine(
                     width: parseInt(p[2], 10),
                     height: parseInt(p[3], 10)
                   };
+                };
+              }
+              if (typeof app !== 'undefined' && app.listRaw) {
+                app.list = function () {
+                  try { return JSON.parse(app.listRaw()); } catch (e) { return []; }
+                };
+              }
+              if (typeof fs !== 'undefined') {
+                var __fsList = fs.list;
+                fs.list = function (path) {
+                  var raw = __fsList(path);
+                  if (!raw) return null;
+                  try { return JSON.parse(raw); } catch (e) { return null; }
+                };
+              }
+              if (typeof notify !== 'undefined') {
+                var __notifyList = notify.list;
+                notify.list = function () {
+                  try { return JSON.parse(__notifyList()); } catch (e) { return []; }
+                };
+                var __notifyLatest = notify.latest;
+                notify.latest = function (pkg, timeoutMs) {
+                  var raw = __notifyLatest(pkg, (timeoutMs == null ? 10000 : timeoutMs));
+                  if (!raw) return null;
+                  try { return JSON.parse(raw); } catch (e) { return null; }
                 };
               }
               if (typeof env !== 'undefined' && env.allRaw) {

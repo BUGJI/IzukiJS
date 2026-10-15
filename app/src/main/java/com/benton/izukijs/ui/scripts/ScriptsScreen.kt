@@ -97,6 +97,7 @@ fun ScriptsScreen(
     val haptics = rememberAppHaptics()
     val pinned by container.scriptListPreferences.pinned.collectAsStateWithLifecycle()
     val sort by container.scriptListPreferences.sort.collectAsStateWithLifecycle()
+    val tileScriptId by container.tileSettingsRepository.scriptId.collectAsStateWithLifecycle()
     val revision by container.scriptRepository.revision.collectAsStateWithLifecycle()
 
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
@@ -299,10 +300,17 @@ fun ScriptsScreen(
                             ScriptRow(
                                 script = script,
                                 pinned = script.id in pinned,
+                                pinnedToTile = script.id == tileScriptId,
                                 onClick = { onOpenScript(script.id) },
                                 onTogglePin = {
                                     haptics.toggle()
                                     container.scriptListPreferences.togglePinned(script.id)
+                                },
+                                onToggleTile = {
+                                    haptics.toggle()
+                                    container.tileSettingsRepository.setScriptId(
+                                        if (tileScriptId == script.id) null else script.id,
+                                    )
                                 },
                                 onRename = { renameTarget = script; renameName = script.name },
                                 onExport = { exportTarget = script; exportLauncher.launch(script.name + ".js") },
@@ -427,8 +435,10 @@ fun ScriptsScreen(
 private fun ScriptRow(
     script: ScriptInfo,
     pinned: Boolean,
+    pinnedToTile: Boolean,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
+    onToggleTile: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
@@ -461,6 +471,16 @@ private fun ScriptRow(
                     DropdownMenuItem(
                         text = { Text(stringResource(if (pinned) R.string.scripts_unpin else R.string.scripts_pin)) },
                         onClick = { menuOpen = false; onTogglePin() },
+                    )
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (pinnedToTile) R.string.scripts_tile_unpin else R.string.scripts_tile_pin,
+                                ),
+                            )
+                        },
+                        onClick = { menuOpen = false; onToggleTile() },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.scripts_rename)) },

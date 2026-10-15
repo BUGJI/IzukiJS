@@ -59,6 +59,7 @@ class McpToolRegistry(
             appApi = bundle.appApi,
             shellApi = bundle.shellApi,
             deviceApi = bundle.deviceApi,
+            notificationApi = bundle.notificationApi,
             screenshotPathProvider = { null },
             nodeTreeProvider = nodeTreeProvider,
             allowShell = config.allowShell,
@@ -311,6 +312,7 @@ class McpToolRegistry(
             "ui_dump",
             "find",
             "info",
+            "notifications",
         )
     }
 }

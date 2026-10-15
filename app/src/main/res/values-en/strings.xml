@@ -115,6 +115,8 @@
     <string name="scripts_rename">Rename</string>
     <string name="scripts_pin">Pin to top</string>
     <string name="scripts_unpin">Unpin</string>
+    <string name="scripts_tile_pin">Pin to Quick Settings tile</string>
+    <string name="scripts_tile_unpin">Unpin from tile</string>
     <string name="scripts_sort_updated">Sort by updated</string>
     <string name="scripts_sort_name">Sort by name</string>
     <string name="scripts_delete_title">Delete script</string>
@@ -183,6 +185,30 @@
     <string name="perm_status_unauthorized">Not authorized</string>
     <string name="perm_detail_open">Details</string>
     <string name="perm_detail_close">Got it</string>
+    <string name="perm_switch_grant">Permission granted</string>
+    <string name="perm_usage_title">Usage access</string>
+    <string name="perm_usage_desc">Read app usage records to determine the foreground app and usage time.</string>
+    <string name="perm_notify_title">Notification access</string>
+    <string name="perm_notify_desc">Read notification title / text / package (read-only; no tap or reply) to capture verification codes or message triggers.</string>
+    <string name="perm_applist_title">App list</string>
+    <string name="perm_applist_desc">Allow scripts to enumerate installed apps (required on Android 11+).</string>
+    <string name="perm_applist_switch">Allow enumerating installed apps</string>
+    <string name="perm_allfiles_title">All files access</string>
+    <string name="perm_allfiles_desc">Allow scripts to read / write any file on shared storage (e.g. /sdcard paths).</string>
+    <string name="perm_wake_title">Keep awake</string>
+    <string name="perm_wake_desc">Keep the CPU awake while a script runs, so screen-off / doze does not interrupt it.</string>
+    <string name="perm_wake_screen">Also wake the screen</string>
+    <string name="perm_wake_screen_desc">Wake the screen when a script runs (may stay on the lock screen).</string>
+    <string name="perm_tile_title">Quick Settings tile</string>
+    <string name="perm_tile_desc">Show a tile in Quick Settings to run / stop a fixed script with one tap.</string>
+    <string name="perm_tile_enable">Enable Quick Settings tile</string>
+    <string name="perm_tile_pinned">Pinned script: %1$s</string>
+    <string name="perm_tile_pick_hint">No script pinned yet. Pin one from the Scripts screen.</string>
+    <string name="perm_tile_add">Add to Quick Settings</string>
+    <string name="perm_tile_manual_hint">Add the \"Izuki script\" tile manually by editing Quick Settings.</string>
+
+    <string name="tile_script">Izuki script</string>
+    <string name="tile_script_named">Izuki · %1$s</string>
 
     <string name="dim_accuracy">Accuracy</string>
     <string name="dim_risk">Risk</string>
