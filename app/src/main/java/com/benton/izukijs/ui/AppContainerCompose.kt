@@ -8,6 +8,7 @@ import com.benton.izukijs.di.appContainer
 
 @Composable
 fun rememberAppContainer(): AppContainer {
-    val context = LocalContext.current
-    return remember(context) { context.appContainer }
+    // 用 applicationContext 作 key：配置变更 / recreate 时它保持稳定，避免重复查找。
+    val appContext = LocalContext.current.applicationContext
+    return remember(appContext) { appContext.appContainer }
 }

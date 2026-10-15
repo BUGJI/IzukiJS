@@ -14,7 +14,7 @@ import androidx.compose.ui.text.input.VisualTransformation
  */
 class MatchHighlightTransformation(
     private val base: JsSyntaxHighlighter,
-    private val query: String,
+    private val matches: List<IntRange>,
     private val matchColor: Color,
     private val activeMatchColor: Color,
     private val activeRange: IntRange?,
@@ -22,15 +22,13 @@ class MatchHighlightTransformation(
 
     override fun filter(text: AnnotatedString): TransformedText {
         val transformed = base.filter(text)
-        if (query.isEmpty()) return transformed
-        val highlighted = transformed.text
-        val matches = findAllMatches(highlighted.text, query)
         if (matches.isEmpty()) return transformed
+        val highlighted = transformed.text
 
         val builder = AnnotatedString.Builder()
         builder.append(highlighted)
         matches.forEach { range ->
-            val isActive = activeRange != null && range.first == activeRange.first
+            val isActive = range == activeRange
             builder.addStyle(
                 SpanStyle(background = if (isActive) activeMatchColor else matchColor),
                 range.first,

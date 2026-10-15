@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -36,7 +38,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -114,12 +115,8 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
     var refreshKey by remember { mutableStateOf(0) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
-    // 刷新替换或离开页面时回收旧截图，避免 native 内存累积。
-    DisposableEffect(bitmap) {
-        val current = bitmap
-        onDispose { current?.recycle() }
-    }
-
+    // 不手工 recycle()：Compose 可能仍在绘制上一帧的 ImageBitmap，回收会触发
+    // "using a recycled bitmap" 崩溃；而取消刷新时未赋值的截图交给 GC 回收即可。
     LaunchedEffect(refreshKey) {
         loading = true
         message = null
@@ -153,8 +150,15 @@ fun LayoutInspectorScreen(onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton(onClick = { refreshKey++ }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
+                    if (loading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.padding(horizontal = 16.dp).size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(onClick = { refreshKey++ }) {
+                            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
+                        }
                     }
                 },
             )

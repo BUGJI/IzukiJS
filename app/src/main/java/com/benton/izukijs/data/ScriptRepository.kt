@@ -3,6 +3,9 @@ package com.benton.izukijs.data
 import android.content.Context
 import com.benton.izukijs.model.ScriptInfo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -10,6 +13,15 @@ import java.io.File
  * 基于应用私有目录的脚本仓库。脚本以 .js 文件形式保存在 files/scripts 下。
  */
 class ScriptRepository(private val context: Context) {
+
+    private val _revision = MutableStateFlow(0)
+
+    /** 脚本集合 / 内容的变更信号。界面可借此在增删改（含编辑器保存）后重新拉取列表。 */
+    val revision: StateFlow<Int> = _revision.asStateFlow()
+
+    private fun bumpRevision() {
+        _revision.value++
+    }
 
     private val scriptsDir: File
         get() = File(context.filesDir, "scripts").apply { if (!exists()) mkdirs() }
@@ -41,12 +53,14 @@ class ScriptRepository(private val context: Context) {
                 }
         }
         prefs.edit().putBoolean(KEY_SEEDED, true).apply()
+        bumpRevision()
     }
 
     fun create(name: String, content: String = DEFAULT_SCRIPT): ScriptInfo {
         val id = uniqueId(sanitize(name))
         val file = File(scriptsDir, id + EXTENSION)
         file.writeText(content)
+        bumpRevision()
         return file.toScriptInfo()
     }
 
@@ -55,16 +69,19 @@ class ScriptRepository(private val context: Context) {
 
     fun write(script: ScriptInfo, content: String) {
         script.file.writeText(content)
+        bumpRevision()
     }
 
     fun delete(script: ScriptInfo) {
         script.file.delete()
+        bumpRevision()
     }
 
     fun rename(script: ScriptInfo, newName: String): ScriptInfo {
         val id = uniqueId(sanitize(newName))
         val target = File(scriptsDir, id + EXTENSION)
         script.file.renameTo(target)
+        bumpRevision()
         return target.toScriptInfo()
     }
 

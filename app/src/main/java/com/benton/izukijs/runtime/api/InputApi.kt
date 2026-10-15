@@ -72,7 +72,7 @@ class InputApi(
      *
      * QuickJS 无法直接传对象数组，prelude 中把 JS 数组 `JSON.stringify` 后经 [gestureRaw] 传入。
      * 无障碍与 v2 及以上固件的蓝牙 HID 支持带时间戳的完整轨迹；Shizuku / Root 无法表达
-     * 曲线与停顿，会降级为逐段 [DeviceController.swipe]（同点段等价于长按）。
+     * 曲线与停顿，会降级为逐段 [DeviceController.swipe]（同点段：短为点击、长为长按）。
      */
     @JavascriptInterface
     fun gestureRaw(strokesJson: String): Boolean {
@@ -105,7 +105,7 @@ class InputApi(
             logBus.debug("$summary → 无可用后端 ✗")
             return false
         }
-        val ok = gestureFallback(fallback, strokes)
+        val ok = applyGestureFallback(fallback, strokes)
         logBus.debug("$summary（分段近似）${fallback.resultTag(ok)}")
         return ok
     }
@@ -114,26 +114,6 @@ class InputApi(
         controllers.all().firstOrNull {
             it !== exclude && !controllers.isDisabled(it.mode) && it.isReady() && it.supportsGesture()
         }
-
-    /** 不支持复杂轨迹的后端：按相邻点逐段滑动，原地不动的段用长按模拟停顿。 */
-    private fun gestureFallback(controller: DeviceController, strokes: List<GestureStroke>): Boolean {
-        var sent = false
-        for (stroke in strokes) {
-            val points = stroke.points
-            for (i in 0 until points.size - 1) {
-                val from = points[i]
-                val to = points[i + 1]
-                val duration = (to.timeMs - from.timeMs).coerceAtLeast(1L)
-                val ok = if (from.x == to.x && from.y == to.y) {
-                    controller.longClick(from.x, from.y, duration)
-                } else {
-                    controller.swipe(from.x, from.y, to.x, to.y, duration)
-                }
-                sent = sent || ok
-            }
-        }
-        return sent
-    }
 
     // ---- 轨迹解析 ----
 
@@ -284,4 +264,52 @@ class InputApi(
         const val GLOBAL_HOME = 2 // AccessibilityService.GLOBAL_ACTION_HOME
         const val GLOBAL_RECENTS = 3 // AccessibilityService.GLOBAL_ACTION_RECENTS
     }
+}
+
+/** 同点段落时长 ≤ 该值视为「点击」，更长视为「长按」。 */
+private const val TAP_MAX_MS = 180L
+
+/** 点击实际下发的按压时长下限，避免 0ms 的瞬时 tap 过短而不被部分应用识别。 */
+private const val TAP_MIN_MS = 70L
+
+/**
+ * 不支持复杂轨迹的后端（Shizuku / Root / 旧固件 HID）的降级执行：按相邻点逐段下发。
+ *
+ * - 非同点段：直连 [DeviceController.swipe]，保留原始坐标与时长。
+ * - 同点段且时长 ≤ [TAP_MAX_MS]：视为**点击**，下发一段 [TAP_MIN_MS]~[TAP_MAX_MS] 的同点短按压
+ *   （用同点 swipe 而非 longClick，才能控制按压时长；直接 longClick 会被后端抬到长按阈值）。
+ * - 同点段且时长更长：视为**按住停顿**，走 [DeviceController.longClick]。
+ *
+ * 抽成顶层函数以便脱离 Android / JSON 做单元测试。
+ */
+internal fun applyGestureFallback(
+    controller: DeviceController,
+    strokes: List<GestureStroke>,
+): Boolean {
+    var sent = false
+    for (stroke in strokes) {
+        val points = stroke.points
+        for (i in 0 until points.size - 1) {
+            val from = points[i]
+            val to = points[i + 1]
+            val duration = (to.timeMs - from.timeMs).coerceAtLeast(1L)
+            val samePoint = from.x == to.x && from.y == to.y
+            val ok = when {
+                !samePoint ->
+                    controller.swipe(from.x, from.y, to.x, to.y, duration)
+                duration <= TAP_MAX_MS ->
+                    controller.swipe(
+                        from.x,
+                        from.y,
+                        from.x,
+                        from.y,
+                        duration.coerceIn(TAP_MIN_MS, TAP_MAX_MS),
+                    )
+                else ->
+                    controller.longClick(from.x, from.y, duration)
+            }
+            sent = sent || ok
+        }
+    }
+    return sent
 }

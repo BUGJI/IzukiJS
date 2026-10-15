@@ -97,6 +97,7 @@ fun ScriptsScreen(
     val haptics = rememberAppHaptics()
     val pinned by container.scriptListPreferences.pinned.collectAsStateWithLifecycle()
     val sort by container.scriptListPreferences.sort.collectAsStateWithLifecycle()
+    val revision by container.scriptRepository.revision.collectAsStateWithLifecycle()
 
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
@@ -109,6 +110,7 @@ fun ScriptsScreen(
     var deleteTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var pendingScanFile by remember { mutableStateOf<File?>(null) }
     var query by remember { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     // 置顶优先，其次按所选排序方式。
@@ -129,7 +131,8 @@ fun ScriptsScreen(
         }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    // 仓库变更（含编辑器保存 / 导入删除）后重新拉取，避免列表停留在陈旧状态。
+    LaunchedEffect(revision) { refresh() }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/javascript"),
@@ -325,14 +328,20 @@ fun ScriptsScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        val created = container.scriptRepository.createAsync(newName)
-                        refresh()
-                        showNewDialog = false
-                        onOpenScript(created.id)
-                    }
-                }) { Text(stringResource(R.string.scripts_create)) }
+                TextButton(
+                    onClick = {
+                        if (submitting) return@TextButton
+                        submitting = true
+                        scope.launch {
+                            val created = container.scriptRepository.createAsync(newName)
+                            refresh()
+                            showNewDialog = false
+                            submitting = false
+                            onOpenScript(created.id)
+                        }
+                    },
+                    enabled = !submitting,
+                ) { Text(stringResource(R.string.scripts_create)) }
             },
             dismissButton = {
                 TextButton(onClick = { showNewDialog = false }) { Text(stringResource(R.string.common_cancel)) }
@@ -353,14 +362,20 @@ fun ScriptsScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        val renamed = container.scriptRepository.renameAsync(target, renameName)
-                        container.scriptEnvRepository.move(target.id, renamed.id)
-                        refresh()
-                        renameTarget = null
-                    }
-                }) { Text(stringResource(R.string.common_confirm)) }
+                TextButton(
+                    onClick = {
+                        if (submitting) return@TextButton
+                        submitting = true
+                        scope.launch {
+                            val renamed = container.scriptRepository.renameAsync(target, renameName)
+                            container.scriptEnvRepository.move(target.id, renamed.id)
+                            refresh()
+                            renameTarget = null
+                            submitting = false
+                        }
+                    },
+                    enabled = !submitting,
+                ) { Text(stringResource(R.string.common_confirm)) }
             },
             dismissButton = {
                 TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.common_cancel)) }
@@ -519,7 +534,8 @@ private fun ShimmerBox(width: Dp, height: Dp) {
 }
 
 private fun writeTextToUri(context: Context, uri: Uri, text: String): Boolean = runCatching {
-    context.contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray()) }
+    val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false
+    stream.use { it.write(text.toByteArray()) }
     true
 }.getOrDefault(false)
 

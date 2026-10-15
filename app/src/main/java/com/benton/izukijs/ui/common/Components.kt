@@ -151,7 +151,15 @@ fun NumberField(
     OutlinedTextField(
         value = text,
         onValueChange = { input ->
-            val filtered = input.filter(Char::isDigit)
+            val filtered = buildString {
+                input.forEachIndexed { index, c ->
+                    when {
+                        c.isDigit() -> append(c)
+                        // 仅在允许负数时保留一个前导负号。
+                        c == '-' && range.first < 0 && index == 0 -> append(c)
+                    }
+                }
+            }
             text = filtered
             if (!commitOnBlur) filtered.toIntOrNull()?.takeIf { it in range }?.let(onChange)
         },
@@ -184,6 +192,7 @@ fun DecimalField(
     range: ClosedFloatingPointRange<Double>,
     modifier: Modifier = Modifier,
     placeholder: String = "",
+    commitOnBlur: Boolean = false,
     onChange: (Double) -> Unit,
 ) {
     var text by remember { mutableStateOf(value.toString()) }
@@ -195,18 +204,20 @@ fun DecimalField(
         onValueChange = { input ->
             val builder = StringBuilder()
             var dotSeen = false
-            input.forEach { c ->
+            input.forEachIndexed { index, c ->
                 when {
                     c.isDigit() -> builder.append(c)
                     c == '.' && !dotSeen -> {
                         dotSeen = true
                         builder.append(c)
                     }
+                    // 仅在允许负数时保留一个前导负号。
+                    c == '-' && range.start < 0 && index == 0 -> builder.append(c)
                 }
             }
             val filtered = builder.toString()
             text = filtered
-            filtered.toDoubleOrNull()?.takeIf { it in range }?.let(onChange)
+            if (!commitOnBlur) filtered.toDoubleOrNull()?.takeIf { it in range }?.let(onChange)
         },
         label = { Text(label) },
         placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder) }),
@@ -234,6 +245,7 @@ fun SwitchRow(
     checked: Boolean,
     modifier: Modifier = Modifier,
     description: String? = null,
+    enabled: Boolean = true,
     onChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -241,6 +253,7 @@ fun SwitchRow(
             .fillMaxWidth()
             .toggleable(
                 value = checked,
+                enabled = enabled,
                 role = Role.Switch,
                 onValueChange = onChange,
             ),
@@ -256,7 +269,7 @@ fun SwitchRow(
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 

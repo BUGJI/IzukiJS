@@ -50,6 +50,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,10 +89,13 @@ import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,28 +108,39 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val haptics = rememberAppHaptics()
 
     var script by remember(scriptId) { mutableStateOf<ScriptInfo?>(null) }
-    var editorValue by remember(scriptId) { mutableStateOf(TextFieldValue("")) }
-    var savedCode by remember(scriptId) { mutableStateOf("") }
-    var loaded by remember(scriptId) { mutableStateOf(false) }
-    var consoleCollapsed by remember(scriptId) { mutableStateOf(true) }
+    var notFound by remember(scriptId) { mutableStateOf(false) }
+    // 编辑内容与查找条件用 rememberSaveable：旋转 / 折叠屏 / 进程回收后不丢失未落盘的改动。
+    var editorValue by rememberSaveable(scriptId, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
+    var savedCode by rememberSaveable(scriptId) { mutableStateOf("") }
+    var loaded by rememberSaveable(scriptId) { mutableStateOf(false) }
+    var consoleCollapsed by rememberSaveable(scriptId) { mutableStateOf(true) }
     var envSource by remember(scriptId) { mutableStateOf<String?>(null) }
     var envFields by remember(scriptId) { mutableStateOf<List<EnvField>>(emptyList()) }
     var envInitial by remember(scriptId) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     // 查找 / 替换
-    var findVisible by remember(scriptId) { mutableStateOf(false) }
-    var query by remember(scriptId) { mutableStateOf("") }
-    var replacement by remember(scriptId) { mutableStateOf("") }
+    var findVisible by rememberSaveable(scriptId) { mutableStateOf(false) }
+    var query by rememberSaveable(scriptId) { mutableStateOf("") }
+    var replacement by rememberSaveable(scriptId) { mutableStateOf("") }
     var activeMatch by remember(scriptId) { mutableStateOf(0) }
 
-    // 撤销 / 重做历史。以脚本 id 为键，切脚本时清空。
+    // 撤销 / 重做历史。以脚本 id 为键，切脚本时清空。栈不参与实例状态保存：
+    // 进程回收后栈为空，按钮可用性也随之归零，二者保持一致。
     val undoStack = remember(scriptId) { ArrayDeque<EditorSnapshot>() }
     val redoStack = remember(scriptId) { ArrayDeque<EditorSnapshot>() }
     var canUndo by remember(scriptId) { mutableStateOf(false) }
     var canRedo by remember(scriptId) { mutableStateOf(false) }
     var lastEditAt by remember(scriptId) { mutableLongStateOf(0L) }
 
+    // 串行化写盘并记录最新写入序号：避免自动保存与「返回 / 运行」保存并发写同一文件，
+    // 以及旧内容覆盖新内容。
+    val writeMutex = remember(scriptId) { Mutex() }
+    val writeVersion = remember(scriptId) { AtomicLong(0L) }
+
     val focusRequester = remember(scriptId) { FocusRequester() }
+    val findFocus = remember(scriptId) { FocusRequester() }
 
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
     // 保留 State 而非解包：日志在子组件内读取，避免每次日志刷新都重组整个编辑器（含文本框排版）。
@@ -140,28 +155,35 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     LaunchedEffect(scriptId) {
         val found = container.scriptRepository.findAsync(scriptId)
-        val text = found?.let { container.scriptRepository.readAsync(it) } ?: ""
         script = found
-        editorValue = TextFieldValue(text)
-        savedCode = text
-        undoStack.clear()
-        redoStack.clear()
-        canUndo = false
-        canRedo = false
-        loaded = true
-    }
-
-    if (!loaded) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(stringResource(R.string.editor_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (found == null) {
+            notFound = true
+            return@LaunchedEffect
         }
-        return
+        notFound = false
+        // 若编辑内容已由 SavedState 恢复（配置变更重建），不要再从磁盘覆盖，以免丢失未保存改动。
+        if (!loaded) {
+            val text = container.scriptRepository.readAsync(found)
+            editorValue = TextFieldValue(text)
+            savedCode = text
+            undoStack.clear()
+            redoStack.clear()
+            canUndo = false
+            canRedo = false
+            loaded = true
+        }
     }
 
     val current = script
-    if (current == null) {
-        Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-            Text(stringResource(R.string.editor_not_found, scriptId), color = MaterialTheme.colorScheme.error)
+    if (current == null || !loaded) {
+        if (notFound) {
+            Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
+                Text(stringResource(R.string.editor_not_found, scriptId), color = MaterialTheme.colorScheme.error)
+            }
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(stringResource(R.string.editor_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         return
     }
@@ -176,11 +198,13 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val activeIndex = if (matches.isEmpty()) -1 else activeMatch.coerceIn(0, matches.lastIndex)
     val activeRange = matches.getOrNull(activeIndex)
     LaunchedEffect(query) { activeMatch = 0 }
+    // 打开查找时聚焦查找框，省去一次点击。
+    LaunchedEffect(findVisible) { if (findVisible) findFocus.requestFocus() }
 
     val matchColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
     val activeMatchColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-    val visualTransformation = remember(highlighter, effectiveQuery, activeRange, matchColor, activeMatchColor) {
-        MatchHighlightTransformation(highlighter, effectiveQuery, matchColor, activeMatchColor, activeRange)
+    val visualTransformation = remember(highlighter, matches, activeRange, matchColor, activeMatchColor) {
+        MatchHighlightTransformation(highlighter, matches, matchColor, activeMatchColor, activeRange)
     }
 
     fun snapshot() = EditorSnapshot(editorValue.text, editorValue.selection)
@@ -257,7 +281,13 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     fun handleShortcut(event: KeyEvent): Boolean {
-        if (event.type != KeyEventType.KeyDown || !event.isCtrlPressed) return false
+        if (event.type != KeyEventType.KeyDown) return false
+        if (event.key == Key.Escape && findVisible) {
+            findVisible = false
+            focusRequester.requestFocus()
+            return true
+        }
+        if (!event.isCtrlPressed) return false
         return when (event.key) {
             Key.Z -> {
                 if (event.isShiftPressed) redo() else undo()
@@ -278,23 +308,36 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
+    // 串行写盘，带版本号守卫：旧快照不会覆盖更新的内容。返回是否成功落盘
+    // （被更新版本取代时视为成功，真正的落盘交给更新的那次写入完成）。
+    suspend fun persist(content: String): Boolean = withContext(NonCancellable) {
+        val version = writeVersion.incrementAndGet()
+        writeMutex.withLock {
+            if (version != writeVersion.get()) return@withLock true
+            runCatching { container.scriptRepository.writeAsync(current, content) }
+                .onSuccess { savedCode = content }
+                .isSuccess
+        }
+    }
+
     // 自动保存：停止输入片刻后静默落盘，避免只依赖返回时写盘导致丢失。
     // 写盘用 NonCancellable 包裹，防止下一次按键取消协程时写到一半被中断。
     LaunchedEffect(text, editorSettings.autoSave) {
         if (!editorSettings.autoSave) return@LaunchedEffect
         if (text == savedCode) return@LaunchedEffect
         delay(AUTOSAVE_DELAY_MS)
-        val cached = text
-        withContext(NonCancellable) { container.scriptRepository.writeAsync(current, cached) }
-        savedCode = cached
+        if (!persist(text)) {
+            snackbar.show(resources.getString(R.string.editor_save_failed))
+        }
     }
 
-    // 保存与后续动作都在后台线程执行，完成后再触发导航，避免主线程写盘也能保证落盘。
+    // 保存后再执行后续动作（返回 / 运行）。写盘失败也继续动作，但给出提示。
     fun saveAndThen(action: () -> Unit) {
-        val snapshot = editorValue.text
+        val content = editorValue.text
         scope.launch {
-            withContext(NonCancellable) { container.scriptRepository.writeAsync(current, snapshot) }
-            savedCode = snapshot
+            if (!persist(content)) {
+                snackbar.show(resources.getString(R.string.editor_save_failed))
+            }
             action()
         }
     }
@@ -365,10 +408,9 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                 fullText
                             }
                             scope.launch {
-                                withContext(NonCancellable) {
-                                    container.scriptRepository.writeAsync(current, fullText)
+                                if (!persist(fullText)) {
+                                    snackbar.show(resources.getString(R.string.editor_save_failed))
                                 }
-                                savedCode = fullText
                                 if (isSelection) {
                                     snackbar.show(resources.getString(R.string.editor_run_selection))
                                 }
@@ -405,6 +447,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 if (findVisible) {
                     FindReplacePanel(
                         query = query,
+                        queryFocus = findFocus,
                         onQueryChange = { query = it },
                         replacement = replacement,
                         onReplacementChange = { replacement = it },
@@ -553,6 +596,7 @@ private data class EditorSnapshot(val text: String, val selection: TextRange)
 @Composable
 private fun FindReplacePanel(
     query: String,
+    queryFocus: FocusRequester,
     onQueryChange: (String) -> Unit,
     replacement: String,
     onReplacementChange: (String) -> Unit,
@@ -574,7 +618,7 @@ private fun FindReplacePanel(
                     value = query,
                     onValueChange = onQueryChange,
                     singleLine = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRequester(queryFocus),
                     label = { Text(stringResource(R.string.editor_find)) },
                     placeholder = { Text(stringResource(R.string.editor_find_placeholder)) },
                 )

@@ -36,6 +36,8 @@ import com.benton.izukijs.schedule.ScheduleManager
 import com.benton.izukijs.schedule.ScheduleRepository
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
+import com.benton.izukijs.update.UpdateManager
+import com.benton.izukijs.update.UpdateSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -84,6 +86,10 @@ class AppContainer(private val application: Application) {
 
     val appearanceRepository = AppearanceRepository(application)
 
+    val updateSettingsRepository = UpdateSettingsRepository(application)
+
+    val updateManager = UpdateManager(application, updateSettingsRepository, logBus)
+
     val configBackupManager = ConfigBackupManager(
         aiConfigRepository = aiConfigRepository,
         ocrConfigRepository = ocrConfigRepository,
@@ -92,6 +98,7 @@ class AppContainer(private val application: Application) {
         logSettingsRepository = logSettingsRepository,
         editorSettingsRepository = editorSettingsRepository,
         appearanceRepository = appearanceRepository,
+        updateSettingsRepository = updateSettingsRepository,
     )
 
     val scriptExecutionManager = ScriptExecutionManager(
@@ -179,6 +186,7 @@ class AppContainer(private val application: Application) {
             logFileStore.trim()
             scheduleManager.rescheduleAll()
         }
+        appScope.launch { updateManager.startIfAutoCheckEnabled() }
     }
 }
 

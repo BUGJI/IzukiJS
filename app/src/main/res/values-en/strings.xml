@@ -46,6 +46,14 @@
     <string name="theme_system">System default</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="settings_amoled_title">Pure black background (AMOLED)</string>
+    <string name="settings_amoled_desc">Use a pure black background in dark themes to save power (OLED / AMOLED screens).</string>
+    <string name="settings_custom_color">Custom theme color</string>
+    <string name="settings_custom_color_desc">Pick a seed color to generate matching light and dark palettes.</string>
+    <string name="settings_custom_color_disabled_by_dynamic">Dynamic color is on; turn it off to set a custom theme color.</string>
+    <string name="settings_custom_color_hex_label">Hex color</string>
+    <string name="settings_custom_color_reset">Reset to default color</string>
+    <string name="settings_custom_color_invalid">Invalid color value.</string>
 
     <!-- Control modes / capabilities / OCR providers -->
     <string name="control_accessibility">Accessibility</string>
@@ -90,6 +98,7 @@
     <string name="run_quick_title">Quick launch</string>
     <string name="run_quick_empty">Scripts you have run will appear here; tap to run again.</string>
     <string name="run_quick_clear">Clear history</string>
+    <string name="run_quick_clear_confirm">Clear run history? This cannot be undone.</string>
     <string name="run_last_at">Last run %1$s</string>
 
     <!-- Scripts -->
@@ -140,6 +149,7 @@
     <string name="perm_hid_con_1">Requires external HID hardware, less portable</string>
     <string name="perm_hid_con_2">No screenshot or node tree support</string>
     <string name="perm_action_connect">Connect</string>
+    <string name="perm_action_manage">Manage device</string>
     <string name="perm_accessibility_desc">Inject gestures and read the node tree through the accessibility service. No extra install, best compatibility.</string>
     <string name="perm_accessibility_pro_1">No extra install, works out of the box</string>
     <string name="perm_accessibility_pro_2">Reads the node tree for precise selector targeting</string>
@@ -167,6 +177,12 @@
     <string name="perm_floating_debug">Show layout / OCR debug panel</string>
     <string name="perm_floating_debug_desc">Automatically hides while capturing layout / OCR so it is not captured on screen.</string>
     <string name="perm_overlay_needed">Grant the \"Display over other apps\" permission in system settings.</string>
+    <string name="perm_group_read">Read</string>
+    <string name="perm_group_operate">Operate</string>
+    <string name="perm_group_other">Other</string>
+    <string name="perm_status_unauthorized">Not authorized</string>
+    <string name="perm_detail_open">Details</string>
+    <string name="perm_detail_close">Got it</string>
 
     <string name="dim_accuracy">Accuracy</string>
     <string name="dim_risk">Risk</string>
@@ -228,6 +244,7 @@
     <string name="storage_retention_days">Retention days</string>
     <string name="storage_usage">Using %1$s</string>
     <string name="storage_clear_now">Clear now</string>
+    <string name="storage_clear_confirm">Clear all log files? This cannot be undone.</string>
     <string name="storage_export_log">Export</string>
     <string name="storage_export_log_chooser">Export log</string>
     <string name="storage_days">%1$d days</string>
@@ -236,6 +253,31 @@
     <string name="about_name">IzukiJS</string>
     <string name="about_version">Version %1$s (%2$d)</string>
     <string name="about_desc">An Android automation scripting runtime built with Kotlin / Jetpack Compose.</string>
+
+    <!-- Update -->
+    <string name="update_section_title">Version update</string>
+    <string name="update_current_version">Current version v%1$s</string>
+    <string name="update_check_button">Check for updates</string>
+    <string name="update_checking">Checking for updates…</string>
+    <string name="update_up_to_date">You are up to date</string>
+    <string name="update_available">New version v%1$s available</string>
+    <string name="update_check_failed">Check failed: %1$s</string>
+    <string name="update_downloading">Downloading… %1$d%%</string>
+    <string name="update_downloading_unknown">Downloading…</string>
+    <string name="update_download_failed">Download failed: %1$s</string>
+    <string name="update_dialog_title">New version v%1$s available</string>
+    <string name="update_dialog_no_changelog">No release notes.</string>
+    <string name="update_download">Download &amp; install</string>
+    <string name="update_downloaded">Package downloaded, tap to install.</string>
+    <string name="update_install">Install</string>
+    <string name="update_open_github">Open GitHub download</string>
+    <string name="update_later">Later</string>
+    <string name="update_auto_check">Check for updates automatically</string>
+    <string name="update_auto_check_desc">Check GitHub Releases in the background on launch and prompt when a new version is found.</string>
+    <string name="update_method">Update method</string>
+    <string name="update_method_in_app">In-app update</string>
+    <string name="update_method_github">Open GitHub download</string>
+    <string name="update_no_asset">This release has no package for your device; download it from GitHub.</string>
 
     <!-- Editor settings -->
     <string name="editor_font_size">Font size</string>
@@ -255,6 +297,7 @@
     <string name="backup_reset_button">Reset to defaults</string>
     <string name="backup_reset_confirm">Reset all settings to defaults? This cannot be undone.</string>
     <string name="backup_reset_done">Settings reset</string>
+    <string name="backup_reset_failed">Reset failed</string>
 
     <!-- AI Agent -->
     <string name="ai_title">AI Agent</string>
@@ -294,6 +337,7 @@
     <!-- Editor -->
     <string name="editor_loading">Loading…</string>
     <string name="editor_not_found">Script not found: %1$s</string>
+    <string name="editor_save_failed">Save failed</string>
     <string name="editor_unsaved">Unsaved</string>
     <string name="editor_console">Console</string>
     <string name="editor_expand_console">Expand console</string>
@@ -333,6 +377,7 @@
     <string name="hid_state_scanning">Scanning…</string>
     <string name="hid_state_connecting">Connecting…</string>
     <string name="hid_state_connected">Connected, discovering services…</string>
+    <string name="hid_state_reconnecting">Reconnecting…</string>
     <string name="hid_state_ready">Ready (HID channel available)</string>
     <string name="hid_state_ready_pending">Connected, HID channel not ready…</string>
     <string name="hid_state_error">Connection error</string>
@@ -362,9 +407,13 @@
     <string name="schedule_interval">Repeat interval (minutes, 0 = once)</string>
     <string name="schedule_next_interval">Next %1$s · every %2$d min</string>
     <string name="schedule_next_once">Once · %1$s</string>
+    <string name="schedule_delete_title">Delete schedule</string>
+    <string name="schedule_delete_confirm">Delete the scheduled task for \"%1$s\"?</string>
 
     <!-- Console -->
     <string name="console_empty">No output</string>
+    <string name="console_clear_confirm">Clear the current logs?</string>
+    <string name="console_reset_filter">Reset filters</string>
     <string name="console_filtered_empty">No logs for the current filter</string>
     <string name="console_back_to_latest">Back to latest</string>
     <string name="console_search">Search logs</string>
@@ -427,6 +476,7 @@
     <string name="mcp_token_desc">Every request must carry `Authorization: Bearer &lt;token&gt;`.</string>
     <string name="mcp_token_label">Token</string>
     <string name="mcp_token_regenerate">Regenerate</string>
+    <string name="mcp_token_regenerate_confirm">Already-connected clients will need the new token. Continue?</string>
     <string name="mcp_token_regenerated">New token generated, update your client config</string>
     <string name="mcp_network_title">Network</string>
     <string name="mcp_bind_mode">Listen scope</string>

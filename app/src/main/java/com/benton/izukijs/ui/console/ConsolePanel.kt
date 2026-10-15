@@ -4,12 +4,14 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -56,6 +59,7 @@ import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.displayColor
 import com.benton.izukijs.ui.common.formatLogTime
 import com.benton.izukijs.ui.common.localizedName
+import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.common.shortTag
 import kotlinx.coroutines.launch
 
@@ -73,11 +77,13 @@ fun ConsolePanel(
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
+    val haptics = rememberAppHaptics()
     val listState = rememberLazyListState()
     var enabledLevels by remember { mutableStateOf(LogLevel.entries.toSet()) }
     var query by remember { mutableStateOf("") }
     var wrapLines by remember { mutableStateOf(true) }
     var follow by remember { mutableStateOf(true) }
+    var confirmClear by remember { mutableStateOf(false) }
 
     val trimmedQuery = query.trim()
     val visible = remember(entries, enabledLevels, trimmedQuery) {
@@ -88,8 +94,8 @@ fun ConsolePanel(
     }
 
     // 仅在用户本来就停在底部时跟随；避免打断向上翻阅，也避免 animate 在高速输出下被反复重启。
-    // 「跟随」关闭（暂停）时完全停止自动滚动。
-    LaunchedEffect(visible.size, follow) {
+    // 「跟随」关闭（暂停）时完全停止自动滚动。用最后一条 id 作 key，覆盖「数量不变但内容被替换」的情况。
+    LaunchedEffect(visible.lastOrNull()?.id, follow) {
         if (follow && visible.isNotEmpty() && !listState.canScrollForward) {
             listState.scrollToItem(visible.lastIndex)
         }
@@ -109,12 +115,14 @@ fun ConsolePanel(
 
     fun copyAll() {
         if (visible.isEmpty()) return
+        haptics.tap()
         val text = visible.joinToString("\n") { it.toLine(showTimestamp) }
         clipboard()?.setPrimaryClip(ClipData.newPlainText(resources.getString(R.string.nav_logs), text))
         scope.launch { snackbar.show(resources.getString(R.string.console_copied_all)) }
     }
 
     fun copyLine(entry: LogEntry) {
+        haptics.tap()
         clipboard()?.setPrimaryClip(
             ClipData.newPlainText(resources.getString(R.string.nav_logs), entry.toLine(showTimestamp)),
         )
@@ -133,7 +141,7 @@ fun ConsolePanel(
             TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) {
                 Text(stringResource(R.string.common_copy))
             }
-            TextButton(onClick = onClear) { Text(stringResource(R.string.common_clear)) }
+            TextButton(onClick = { confirmClear = true }) { Text(stringResource(R.string.common_clear)) }
             if (onCollapse != null) {
                 IconButton(onClick = onCollapse) {
                     Icon(
@@ -197,7 +205,22 @@ fun ConsolePanel(
         HorizontalDivider()
         when {
             entries.isEmpty() -> EmptyState(stringResource(R.string.console_empty))
-            visible.isEmpty() -> EmptyState(stringResource(R.string.console_filtered_empty))
+            visible.isEmpty() -> Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    stringResource(R.string.console_filtered_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = {
+                    query = ""
+                    enabledLevels = LogLevel.entries.toSet()
+                }) { Text(stringResource(R.string.console_reset_filter)) }
+            }
             else -> Box(modifier = Modifier.fillMaxSize()) {
                 LazyColumn(
                     state = listState,
@@ -215,7 +238,7 @@ fun ConsolePanel(
                             overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { copyLine(entry) },
+                                .clickable(onClickLabel = stringResource(R.string.common_copy)) { copyLine(entry) },
                         )
                     }
                 }
@@ -249,6 +272,23 @@ fun ConsolePanel(
                 }
             }
         }
+    }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.common_clear)) },
+            text = { Text(stringResource(R.string.console_clear_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    onClear()
+                    confirmClear = false
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
     }
 }
 

@@ -12,6 +12,8 @@ import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.service.CaptureSettings
 import com.benton.izukijs.service.CaptureSettingsRepository
+import com.benton.izukijs.update.UpdateSettings
+import com.benton.izukijs.update.UpdateSettingsRepository
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -29,6 +31,7 @@ class ConfigBackupManager(
     private val logSettingsRepository: LogSettingsRepository,
     private val editorSettingsRepository: EditorSettingsRepository,
     private val appearanceRepository: AppearanceRepository,
+    private val updateSettingsRepository: UpdateSettingsRepository,
 ) {
 
     fun exportJson(): String {
@@ -42,6 +45,7 @@ class ConfigBackupManager(
         root.put("log", logToJson(logSettingsRepository.current()))
         root.put("editor", editorToJson(editorSettingsRepository.current()))
         root.put("appearance", appearanceToJson(appearanceRepository.current()))
+        root.put("update", updateToJson(updateSettingsRepository.current()))
         return root.toString(2)
     }
 
@@ -55,6 +59,7 @@ class ConfigBackupManager(
         root.optJSONObject("log")?.let { logSettingsRepository.save(logFromJson(it)) }
         root.optJSONObject("editor")?.let { editorSettingsRepository.save(editorFromJson(it)) }
         root.optJSONObject("appearance")?.let { appearanceRepository.save(appearanceFromJson(it)) }
+        root.optJSONObject("update")?.let { updateSettingsRepository.save(updateFromJson(it)) }
     }
 
     fun resetAll() {
@@ -65,6 +70,7 @@ class ConfigBackupManager(
         logSettingsRepository.save(LogSettings())
         editorSettingsRepository.save(EditorSettings())
         appearanceRepository.save(AppearanceSettings())
+        updateSettingsRepository.save(UpdateSettings())
     }
 
     // ---- AI ----
@@ -225,6 +231,8 @@ class ConfigBackupManager(
     private fun appearanceToJson(c: AppearanceSettings): JSONObject = JSONObject().apply {
         put("themeMode", c.themeMode.name)
         put("dynamicColor", c.dynamicColor)
+        put("amoledBackground", c.amoledBackground)
+        c.seedArgb?.let { put("seedArgb", it) }
     }
 
     private fun appearanceFromJson(o: JSONObject): AppearanceSettings {
@@ -232,6 +240,23 @@ class ConfigBackupManager(
         return AppearanceSettings(
             themeMode = o.optString("themeMode", base.themeMode.name).toEnumOr(base.themeMode),
             dynamicColor = o.optBoolean("dynamicColor", base.dynamicColor),
+            amoledBackground = o.optBoolean("amoledBackground", base.amoledBackground),
+            seedArgb = if (o.has("seedArgb")) o.optInt("seedArgb") else base.seedArgb,
+        )
+    }
+
+    // ---- Update ----
+
+    private fun updateToJson(c: UpdateSettings): JSONObject = JSONObject().apply {
+        put("autoCheck", c.autoCheck)
+        put("method", c.method.name)
+    }
+
+    private fun updateFromJson(o: JSONObject): UpdateSettings {
+        val base = UpdateSettings()
+        return UpdateSettings(
+            autoCheck = o.optBoolean("autoCheck", base.autoCheck),
+            method = o.optString("method", base.method.name).toEnumOr(base.method),
         )
     }
 

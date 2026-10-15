@@ -18,12 +18,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
@@ -60,6 +64,19 @@ fun AiAgentScreen(onBack: () -> Unit) {
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     fun update(new: AiConfig) = container.aiConfigRepository.save(new)
+
+    // 系统提示词本地编辑态：非编辑（dirty=false）时才跟随外部值，兼容「重置 / 导入」。
+    var promptText by remember { mutableStateOf(config.systemPrompt) }
+    var promptDirty by remember { mutableStateOf(false) }
+    LaunchedEffect(config.systemPrompt) {
+        if (!promptDirty) promptText = config.systemPrompt
+    }
+    // 离开页面时兜底提交聚焦状态下未失焦的改动。
+    val latestPrompt by rememberUpdatedState(promptText)
+    val latestPromptDirty by rememberUpdatedState(promptDirty)
+    DisposableEffect(Unit) {
+        onDispose { if (latestPromptDirty) update(config.copy(systemPrompt = latestPrompt)) }
+    }
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -157,40 +174,28 @@ fun AiAgentScreen(onBack: () -> Unit) {
                     description = stringResource(R.string.ai_tools_enable_desc),
                 ) { update(config.copy(toolsEnabled = it)) }
                 Spacer(Modifier.height(8.dp))
-                SwitchRow(
-                    label = stringResource(R.string.ai_allow_shell),
-                    checked = config.allowShell,
-                    description = stringResource(R.string.ai_allow_shell_desc),
-                ) { update(config.copy(allowShell = it)) }
-                Spacer(Modifier.height(8.dp))
-                NumberField(
-                    label = stringResource(R.string.ai_max_steps),
-                    value = config.maxSteps,
-                    range = 1..50,
-                ) { update(config.copy(maxSteps = it)) }
-                Text(
-                    stringResource(R.string.ai_max_steps_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
-            SectionCard(stringResource(R.string.ai_prompt_title)) {
-                Text(
-                    stringResource(R.string.ai_prompt_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
+                // 本地暂存提示词，仅在失焦 / 离开页面时回写，避免长文本逐字符触发加密落盘与重组。
                 OutlinedTextField(
-                    value = config.systemPrompt,
-                    onValueChange = { update(config.copy(systemPrompt = it)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    value = promptText,
+                    onValueChange = {
+                        promptText = it
+                        promptDirty = true
+                    },
+                    label = { Text(stringResource(R.string.ai_prompt_title)) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { state ->
+                            if (!state.isFocused && promptDirty) {
+                                update(config.copy(systemPrompt = promptText))
+                                promptDirty = false
+                            }
+                        },
                     minLines = 6,
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = {
+                    promptDirty = false
+                    promptText = AiPrompts.DEFAULT_AGENT_PROMPT
                     update(config.copy(systemPrompt = AiPrompts.DEFAULT_AGENT_PROMPT))
                 }) { Text(stringResource(R.string.ai_prompt_reset)) }
             }

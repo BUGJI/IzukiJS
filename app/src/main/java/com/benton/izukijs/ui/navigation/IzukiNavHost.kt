@@ -3,11 +3,11 @@ package com.benton.izukijs.ui.navigation
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.PlayArrow
@@ -34,13 +37,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
-import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -64,14 +67,16 @@ import com.benton.izukijs.ui.scripts.ScriptsScreen
 import com.benton.izukijs.ui.settings.SettingsCategory
 import com.benton.izukijs.ui.settings.SettingsDetailScreen
 import com.benton.izukijs.ui.settings.SettingsScreen
+import com.benton.izukijs.ui.update.UpdatePromptHost
+import kotlinx.coroutines.launch
 
 object Routes {
     const val ARG_SCRIPT_ID = "scriptId"
     const val ARG_SETTINGS_CATEGORY = "category"
-    const val RUN = "run"
-    const val SCRIPTS = "scripts"
-    const val LOGS = "logs"
-    const val SETTINGS = "settings"
+
+    /** 主界面占位路由：四个底部标签由 [HorizontalPager] 承载，此路由只作为详情页的返回落点。 */
+    const val MAIN = "main"
+
     const val SETTINGS_DETAIL = "settings/{$ARG_SETTINGS_CATEGORY}"
     const val EDITOR = "editor/{$ARG_SCRIPT_ID}"
     const val SETUP = "setup"
@@ -86,14 +91,14 @@ object Routes {
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
 }
 
+/** 底部导航的四个主标签，顺序即 [HorizontalPager] 的页序。 */
 private enum class BottomItem(
-    val route: String,
     @StringRes val labelRes: Int,
 ) {
-    RUN(Routes.RUN, R.string.nav_run),
-    SCRIPTS(Routes.SCRIPTS, R.string.nav_scripts),
-    LOGS(Routes.LOGS, R.string.nav_logs),
-    SETTINGS(Routes.SETTINGS, R.string.nav_settings),
+    RUN(R.string.nav_run),
+    SCRIPTS(R.string.nav_scripts),
+    LOGS(R.string.nav_logs),
+    SETTINGS(R.string.nav_settings),
 }
 
 /** 底部导航图标；日志使用专用矢量图，避免与「菜单」图标语义混淆。 */
@@ -105,43 +110,26 @@ private fun BottomItem.icon(): ImageVector = when (this) {
     BottomItem.SETTINGS -> Icons.Filled.Settings
 }
 
-private val BOTTOM_ROUTES = BottomItem.entries.map { it.route }.toSet()
-
 /** 宽屏判定阈值：>= 600dp 时改用侧边 NavigationRail。 */
 private val WIDE_LAYOUT_MIN_WIDTH = 600.dp
 
-/** 页面切换动画时长。压短到接近两帧节奏，减少切页时的拖沓感。 */
+/** 详情页切换动画时长。压短到接近两帧节奏，减少切页时的拖沓感。 */
 private const val NAV_ANIM_MS = 180
-
-/**
- * 平级 tab 切换动画时长。比详情页更短：交叉淡入淡出期间新旧两页会同时组合，
- * 压短时长可缩短这段重叠窗口，在保留转场观感的同时降低掉帧概率。
- */
-private const val TAB_ANIM_MS = 140
-
-/**
- * 平级 tab 用短交叉淡入淡出：只改透明度、不触发内容重排，是开销最低的转场。
- */
-private val TabFadeEnter: AnimatedContentTransitionScope<NavBackStackEntry>.() -> EnterTransition = {
-    fadeIn(tween(TAB_ANIM_MS))
-}
-private val TabFadeExit: AnimatedContentTransitionScope<NavBackStackEntry>.() -> ExitTransition = {
-    fadeOut(tween(TAB_ANIM_MS))
-}
 
 @Composable
 fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    val showNavBar = currentRoute in BOTTOM_ROUTES
+    // 仅当停留在主界面（未打开任何详情页）时展示底部标签。
+    val showNavBar = currentRoute == Routes.MAIN
 
-    fun navigate(route: String) {
-        if (currentRoute == route) return
-        navController.navigate(route) {
-            launchSingleTop = true
-            restoreState = true
-            popUpTo(Routes.RUN) { saveState = true }
-        }
+    // 页序状态提升到导航层之外，切换详情页时保持不变。
+    val pagerState = rememberPagerState(pageCount = { BottomItem.entries.size })
+    val scope = rememberCoroutineScope()
+
+    fun selectTab(index: Int) {
+        if (pagerState.currentPage == index) return
+        scope.launch { pagerState.animateScrollToPage(index) }
     }
 
     // 全局唯一的 Snackbar 宿主：通过 CompositionLocal 提供给所有页面，替代零散的 Toast。
@@ -149,18 +137,24 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
     val snackbarController = remember(snackbarHostState) { SnackbarController(snackbarHostState) }
 
     CompositionLocalProvider(LocalSnackbarController provides snackbarController) {
+        UpdatePromptHost()
         BoxWithConstraints {
             val wide = maxWidth >= WIDE_LAYOUT_MIN_WIDTH
             if (wide) {
                 // 宽屏：侧边 NavigationRail 参与布局，内容区不再预留底栏高度。
                 // 无底栏，Snackbar 直接浮在内容区底部。
                 Row(modifier = Modifier.fillMaxSize()) {
-                    if (showNavBar) {
+                    // 详情页显隐时用水平展开 / 收起过渡，避免 Rail 突然消失导致内容宽度跳变。
+                    AnimatedVisibility(
+                        visible = showNavBar,
+                        enter = fadeIn(tween(NAV_ANIM_MS)) + expandHorizontally(tween(NAV_ANIM_MS)),
+                        exit = fadeOut(tween(NAV_ANIM_MS)) + shrinkHorizontally(tween(NAV_ANIM_MS)),
+                    ) {
                         NavigationRail {
-                            BottomItem.entries.forEach { item ->
+                            BottomItem.entries.forEachIndexed { index, item ->
                                 NavigationRailItem(
-                                    selected = currentRoute == item.route,
-                                    onClick = { navigate(item.route) },
+                                    selected = pagerState.currentPage == index,
+                                    onClick = { selectTab(index) },
                                     icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
                                     label = { Text(stringResource(item.labelRes)) },
                                 )
@@ -168,7 +162,15 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                         }
                     }
                     Box(modifier = Modifier.weight(1f)) {
-                        NavContent(
+                        MainTabsHost(
+                            pagerState = pagerState,
+                            navController = navController,
+                            onSelectTab = ::selectTab,
+                            // 有详情页覆盖时禁用 pager 滑动，避免横滑穿透到底层标签。
+                            userScrollEnabled = showNavBar,
+                        )
+                        // 详情页覆盖在主界面之上，主界面 pager 保持组合以保留各标签状态。
+                        DetailNavHost(
                             navController = navController,
                             modifier = Modifier.fillMaxSize(),
                         )
@@ -191,10 +193,10 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                             exit = slideOutVertically(tween(NAV_ANIM_MS)) { it } + fadeOut(tween(NAV_ANIM_MS)),
                         ) {
                             NavigationBar {
-                                BottomItem.entries.forEach { item ->
+                                BottomItem.entries.forEachIndexed { index, item ->
                                     NavigationBarItem(
-                                        selected = currentRoute == item.route,
-                                        onClick = { navigate(item.route) },
+                                        selected = pagerState.currentPage == index,
+                                        onClick = { selectTab(index) },
                                         icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
                                         label = { Text(stringResource(item.labelRes)) },
                                     )
@@ -204,29 +206,112 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                     },
                     snackbarHost = { SnackbarHost(snackbarHostState) },
                 ) { innerPadding ->
-                    NavContent(
-                        navController = navController,
-                        // padding 把内容抬到底栏之上；consumeWindowInsets 标记已消费的系统栏 inset，
-                        // 避免各页面自身的 Scaffold 再次叠加底部 inset。
+                    Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(innerPadding)
                             .consumeWindowInsets(innerPadding),
-                    )
+                    ) {
+                        MainTabsHost(
+                            pagerState = pagerState,
+                            navController = navController,
+                            onSelectTab = ::selectTab,
+                            // 有详情页覆盖时禁用 pager 滑动，避免横滑穿透到底层标签。
+                            userScrollEnabled = showNavBar,
+                        )
+                        DetailNavHost(
+                            navController = navController,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
                 }
             }
         }
     }
 }
 
+/** 把主界面各标签的跳转回调接到导航控制器上。 */
 @Composable
-private fun NavContent(
+private fun MainTabsHost(
+    pagerState: PagerState,
+    navController: NavHostController,
+    onSelectTab: (Int) -> Unit,
+    userScrollEnabled: Boolean,
+) {
+    // 统一用 launchSingleTop 打开详情页，避免快速连点把同一页压栈多次。
+    fun open(route: String) = navController.navigate(route) { launchSingleTop = true }
+    MainTabs(
+        pagerState = pagerState,
+        onOpenSetup = { open(Routes.SETUP) },
+        onOpenScripts = { onSelectTab(BottomItem.SCRIPTS.ordinal) },
+        onOpenScript = { id -> open(Routes.editor(id)) },
+        onOpenInspector = { open(Routes.INSPECTOR) },
+        onOpenSchedule = { open(Routes.SCHEDULE) },
+        onOpenCategory = { category -> open(Routes.settingsDetail(category)) },
+        onOpenAi = { open(Routes.AI) },
+        onOpenMcp = { open(Routes.MCP) },
+        userScrollEnabled = userScrollEnabled,
+    )
+}
+
+/**
+ * 四个底部标签的可滑动容器。用 [HorizontalPager] 承载，左右滑动或点击底栏即可切换；
+ * `beyondViewportPageCount` 设为标签总数，让四个页面常驻组合，避免切走后状态丢失。
+ */
+@Composable
+private fun MainTabs(
+    pagerState: PagerState,
+    onOpenSetup: () -> Unit,
+    onOpenScripts: () -> Unit,
+    onOpenScript: (String) -> Unit,
+    onOpenInspector: () -> Unit,
+    onOpenSchedule: () -> Unit,
+    onOpenCategory: (SettingsCategory) -> Unit,
+    onOpenAi: () -> Unit,
+    onOpenMcp: () -> Unit,
+    userScrollEnabled: Boolean,
+) {
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        beyondViewportPageCount = BottomItem.entries.size,
+        userScrollEnabled = userScrollEnabled,
+    ) { page ->
+        when (BottomItem.entries[page]) {
+            BottomItem.RUN -> RunScreen(
+                onOpenSetup = onOpenSetup,
+                onOpenScripts = onOpenScripts,
+            )
+
+            BottomItem.SCRIPTS -> ScriptsScreen(
+                onOpenScript = onOpenScript,
+                onOpenInspector = onOpenInspector,
+                onOpenSchedule = onOpenSchedule,
+            )
+
+            BottomItem.LOGS -> LogsScreen()
+
+            BottomItem.SETTINGS -> SettingsScreen(
+                onOpenCategory = onOpenCategory,
+                onOpenAi = onOpenAi,
+                onOpenMcp = onOpenMcp,
+            )
+        }
+    }
+}
+
+/**
+ * 详情页导航图。起始页为透明的 [Routes.MAIN] 占位，主界面 pager 常驻其下方；
+ * 打开详情时新页面沿共享轴滑入覆盖，返回时回到占位页即露出主界面。
+ */
+@Composable
+private fun DetailNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
 ) {
     NavHost(
         navController = navController,
-        startDestination = Routes.RUN,
+        startDestination = Routes.MAIN,
         modifier = modifier,
         // 详情页使用 shared-axis：前进从右侧滑入、返回从左侧滑入，配合淡入淡出。
         enterTransition = {
@@ -254,56 +339,8 @@ private fun NavContent(
             )
         },
     ) {
-        composable(
-            route = Routes.RUN,
-            enterTransition = TabFadeEnter,
-            exitTransition = TabFadeExit,
-            popEnterTransition = TabFadeEnter,
-            popExitTransition = TabFadeExit,
-        ) {
-            RunScreen(
-                onOpenSetup = { navController.navigate(Routes.SETUP) },
-                onOpenScripts = {
-                    navController.navigate(Routes.SCRIPTS) { launchSingleTop = true }
-                },
-            )
-        }
-        composable(
-            route = Routes.SCRIPTS,
-            enterTransition = TabFadeEnter,
-            exitTransition = TabFadeExit,
-            popEnterTransition = TabFadeEnter,
-            popExitTransition = TabFadeExit,
-        ) {
-            ScriptsScreen(
-                onOpenScript = { id -> navController.navigate(Routes.editor(id)) },
-                onOpenInspector = { navController.navigate(Routes.INSPECTOR) },
-                onOpenSchedule = { navController.navigate(Routes.SCHEDULE) },
-            )
-        }
-        composable(
-            route = Routes.LOGS,
-            enterTransition = TabFadeEnter,
-            exitTransition = TabFadeExit,
-            popEnterTransition = TabFadeEnter,
-            popExitTransition = TabFadeExit,
-        ) {
-            LogsScreen()
-        }
-        composable(
-            route = Routes.SETTINGS,
-            enterTransition = TabFadeEnter,
-            exitTransition = TabFadeExit,
-            popEnterTransition = TabFadeEnter,
-            popExitTransition = TabFadeExit,
-        ) {
-            SettingsScreen(
-                onOpenCategory = { category ->
-                    navController.navigate(Routes.settingsDetail(category))
-                },
-                onOpenAi = { navController.navigate(Routes.AI) },
-                onOpenMcp = { navController.navigate(Routes.MCP) },
-            )
+        composable(Routes.MAIN) {
+            // 透明占位：保持主界面 pager 可见 / 可交互。
         }
         composable(
             route = Routes.SETTINGS_DETAIL,
@@ -328,7 +365,7 @@ private fun NavContent(
         composable(Routes.SETUP) {
             PermissionScreen(
                 onBack = { navController.popBackStack() },
-                onOpenHid = { navController.navigate(Routes.HID) },
+                onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
             )
         }
         composable(Routes.INSPECTOR) {

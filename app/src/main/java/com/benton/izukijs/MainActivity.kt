@@ -29,7 +29,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val container = (application as IzukiApp).container
         // 应用在前台启动时，若此前已启用 MCP 服务则恢复运行（前台服务需用户可见时启动）。
-        if (container.mcpConfigRepository.current().enabled) {
+        // 已在运行时不再重复下发启动 Intent，避免语言切换 / 配置重建导致监听器无谓重启、客户端断连。
+        if (container.mcpConfigRepository.current().enabled &&
+            !container.mcpServerController.status.value.running
+        ) {
             McpServerService.start(this)
         }
         setContent {
@@ -42,6 +45,8 @@ class MainActivity : ComponentActivity() {
             IzukiJSTheme(
                 darkTheme = darkTheme,
                 dynamicColor = appearance.dynamicColor,
+                seedColor = appearance.seedArgb,
+                amoled = appearance.amoledBackground,
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

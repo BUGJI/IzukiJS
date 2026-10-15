@@ -10,9 +10,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
@@ -34,6 +37,9 @@ fun ScriptEnvDialog(
             fields.forEach { put(it.key, initial[it.key] ?: it.default) }
         }
     }
+    // 打开时自动聚焦首个字段，减少一次点击（节点未就绪时忽略）。
+    val firstFocus = remember(fields) { FocusRequester() }
+    LaunchedEffect(fields) { runCatching { firstFocus.requestFocus() } }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -43,16 +49,19 @@ fun ScriptEnvDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                fields.forEach { field ->
+                fields.forEachIndexed { index, field ->
                     OutlinedTextField(
                         value = values[field.key].orEmpty(),
                         onValueChange = { values[field.key] = it },
                         singleLine = true,
                         label = { Text(field.label.ifBlank { field.key }) },
+                        placeholder = field.default.takeIf { it.isNotBlank() }?.let { { Text(it) } },
                         supportingText = if (field.label.isBlank()) null else {
                             { Text(field.key) }
                         },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (index == 0) Modifier.focusRequester(firstFocus) else Modifier),
                     )
                 }
             }

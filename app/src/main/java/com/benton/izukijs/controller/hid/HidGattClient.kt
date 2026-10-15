@@ -109,8 +109,17 @@ class HidGattClient(
         }
     }
 
+    /** 是否开启自动重连（连接过 / 记忆了设备后为 true）。看门狗据此保持重试。 */
+    private val _autoReconnect = MutableStateFlow(false)
+    val autoReconnect: StateFlow<Boolean> = _autoReconnect.asStateFlow()
+
+    /** 是否处于「掉线后自动重连」过程，用于 UI 区分首次连接并显示「重连中」。 */
+    private val _reconnecting = MutableStateFlow(false)
+    val reconnecting: StateFlow<Boolean> = _reconnecting.asStateFlow()
+
+    /** 一轮掉线周期内是否已告警过，避免自动重连失败时反复刷屏。连接成功或主动断开后重置。 */
     @Volatile
-    private var autoReconnect = false
+    private var retryLogged = false
 
     /** 用户主动扫描中时不执行自动重连，避免 connect() 把扫描打断。 */
     @Volatile
@@ -247,14 +256,31 @@ class HidGattClient(
 
     // ---- 连接 ----
 
-    @SuppressLint("MissingPermission")
+    /** 用户主动连接：清除「重连中」提示，走正常连接流程。 */
     fun connect(address: String) {
+        _reconnecting.value = false
+        startConnect(address)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startConnect(address: String) {
         if (!hasPermissions()) {
             logBus.warn("缺少蓝牙权限")
             return
         }
+        // 蓝牙未开启时不发起 connectGatt（会抛异常并进入重试刷屏），置 IDLE 等看门狗下次再试。
+        if (!isBluetoothEnabled()) {
+            if (!retryLogged) {
+                logBus.warn("蓝牙未开启，等待重连 HID")
+                retryLogged = true
+            } else {
+                logBus.debug("蓝牙仍未开启，继续等待重连")
+            }
+            _state.value = HidConnectionState.IDLE
+            return
+        }
         val device = runCatching { adapter?.getRemoteDevice(address) }.getOrNull() ?: return
-        autoReconnect = true
+        _autoReconnect.value = true
         lastAddress = address
         stopScan()
         connectingSince = SystemClock.elapsedRealtime()
@@ -266,18 +292,31 @@ class HidGattClient(
         discoveryInFlight = false
         runCatching {
             bluetoothGatt?.close()
+            bluetoothGatt = null
             bluetoothGatt = device.connectGatt(
                 context,
                 false,
                 gattCallback,
                 BluetoothDevice.TRANSPORT_LE,
             )
-        }.onFailure { logBus.error("连接失败: ${it.message}") }
+        }.onFailure {
+            // 不保留已 close 的旧实例，置 ERROR 让看门狗下一轮重新发起。
+            bluetoothGatt = null
+            _state.value = HidConnectionState.ERROR
+            if (!retryLogged) {
+                logBus.error("连接失败: ${it.message}")
+                retryLogged = true
+            } else {
+                logBus.debug("连接失败: ${it.message}")
+            }
+        }
     }
 
     fun disconnect() {
-        autoReconnect = false
+        _autoReconnect.value = false
         lastAddress = null
+        _reconnecting.value = false
+        retryLogged = false
         closeGatt()
         _state.value = HidConnectionState.IDLE
         _connectedAddress.value = null
@@ -292,12 +331,13 @@ class HidGattClient(
         }
         val address = lastAddress ?: return
         if (!hasPermissions()) return
-        connect(address)
+        _reconnecting.value = true
+        startConnect(address)
     }
 
     fun setLastAddress(address: String?) {
         lastAddress = address
-        if (address != null) autoReconnect = true
+        if (address != null) _autoReconnect.value = true
     }
 
     /**
@@ -306,15 +346,25 @@ class HidGattClient(
      */
     fun ensureConnected() {
         val address = lastAddress ?: return
-        if (!autoReconnect || userScanning || !hasPermissions()) return
+        if (!_autoReconnect.value || userScanning || !hasPermissions()) return
         when (_state.value) {
-            HidConnectionState.IDLE, HidConnectionState.ERROR -> connect(address)
+            HidConnectionState.IDLE, HidConnectionState.ERROR -> {
+                _reconnecting.value = true
+                startConnect(address)
+            }
             HidConnectionState.CONNECTING -> {
                 val elapsed = SystemClock.elapsedRealtime() - connectingSince
                 if (elapsed > CONNECT_TIMEOUT_MS) {
-                    logBus.warn("HID 连接超时，重新连接")
+                    // 一轮掉线周期只告警一次，后续重试降级为 DEBUG，避免日志刷屏。
+                    if (!retryLogged) {
+                        logBus.warn("HID 连接超时，重新连接")
+                        retryLogged = true
+                    } else {
+                        logBus.debug("HID 连接仍超时，继续重连")
+                    }
                     closeGatt()
-                    connect(address)
+                    _reconnecting.value = true
+                    startConnect(address)
                 }
             }
             HidConnectionState.READY, HidConnectionState.CONNECTED -> ensureSubscribed()
@@ -399,13 +449,15 @@ class HidGattClient(
         subscribeFailures = 0
         closeGatt()
         _connectedAddress.value = null
-        if (!autoReconnect) {
+        if (!_autoReconnect.value) {
             _state.value = HidConnectionState.IDLE
+            _reconnecting.value = false
             return
         }
         _state.value = HidConnectionState.CONNECTING
         connectingSince = SystemClock.elapsedRealtime()
-        handler.postDelayed({ if (autoReconnect) connect(address) }, RECONNECT_DELAY_MS)
+        _reconnecting.value = true
+        handler.postDelayed({ if (_autoReconnect.value) startConnect(address) }, RECONNECT_DELAY_MS)
     }
 
     @SuppressLint("MissingPermission")
@@ -435,6 +487,8 @@ class HidGattClient(
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
                     disconnectLogged = false
+                    retryLogged = false
+                    _reconnecting.value = false
                     _state.value = HidConnectionState.CONNECTED
                     _connectedAddress.value = gatt.device.address
                     _hidReady.value = false
@@ -463,11 +517,13 @@ class HidGattClient(
                     }
                     closeGatt()
                     _connectedAddress.value = null
-                    if (autoReconnect && lastAddress != null) {
+                    if (_autoReconnect.value && lastAddress != null) {
                         _state.value = HidConnectionState.CONNECTING
+                        _reconnecting.value = true
                         handler.postDelayed({ reconnectIfNeeded() }, RECONNECT_DELAY_MS)
                     } else {
                         _state.value = HidConnectionState.IDLE
+                        _reconnecting.value = false
                     }
                 }
             }

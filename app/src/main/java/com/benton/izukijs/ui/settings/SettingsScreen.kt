@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -22,10 +24,13 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
@@ -48,6 +53,8 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -65,8 +72,12 @@ import com.benton.izukijs.ocr.OcrMode
 import com.benton.izukijs.ocr.OcrProvider
 import com.benton.izukijs.runtime.LogLevel
 import com.benton.izukijs.service.CaptureSettings
+import com.benton.izukijs.update.UpdateMethod
+import com.benton.izukijs.update.UpdateSettings
+import com.benton.izukijs.update.UpdateState
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.SectionCard
@@ -113,6 +124,7 @@ fun SettingsScreen(
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
     val language by container.languageRepository.language.collectAsStateWithLifecycle()
     val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
+    val updateState by container.updateManager.state.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -185,7 +197,12 @@ fun SettingsScreen(
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
                 CategoryRow(
                     title = stringResource(SettingsCategory.ABOUT.titleRes),
-                    summary = stringResource(R.string.settings_version_short, BuildConfig.VERSION_NAME),
+                    summary = when (val state = updateState) {
+                        is UpdateState.Available ->
+                            stringResource(R.string.update_available, state.info.versionName)
+
+                        else -> stringResource(R.string.settings_version_short, BuildConfig.VERSION_NAME)
+                    },
                 ) { onOpenCategory(SettingsCategory.ABOUT) }
             }
             Spacer(Modifier.height(16.dp))
@@ -242,6 +259,48 @@ private fun GeneralSettings() {
                 onCheckedChange = { update(appearance.copy(dynamicColor = it)) },
             )
         }
+        Spacer(Modifier.height(12.dp))
+        SwitchRow(
+            label = stringResource(R.string.settings_amoled_title),
+            description = stringResource(R.string.settings_amoled_desc),
+            checked = appearance.amoledBackground,
+            onChange = { update(appearance.copy(amoledBackground = it)) },
+        )
+
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(12.dp))
+        Text(stringResource(R.string.settings_custom_color), style = MaterialTheme.typography.bodyLarge)
+        Text(
+            stringResource(
+                if (!appearance.dynamicColor) {
+                    R.string.settings_custom_color_desc
+                } else {
+                    R.string.settings_custom_color_disabled_by_dynamic
+                },
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+        val customColorEnabled = !appearance.dynamicColor
+        ColorSwatchRow(
+            selectedArgb = appearance.seedArgb,
+            enabled = customColorEnabled,
+            onSelect = { update(appearance.copy(seedArgb = it)) },
+        )
+        Spacer(Modifier.height(12.dp))
+        HexColorField(
+            value = appearance.seedArgb,
+            enabled = customColorEnabled,
+            onChange = { update(appearance.copy(seedArgb = it)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(4.dp))
+        ResetSeedColorButton(
+            enabled = customColorEnabled && appearance.seedArgb != null,
+            onClick = { update(appearance.copy(seedArgb = null)) },
+        )
     }
 
     Spacer(Modifier.height(12.dp))
@@ -495,16 +554,16 @@ private fun ControlVisionSettings() {
             Spacer(Modifier.height(12.dp))
             when (ocrConfig.provider) {
                 OcrProvider.BAIDU -> {
-                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey) {
+                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = true) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
-                    SecretField(stringResource(R.string.ocr_secret_key), ocrConfig.secretKey) {
+                    SecretField(stringResource(R.string.ocr_secret_key), ocrConfig.secretKey, commitOnBlur = true) {
                         updateOcr(ocrConfig.copy(secretKey = it))
                     }
                 }
 
                 OcrProvider.GOOGLE_VISION -> {
-                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey) {
+                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = true) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
                 }
@@ -516,7 +575,7 @@ private fun ControlVisionSettings() {
                     LabeledField(stringResource(R.string.ocr_header_name), ocrConfig.headerName) {
                         updateOcr(ocrConfig.copy(headerName = it))
                     }
-                    SecretField(stringResource(R.string.ocr_header_value), ocrConfig.headerValue) {
+                    SecretField(stringResource(R.string.ocr_header_value), ocrConfig.headerValue, commitOnBlur = true) {
                         updateOcr(ocrConfig.copy(headerValue = it))
                     }
                 }
@@ -532,6 +591,7 @@ private fun StorageSettings() {
     val scope = rememberCoroutineScope()
     val logSettings by container.logSettingsRepository.settings.collectAsStateWithLifecycle()
     var logFileSize by remember { mutableStateOf(0L) }
+    var confirmClearLog by remember { mutableStateOf(false) }
 
     fun refreshLogSize() {
         scope.launch {
@@ -615,11 +675,9 @@ private fun StorageSettings() {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            OutlinedButton(onClick = {
-                container.logBus.clear()
-                container.logFileStore.clear()
-                refreshLogSize()
-            }) { Text(stringResource(R.string.storage_clear_now)) }
+            OutlinedButton(onClick = { confirmClearLog = true }) {
+                Text(stringResource(R.string.storage_clear_now))
+            }
             Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
                 scope.launch {
@@ -632,6 +690,25 @@ private fun StorageSettings() {
                 }
             }) { Text(stringResource(R.string.storage_export_log)) }
         }
+    }
+
+    if (confirmClearLog) {
+        AlertDialog(
+            onDismissRequest = { confirmClearLog = false },
+            title = { Text(stringResource(R.string.storage_clear_now)) },
+            text = { Text(stringResource(R.string.storage_clear_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    container.logBus.clear()
+                    container.logFileStore.clear()
+                    refreshLogSize()
+                    confirmClearLog = false
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClearLog = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
     }
 }
 
@@ -670,6 +747,169 @@ private fun AboutSettings() {
             stringResource(R.string.about_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+
+    Spacer(Modifier.height(12.dp))
+    UpdateSettingsSection()
+}
+
+@Composable
+private fun UpdateSettingsSection() {
+    val container = rememberAppContainer()
+    val settings by container.updateSettingsRepository.settings.collectAsStateWithLifecycle()
+    val state by container.updateManager.state.collectAsStateWithLifecycle()
+
+    fun update(new: UpdateSettings) = container.updateSettingsRepository.save(new)
+
+    SectionCard(stringResource(R.string.update_section_title)) {
+        Text(
+            stringResource(R.string.update_current_version, BuildConfig.VERSION_NAME),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        UpdateStatusLine(state)
+        Spacer(Modifier.height(12.dp))
+
+        val busy = state is UpdateState.Checking || state is UpdateState.Downloading
+        val info = (state as? UpdateState.Available)?.info
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { container.updateManager.checkManually() },
+                enabled = !busy,
+            ) { Text(stringResource(R.string.update_check_button)) }
+
+            if (info != null) {
+                val inApp = settings.method == UpdateMethod.IN_APP && !info.apkUrl.isNullOrBlank()
+                OutlinedButton(
+                    onClick = {
+                        if (inApp) {
+                            container.updateManager.downloadAndInstall()
+                        } else {
+                            container.updateManager.openOnGitHub()
+                        }
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (inApp) R.string.update_download else R.string.update_open_github,
+                        ),
+                    )
+                }
+            }
+
+            if (state is UpdateState.Downloaded) {
+                OutlinedButton(onClick = { container.updateManager.installDownloaded() }) {
+                    Text(stringResource(R.string.update_install))
+                }
+            }
+        }
+
+        if (info != null && settings.method == UpdateMethod.IN_APP && info.apkUrl.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.update_no_asset),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+        SwitchRow(
+            label = stringResource(R.string.update_auto_check),
+            description = stringResource(R.string.update_auto_check_desc),
+            checked = settings.autoCheck,
+        ) { update(settings.copy(autoCheck = it)) }
+
+        Spacer(Modifier.height(12.dp))
+        Text(stringResource(R.string.update_method), style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(4.dp))
+        ChipFlow {
+            UpdateMethod.entries.forEach { method ->
+                FilterChip(
+                    selected = settings.method == method,
+                    onClick = { update(settings.copy(method = method)) },
+                    label = {
+                        Text(
+                            stringResource(
+                                when (method) {
+                                    UpdateMethod.IN_APP -> R.string.update_method_in_app
+                                    UpdateMethod.GITHUB -> R.string.update_method_github
+                                },
+                            ),
+                        )
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun UpdateStatusLine(state: UpdateState) {
+    when (state) {
+        UpdateState.Idle -> Unit
+
+        UpdateState.Checking -> Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                stringResource(R.string.update_checking),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        UpdateState.UpToDate -> Text(
+            stringResource(R.string.update_up_to_date),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        is UpdateState.Available -> Text(
+            stringResource(R.string.update_available, state.info.versionName),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+
+        is UpdateState.Downloading -> Column {
+            Text(
+                if (state.progress < 0) {
+                    stringResource(R.string.update_downloading_unknown)
+                } else {
+                    stringResource(R.string.update_downloading, state.progress)
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            if (state.progress < 0) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(
+                    progress = { state.progress / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        is UpdateState.Downloaded -> Text(
+            stringResource(R.string.update_downloaded),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        is UpdateState.CheckFailed -> Text(
+            stringResource(R.string.update_check_failed, state.message),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+
+        is UpdateState.DownloadFailed -> Text(
+            stringResource(R.string.update_download_failed, state.message),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
         )
     }
 }
@@ -721,7 +961,7 @@ private fun BackupSettingsScreen() {
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    var message by remember { mutableStateOf<String?>(null) }
+    val snackbar = LocalSnackbarController.current
     var confirmReset by remember { mutableStateOf(false) }
 
     val importLauncher = rememberLauncherForActivityResult(
@@ -734,7 +974,7 @@ private fun BackupSettingsScreen() {
                     context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 }.getOrNull()
             }
-            message = if (text.isNullOrBlank()) {
+            val msg = if (text.isNullOrBlank()) {
                 resources.getString(R.string.backup_read_failed)
             } else {
                 runCatching { container.configBackupManager.importJson(text) }
@@ -745,6 +985,7 @@ private fun BackupSettingsScreen() {
                         },
                     )
             }
+            snackbar.show(msg)
         }
     }
 
@@ -769,16 +1010,16 @@ private fun BackupSettingsScreen() {
                             true
                         }.getOrDefault(false)
                     }
-                    if (ok) shareFile(context, file) else message = resources.getString(R.string.backup_export_failed)
+                    if (ok) {
+                        shareFile(context, file)
+                    } else {
+                        snackbar.show(resources.getString(R.string.backup_export_failed))
+                    }
                 }
             }) { Text(stringResource(R.string.backup_export)) }
             OutlinedButton(onClick = {
                 importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
             }) { Text(stringResource(R.string.backup_import)) }
-        }
-        message?.let {
-            Spacer(Modifier.height(8.dp))
-            Text(it, style = MaterialTheme.typography.bodySmall)
         }
     }
 
@@ -801,7 +1042,8 @@ private fun BackupSettingsScreen() {
             confirmButton = {
                 TextButton(onClick = {
                     runCatching { container.configBackupManager.resetAll() }
-                    message = resources.getString(R.string.backup_reset_done)
+                        .onSuccess { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_done)) } }
+                        .onFailure { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_failed)) } }
                     confirmReset = false
                 }) { Text(stringResource(R.string.common_confirm)) }
             },
@@ -839,6 +1081,8 @@ private fun CategoryRow(title: String, summary: String, onClick: () -> Unit) {
                     summary,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(
@@ -885,11 +1129,12 @@ private fun PreferenceRow(label: String, selected: Boolean, onSelect: () -> Unit
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelect() }
+            // 整行作为单选语义承载点击，RadioButton 自身不再单独响应，避免出现两个可点焦点。
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
             .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = onSelect)
+        RadioButton(selected = selected, onClick = null)
         Text(label)
     }
 }

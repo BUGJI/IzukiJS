@@ -77,6 +77,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
     val devices by client.devices.collectAsStateWithLifecycle()
     val connected by client.connectedAddress.collectAsStateWithLifecycle()
     val hidReady by client.hidReady.collectAsStateWithLifecycle()
+    val reconnecting by client.reconnecting.collectAsStateWithLifecycle()
     val resolution by client.dongleResolution.collectAsStateWithLifecycle()
 
     // HID 回环验证：把绝对坐标点击注入到检测靶点的真实屏幕坐标，命中即证明通路可用。
@@ -135,7 +136,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(stringResource(R.string.hid_connection_status), style = MaterialTheme.typography.titleMedium)
                     Spacer(Modifier.height(4.dp))
-                    Text(stateText(state, hidReady), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stateText(state, hidReady, reconnecting), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     connected?.let {
                         Spacer(Modifier.height(4.dp))
                         Text(stringResource(R.string.hid_connected, it))
@@ -201,8 +202,12 @@ fun HidSetupScreen(onBack: () -> Unit) {
                     Spacer(Modifier.height(12.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(onClick = { startScan() }) { Text(stringResource(R.string.hid_scan_devices)) }
-                        if (connected != null) {
-                            OutlinedButton(onClick = { manager.disconnect() }) { Text(stringResource(R.string.hid_disconnect)) }
+                        // 已连接或正在自动重连时都提供「断开」：点它彻底断开并忘记设备，后续不再重试。
+                        // 扫描中优先服务用户选设备，不显示该按钮。
+                        if (connected != null ||
+                            (reconnecting && state != HidConnectionState.SCANNING)
+                        ) {
+                            OutlinedButton(onClick = { manager.revoke() }) { Text(stringResource(R.string.hid_disconnect)) }
                         }
                         if (hidReady) {
                             OutlinedButton(
@@ -248,17 +253,27 @@ fun HidSetupScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun stateText(state: HidConnectionState, hidReady: Boolean): String = stringResource(
-    when (state) {
-        HidConnectionState.IDLE -> R.string.hid_state_idle
-        HidConnectionState.SCANNING -> R.string.hid_state_scanning
-        HidConnectionState.CONNECTING -> R.string.hid_state_connecting
-        HidConnectionState.CONNECTED -> R.string.hid_state_connected
-        HidConnectionState.READY ->
-            if (hidReady) R.string.hid_state_ready else R.string.hid_state_ready_pending
-        HidConnectionState.ERROR -> R.string.hid_state_error
-    },
-)
+private fun stateText(
+    state: HidConnectionState,
+    hidReady: Boolean,
+    reconnecting: Boolean,
+): String {
+    // 扫描是用户主动行为，优先展示，避免被后台重连提示盖住。
+    if (reconnecting && state != HidConnectionState.SCANNING) {
+        return stringResource(R.string.hid_state_reconnecting)
+    }
+    return stringResource(
+        when (state) {
+            HidConnectionState.IDLE -> R.string.hid_state_idle
+            HidConnectionState.SCANNING -> R.string.hid_state_scanning
+            HidConnectionState.CONNECTING -> R.string.hid_state_connecting
+            HidConnectionState.CONNECTED -> R.string.hid_state_connected
+            HidConnectionState.READY ->
+                if (hidReady) R.string.hid_state_ready else R.string.hid_state_ready_pending
+            HidConnectionState.ERROR -> R.string.hid_state_error
+        },
+    )
+}
 
 /** HID 回环验证状态。 */
 private enum class VerifyState { IDLE, WAITING, PASS, FAIL }

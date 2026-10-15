@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,7 +31,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,9 +43,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
@@ -80,7 +78,7 @@ fun RunScreen(
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var scriptsLoaded by remember { mutableStateOf(false) }
     var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
-    val lifecycleOwner = LocalLifecycleOwner.current
+    var confirmClear by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     fun requestRun(script: ScriptInfo) {
@@ -102,17 +100,11 @@ fun RunScreen(
         }
     }
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                scope.launch {
-                    scripts = container.scriptRepository.listAsync()
-                    scriptsLoaded = true
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    // 脚本增删改（含编辑器保存）后仓库会自增 revision；据此重新拉取，保证快捷区与运行历史同步。
+    val revision by container.scriptRepository.revision.collectAsStateWithLifecycle()
+    LaunchedEffect(revision) {
+        scripts = container.scriptRepository.listAsync()
+        scriptsLoaded = true
     }
 
     // 运行历史里脚本可能已被删除 / 重命名，只保留仍然存在的。
@@ -217,7 +209,7 @@ fun RunScreen(
                         Text(stringResource(R.string.run_quick_title), style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.weight(1f))
                         if (recentItems.isNotEmpty()) {
-                            TextButton(onClick = { container.runHistoryRepository.clear() }) {
+                            TextButton(onClick = { confirmClear = true }) {
                                 Text(stringResource(R.string.run_quick_clear))
                             }
                         }
@@ -264,7 +256,7 @@ fun RunScreen(
                                     if (screenCaptureActive) {
                                         extra.success
                                     } else {
-                                        MaterialTheme.colorScheme.error
+                                        MaterialTheme.colorScheme.outline
                                     },
                                     CircleShape,
                                 ),
@@ -325,6 +317,24 @@ fun RunScreen(
             },
         )
     }
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.run_quick_clear)) },
+            text = { Text(stringResource(R.string.run_quick_clear_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    haptics.reject()
+                    container.runHistoryRepository.clear()
+                    confirmClear = false
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
 }
 
 private data class EnvDialogState(
@@ -364,7 +374,7 @@ private fun QuickRunRow(
 @Composable
 private fun ModeStatus(label: String, ready: Boolean, modifier: Modifier = Modifier) {
     val extra = LocalIzukiExtraColors.current
-    val dotColor = if (ready) extra.success else MaterialTheme.colorScheme.error
+    val dotColor = if (ready) extra.success else MaterialTheme.colorScheme.outline
     Column(modifier = modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(8.dp).background(dotColor, CircleShape))

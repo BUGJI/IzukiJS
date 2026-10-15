@@ -1,10 +1,13 @@
 package com.benton.izukijs.ui.mcp
 
 import android.content.ClipData
+import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
+import android.os.PersistableBundle
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -24,12 +28,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -45,6 +51,7 @@ import com.benton.izukijs.mcp.McpHttpHandler
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.NumberField
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SecretField
@@ -52,6 +59,7 @@ import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -62,10 +70,14 @@ fun McpServerScreen(onBack: () -> Unit) {
     val resources = LocalResources.current
     val config by container.mcpConfigRepository.config.collectAsStateWithLifecycle()
     val status by container.mcpServerController.status.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbarController.current
+    val scope = rememberCoroutineScope()
 
-    var message by remember { mutableStateOf<String?>(null) }
+    var confirmingRegenerate by remember { mutableStateOf(false) }
     var ignoringBattery by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
-    var blockedText by remember { mutableStateOf(config.blockedPackages.joinToString(", ")) }
+    var blockedText by remember(config.blockedPackages) {
+        mutableStateOf(config.blockedPackages.joinToString(", "))
+    }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val batteryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -80,10 +92,17 @@ fun McpServerScreen(onBack: () -> Unit) {
         if (restart && new.enabled && needsRestart(old, new)) McpServerService.restart(context)
     }
 
-    fun copy(label: String, text: String) {
+    fun copy(label: String, text: String, sensitive: Boolean = false) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        clipboard?.setPrimaryClip(ClipData.newPlainText(label, text))
-        message = resources.getString(R.string.mcp_copied)
+        val clip = ClipData.newPlainText(label, text)
+        // 含令牌的内容标记为敏感，避免出现在剪贴板预览 / 历史中。
+        if (sensitive && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            clip.description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+            }
+        }
+        clipboard?.setPrimaryClip(clip)
+        scope.launch { snackbar.show(resources.getString(R.string.mcp_copied)) }
     }
 
     val endpoint = status.addresses.firstOrNull().orEmpty()
@@ -178,7 +197,9 @@ fun McpServerScreen(onBack: () -> Unit) {
                         enabled = endpoint.isNotBlank(),
                         onClick = { copy("endpoint", endpoint) },
                     ) { Text(stringResource(R.string.mcp_copy_endpoint)) }
-                    OutlinedButton(onClick = { copy("config", buildClientConfig(endpoint, config.token)) }) {
+                    OutlinedButton(
+                        onClick = { copy("config", buildClientConfig(endpoint, config.token), sensitive = true) },
+                    ) {
                         Text(stringResource(R.string.mcp_copy_config))
                     }
                 }
@@ -198,10 +219,9 @@ fun McpServerScreen(onBack: () -> Unit) {
                     commitOnBlur = true,
                 ) { apply(config.copy(token = it)) }
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = {
-                    apply(config.copy(token = McpConfig.newToken()))
-                    message = resources.getString(R.string.mcp_token_regenerated)
-                }) { Text(stringResource(R.string.mcp_token_regenerate)) }
+                OutlinedButton(onClick = { confirmingRegenerate = true }) {
+                    Text(stringResource(R.string.mcp_token_regenerate))
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -301,7 +321,7 @@ fun McpServerScreen(onBack: () -> Unit) {
                         .map { it.trim() }
                         .filter { it.isNotEmpty() }
                     apply(config.copy(blockedPackages = list))
-                    message = blockedSavedText
+                    scope.launch { snackbar.show(blockedSavedText) }
                 }) { Text(stringResource(R.string.mcp_blocked_save)) }
             }
 
@@ -344,13 +364,28 @@ fun McpServerScreen(onBack: () -> Unit) {
                 }) { Text(stringResource(R.string.mcp_battery_request)) }
             }
 
-            message?.let {
-                Spacer(Modifier.height(12.dp))
-                Text(it, style = MaterialTheme.typography.bodySmall)
-            }
-
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (confirmingRegenerate) {
+        AlertDialog(
+            onDismissRequest = { confirmingRegenerate = false },
+            title = { Text(stringResource(R.string.mcp_token_regenerate)) },
+            text = { Text(stringResource(R.string.mcp_token_regenerate_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmingRegenerate = false
+                    apply(config.copy(token = McpConfig.newToken()))
+                    scope.launch { snackbar.show(resources.getString(R.string.mcp_token_regenerated)) }
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmingRegenerate = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 

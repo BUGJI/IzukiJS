@@ -3,6 +3,7 @@ package com.benton.izukijs.ui.schedule
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -41,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ScriptInfo
@@ -60,12 +63,15 @@ fun ScheduleScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var schedules by remember { mutableStateOf<List<Schedule>>(emptyList()) }
+    var loaded by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<Schedule?>(null) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     LaunchedEffect(Unit) {
         scripts = container.scriptRepository.listAsync()
         schedules = container.scheduleRepository.listAsync()
+        loaded = true
     }
 
     fun refresh() {
@@ -93,21 +99,21 @@ fun ScheduleScreen(onBack: () -> Unit) {
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (schedules.isEmpty()) {
-                EmptyState(stringResource(R.string.schedule_empty))
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+            when {
+                // 首次进入仍在异步加载，先留空避免闪一下空状态。
+                !loaded -> Unit
+                schedules.isEmpty() -> EmptyState(stringResource(R.string.schedule_empty))
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    // 底部预留 FAB 高度，避免最后一条的删除按钮被遮挡。
+                    contentPadding = PaddingValues(bottom = 88.dp),
+                ) {
                     items(schedules, key = { it.id }) { schedule ->
                         ListItem(
                             headlineContent = { Text(schedule.scriptName) },
                             supportingContent = { Text(describe(schedule)) },
                             trailingContent = {
-                                IconButton(onClick = {
-                                    scope.launch {
-                                        container.scheduleManager.cancelAsync(schedule.id)
-                                        refresh()
-                                    }
-                                }) {
+                                IconButton(onClick = { deleteTarget = schedule }) {
                                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete))
                                 }
                             },
@@ -116,6 +122,27 @@ fun ScheduleScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text(stringResource(R.string.schedule_delete_title)) },
+            text = { Text(stringResource(R.string.schedule_delete_confirm, target.scriptName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    val id = target.id
+                    deleteTarget = null
+                    scope.launch {
+                        container.scheduleManager.cancelAsync(id)
+                        refresh()
+                    }
+                }) { Text(stringResource(R.string.common_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
     }
 
     if (showAdd) {
@@ -151,6 +178,12 @@ private fun AddScheduleDialog(
     var hour by remember { mutableStateOf("8") }
     var minute by remember { mutableStateOf("0") }
     var interval by remember { mutableStateOf("0") }
+    var saving by remember { mutableStateOf(false) }
+
+    // 脚本可能异步加载完成，到位后补上默认选中。
+    LaunchedEffect(scripts) {
+        if (selected == null) selected = scripts.firstOrNull()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -183,6 +216,7 @@ private fun AddScheduleDialog(
                         onValueChange = { hour = it.filter(Char::isDigit).take(2) },
                         label = { Text(stringResource(R.string.schedule_hour)) },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                     )
                     OutlinedTextField(
@@ -190,6 +224,7 @@ private fun AddScheduleDialog(
                         onValueChange = { minute = it.filter(Char::isDigit).take(2) },
                         label = { Text(stringResource(R.string.schedule_minute)) },
                         singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -199,6 +234,7 @@ private fun AddScheduleDialog(
                     onValueChange = { interval = it.filter(Char::isDigit).take(5) },
                     label = { Text(stringResource(R.string.schedule_interval)) },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
@@ -210,9 +246,10 @@ private fun AddScheduleDialog(
                     val h = hour.toIntOrNull()?.coerceIn(0, 23) ?: 8
                     val m = minute.toIntOrNull()?.coerceIn(0, 59) ?: 0
                     val i = interval.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                    saving = true
                     onConfirm(script, h, m, i)
                 },
-                enabled = selected != null,
+                enabled = selected != null && !saving,
             ) { Text(stringResource(R.string.common_confirm)) }
         },
         dismissButton = {
