@@ -56,12 +56,28 @@ fun stableTopAppBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors
     scrolledContainerColor = MaterialTheme.colorScheme.surface,
 )
 
-/** 设置类页面统一的卡片容器：标题 + 内容。 */
+/** 设置类页面统一的卡片容器：标题（+ 可选右上角操作）+ 内容。 */
 @Composable
-fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+fun SectionCard(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: (@Composable () -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
+            if (trailing == null) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.weight(1f))
+                    trailing()
+                }
+            }
             Spacer(Modifier.height(8.dp))
             content()
         }

@@ -4,14 +4,8 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.PersistableBundle
-import android.os.PowerManager
-import android.provider.Settings
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,14 +68,10 @@ fun McpServerScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var confirmingRegenerate by remember { mutableStateOf(false) }
-    var ignoringBattery by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     var blockedText by remember(config.blockedPackages) {
         mutableStateOf(config.blockedPackages.joinToString(", "))
     }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    val batteryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { ignoringBattery = isIgnoringBatteryOptimizations(context) }
 
     fun current() = container.mcpConfigRepository.current()
 
@@ -325,45 +315,6 @@ fun McpServerScreen(onBack: () -> Unit) {
                 }) { Text(stringResource(R.string.mcp_blocked_save)) }
             }
 
-            Spacer(Modifier.height(12.dp))
-            SectionCard(stringResource(R.string.mcp_keepalive_title)) {
-                Text(
-                    stringResource(R.string.mcp_keepalive_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    stringResource(
-                        if (ignoringBattery) R.string.mcp_battery_ok else R.string.mcp_battery_warn,
-                    ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (ignoringBattery) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.error
-                    },
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = {
-                    val intent = if (ignoringBattery) {
-                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                    } else {
-                        Intent(
-                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                            Uri.parse("package:${context.packageName}"),
-                        )
-                    }
-                    runCatching { batteryLauncher.launch(intent) }.onFailure {
-                        runCatching {
-                            context.startActivity(
-                                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
-                            )
-                        }
-                    }
-                }) { Text(stringResource(R.string.mcp_battery_request)) }
-            }
-
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -387,11 +338,6 @@ fun McpServerScreen(onBack: () -> Unit) {
             },
         )
     }
-}
-
-private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
-    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
-    return manager.isIgnoringBatteryOptimizations(context.packageName)
 }
 
 /** 只有影响监听行为的字段变化才需要重建监听；工具开关 / 黑名单由实时配置即时生效。 */

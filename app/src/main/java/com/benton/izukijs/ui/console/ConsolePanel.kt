@@ -19,10 +19,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -84,6 +87,7 @@ fun ConsolePanel(
     var wrapLines by remember { mutableStateOf(true) }
     var follow by remember { mutableStateOf(true) }
     var confirmClear by remember { mutableStateOf(false) }
+    var levelMenuOpen by remember { mutableStateOf(false) }
 
     val trimmedQuery = query.trim()
     val visible = remember(entries, enabledLevels, trimmedQuery) {
@@ -172,18 +176,35 @@ fun ConsolePanel(
                 placeholder = { Text(stringResource(R.string.console_search)) },
             )
             ChipFlow(modifier = Modifier.padding(horizontal = 12.dp)) {
-                LogLevel.entries.forEach { level ->
+                // 级别筛选收进下拉，避免 5 个级别 chip 换行占掉一整行。
+                Box {
                     FilterChip(
-                        selected = level in enabledLevels,
-                        onClick = {
-                            enabledLevels = if (level in enabledLevels) {
-                                enabledLevels - level
-                            } else {
-                                enabledLevels + level
-                            }
+                        selected = enabledLevels.size != LogLevel.entries.size,
+                        onClick = { levelMenuOpen = true },
+                        label = { Text(stringResource(R.string.console_level_filter)) },
+                        trailingIcon = {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
                         },
-                        label = { Text(level.localizedName()) },
                     )
+                    DropdownMenu(expanded = levelMenuOpen, onDismissRequest = { levelMenuOpen = false }) {
+                        LogLevel.entries.forEach { level ->
+                            DropdownMenuItem(
+                                text = { Text(level.localizedName()) },
+                                trailingIcon = {
+                                    if (level in enabledLevels) {
+                                        Icon(Icons.Filled.Check, contentDescription = null)
+                                    }
+                                },
+                                onClick = {
+                                    enabledLevels = if (level in enabledLevels) {
+                                        enabledLevels - level
+                                    } else {
+                                        enabledLevels + level
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
                 FilterChip(
                     selected = wrapLines,

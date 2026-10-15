@@ -8,6 +8,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.PowerManager
 import android.os.Process
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -179,6 +180,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     val usageAccessGranted = remember(permissionRefresh) { hasUsageAccess(context) }
     val notificationListenerGranted = remember(permissionRefresh) { hasNotificationListener(context) }
     val allFilesGranted = remember(permissionRefresh) { hasAllFilesAccess(context) }
+    val ignoringBatteryOptimizations = remember(permissionRefresh) { isIgnoringBatteryOptimizations(context) }
     val runtimeSettings by container.runtimeSettingsRepository.settings.collectAsStateWithLifecycle()
 
     val writeStorageLauncher = rememberLauncherForActivityResult(
@@ -210,8 +212,16 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             description = stringResource(R.string.perm_capture_desc),
             dimensions = listOf(
                 Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
-                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
                 Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+            pros = listOf(
+                stringResource(R.string.perm_capture_pro_1),
+                stringResource(R.string.perm_capture_pro_2),
+            ),
+            cons = listOf(
+                stringResource(R.string.perm_capture_con_1),
+                stringResource(R.string.perm_capture_con_2),
             ),
             tip = stringResource(R.string.perm_capture_tip),
         )
@@ -266,7 +276,6 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             ),
             cons = listOf(
                 stringResource(R.string.perm_hid_con_1),
-                stringResource(R.string.perm_hid_con_2),
             ),
         )
         PermissionCard(
@@ -295,7 +304,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             description = stringResource(R.string.perm_accessibility_desc),
             dimensions = listOf(
                 Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
-                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_high), Rating.BAD),
                 Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
             ),
             pros = listOf(
@@ -396,7 +405,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             description = stringResource(R.string.perm_root_desc),
             dimensions = listOf(
                 Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
-                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_high), Rating.BAD),
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
                 Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_complex), Rating.BAD),
             ),
             pros = listOf(
@@ -405,7 +414,6 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             ),
             cons = listOf(
                 stringResource(R.string.perm_root_con_1),
-                stringResource(R.string.perm_root_con_2),
             ),
         )
         PermissionCard(
@@ -632,6 +640,61 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     }
 
     @Composable
+    fun KeepAliveCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_keepalive_title),
+            description = stringResource(R.string.perm_keepalive_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (ignoringBatteryOptimizations) R.string.perm_status_on else R.string.perm_status_off,
+            ),
+            ready = ignoringBatteryOptimizations,
+            onShowInfo = { infoSheet = info },
+            action = {
+                Column {
+                    Text(
+                        stringResource(
+                            if (ignoringBatteryOptimizations) {
+                                R.string.perm_battery_ok
+                            } else {
+                                R.string.perm_battery_warn
+                            },
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (ignoringBatteryOptimizations) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedButton(onClick = {
+                        val intent = if (ignoringBatteryOptimizations) {
+                            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        } else {
+                            Intent(
+                                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                                Uri.parse("package:${context.packageName}"),
+                            )
+                        }
+                        runCatching {
+                            context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }.onFailure {
+                            openSystemSettings(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        }
+                    }) { Text(stringResource(R.string.perm_battery_request)) }
+                }
+            },
+        )
+    }
+
+    @Composable
     fun TileCard() {
         val pinnedId by container.tileSettingsRepository.scriptId.collectAsStateWithLifecycle()
         var pinnedName by remember(pinnedId) { mutableStateOf<String?>(null) }
@@ -757,6 +820,8 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             AllFilesCard()
                             Spacer(Modifier.height(12.dp))
                             WakeCard()
+                            Spacer(Modifier.height(12.dp))
+                            KeepAliveCard()
                             Spacer(Modifier.height(12.dp))
                             TileCard()
                         }
@@ -1020,6 +1085,12 @@ private fun hasUsageAccess(context: Context): Boolean {
 /** 通知使用权（通知监听服务）是否已授予。 */
 private fun hasNotificationListener(context: Context): Boolean =
     NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+
+/** 是否已忽略电池优化（加入白名单），用于后台保活。 */
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean {
+    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+    return manager.isIgnoringBatteryOptimizations(context.packageName)
+}
 
 /** 全部文件访问是否已授予。 */
 private fun hasAllFilesAccess(context: Context): Boolean =

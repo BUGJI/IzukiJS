@@ -192,7 +192,8 @@ class AppContainer(private val application: Application) {
         // 控制偏好以持久化的 Repository 为唯一数据源，实时同步到内存中的 ControllerManager。
         appScope.launch {
             controllerSettingsRepository.settings.collect { settings ->
-                controllerManager.preferredMode = settings.preferredMode
+                controllerManager.readMode = settings.readMode
+                controllerManager.operateMode = settings.operateMode
                 controllerManager.setCapabilityPreferences(settings.capabilityPreferences)
                 controllerManager.setDisabledModes(settings.disabledModes)
             }

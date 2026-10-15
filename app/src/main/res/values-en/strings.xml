@@ -23,6 +23,7 @@
     <string name="common_auto">Auto</string>
     <string name="common_on">on</string>
     <string name="common_off">off</string>
+    <string name="common_none">None</string>
 
     <!-- Navigation -->
     <string name="nav_run">Run</string>
@@ -86,20 +87,33 @@
 
     <!-- Run screen -->
     <string name="run_status_title">Run status</string>
+    <string name="run_vars_title">Script variables</string>
     <string name="run_running">Running</string>
     <string name="run_idle">No script running</string>
     <string name="run_recent">Run latest script</string>
     <string name="run_no_scripts">No scripts yet, create one in Scripts</string>
     <string name="run_permissions_title">Permissions &amp; capabilities</string>
     <string name="run_configure">Configure</string>
-    <string name="run_capture_recording">Screen capture: recording</string>
-    <string name="run_capture_off">Screen capture: off</string>
+    <string name="run_capture_label">Screen recording</string>
+    <string name="run_capture_recording">Recording</string>
+    <string name="run_capture_off">Off</string>
     <string name="run_mode_disabled">Disabled</string>
     <string name="run_quick_title">Quick launch</string>
     <string name="run_quick_empty">Scripts you have run will appear here; tap to run again.</string>
     <string name="run_quick_clear">Clear history</string>
     <string name="run_quick_clear_confirm">Clear run history? This cannot be undone.</string>
     <string name="run_last_at">Last run %1$s</string>
+    <string name="run_status_card_complete">Complete</string>
+    <string name="run_status_card_missing_read">Missing read</string>
+    <string name="run_status_card_missing_operate">Missing operate</string>
+    <string name="run_status_card_unauthorized">Unauthorized</string>
+    <string name="run_status_card_configure_hint">Tap this card to configure</string>
+    <string name="run_status_card_version">Version %1$s</string>
+    <string name="run_status_card_not_configured">Not configured</string>
+    <string name="run_device_model">Device model</string>
+    <string name="run_device_android">Android version</string>
+    <string name="run_device_android_value">Android %1$s (API %2$d)</string>
+    <string name="run_device_unknown">Unknown</string>
 
     <!-- Scripts -->
     <string name="scripts_title">Scripts</string>
@@ -141,35 +155,37 @@
     <string name="perm_status_on">On</string>
     <string name="perm_status_service_stopped">Service not running</string>
     <string name="perm_status_authorized">Authorized</string>
-    <string name="perm_capture_desc">Authorize once to record continuously, providing unlimited frames for screenshot / image matching / OCR.</string>
+    <string name="perm_capture_desc">Continuously output screen frames from system recording, as the image source for screenshot / image matching / color finding / OCR.</string>
+    <string name="perm_capture_pro_1">Continuously outputs screen frames for screenshot / image matching / color finding / OCR</string>
+    <string name="perm_capture_pro_2">Stays on after a single authorization, no repeated prompts</string>
+    <string name="perm_capture_con_1">The recording state is exposed to the recorded app as an event, risking detection and your account</string>
+    <string name="perm_capture_con_2">Screens with FLAG_SECURE can only be captured as black</string>
     <string name="perm_capture_tip">Recommended together with Bluetooth HID / Accessibility / Shizuku to close the see-and-act loop.</string>
     <string name="perm_action_authorize_start">Authorize and start</string>
     <string name="perm_action_stop_recording">Stop recording</string>
-    <string name="perm_hid_desc">Inject input with absolute coordinates through external HID hardware (tablet dongle), identical to real hardware.</string>
-    <string name="perm_hid_pro_1">Identical to real hardware events, hardest to detect</string>
-    <string name="perm_hid_pro_2">Absolute coordinates, precise taps and swipes</string>
-    <string name="perm_hid_con_1">Requires external HID hardware, less portable</string>
-    <string name="perm_hid_con_2">No screenshot or node tree support</string>
+    <string name="perm_hid_desc">Inject gestures / keys / text with absolute coordinates through external HID hardware (tablet dongle).</string>
+    <string name="perm_hid_pro_1">Injects gestures / keys / text with absolute coordinates</string>
+    <string name="perm_hid_pro_2">Input is identical to real hardware events, hard to flag by risk control</string>
+    <string name="perm_hid_con_1">Requires external HID hardware (tablet dongle)</string>
     <string name="perm_action_connect">Connect</string>
     <string name="perm_action_manage">Manage device</string>
-    <string name="perm_accessibility_desc">Inject gestures and read the node tree through the accessibility service. No extra install, best compatibility.</string>
-    <string name="perm_accessibility_pro_1">No extra install, works out of the box</string>
-    <string name="perm_accessibility_pro_2">Reads the node tree for precise selector targeting</string>
-    <string name="perm_accessibility_con_1">Easier to detect by risk control</string>
+    <string name="perm_accessibility_desc">Inject gestures / text and read the node tree and global actions through the accessibility service.</string>
+    <string name="perm_accessibility_pro_1">No extra install, enabled with the system accessibility service</string>
+    <string name="perm_accessibility_pro_2">Supports node tree reading and selector targeting (the only backend behind selector.*)</string>
+    <string name="perm_accessibility_con_1">Apps can enumerate enabled accessibility services; regular users are the most likely to be flagged</string>
     <string name="perm_accessibility_con_2">No screenshot below API 30; limited key / text input</string>
     <string name="perm_action_open">Enable</string>
-    <string name="perm_shizuku_desc">Inject input, take screenshots and run Shell with ADB privileges through Shizuku. Most capable.</string>
-    <string name="perm_shizuku_pro_1">Most complete: gesture / key / text / screenshot / Shell</string>
-    <string name="perm_shizuku_pro_2">High privileges without Root</string>
+    <string name="perm_shizuku_desc">Inject gestures / keys / text, take screenshots and run Shell with ADB privileges through Shizuku.</string>
+    <string name="perm_shizuku_pro_1">Provides gesture / key / text / screenshot / Shell</string>
+    <string name="perm_shizuku_pro_2">ADB-level privileges without Root</string>
     <string name="perm_shizuku_con_1">Requires Shizuku running; restart after reboot</string>
     <string name="perm_shizuku_con_2">Stops working when disconnected</string>
     <string name="perm_action_shizuku_not_running">Shizuku not running</string>
     <string name="perm_action_authorize">Authorize</string>
-    <string name="perm_root_desc">Call system capabilities directly with Root privileges, similar in power to Shizuku.</string>
-    <string name="perm_root_pro_1">Highest privileges, comparable to Shizuku</string>
-    <string name="perm_root_pro_2">Run Shell and system-level operations directly</string>
+    <string name="perm_root_desc">Inject gestures / keys / text, take screenshots, run Shell and system-level operations with Root privileges.</string>
+    <string name="perm_root_pro_1">Provides gesture / key / text / screenshot / Shell and system-level capabilities</string>
+    <string name="perm_root_pro_2">Rooted users can manage the environment and detection themselves, hard to flag by risk control</string>
     <string name="perm_root_con_1">Device must be rooted, high barrier</string>
-    <string name="perm_root_con_2">Excessive privileges, greatest risk</string>
     <string name="perm_action_detect_root">Detect Root</string>
     <string name="perm_action_revoke">Revoke</string>
     <string name="perm_floating_title">Floating window</string>
@@ -199,6 +215,11 @@
     <string name="perm_wake_desc">Keep the CPU awake while a script runs, so screen-off / doze does not interrupt it.</string>
     <string name="perm_wake_screen">Also wake the screen</string>
     <string name="perm_wake_screen_desc">Wake the screen when a script runs (may stay on the lock screen).</string>
+    <string name="perm_keepalive_title">Background keep-alive</string>
+    <string name="perm_keepalive_desc">Add this app to the battery optimization allowlist; otherwise the system may kill the process when you switch apps or lock the screen, interrupting scripts or the MCP server.</string>
+    <string name="perm_battery_ok">Battery optimization ignored ✓</string>
+    <string name="perm_battery_warn">Battery optimization not ignored yet; may be killed in the background.</string>
+    <string name="perm_battery_request">Open settings</string>
     <string name="perm_tile_title">Quick Settings tile</string>
     <string name="perm_tile_desc">Show a tile in Quick Settings to run / stop a fixed script with one tap.</string>
     <string name="perm_tile_enable">Enable Quick Settings tile</string>
@@ -229,8 +250,7 @@
     <string name="settings_backup">Backup &amp; restore</string>
     <string name="settings_about">About</string>
     <string name="settings_unknown_category">Unknown settings category.</string>
-    <string name="settings_control_summary">Priority %1$s · capture %2$s · OCR %3$s</string>
-    <string name="settings_editor_summary">Font %1$d · autosave %2$s</string>
+    <string name="settings_control_summary">Read %1$s · operate %2$s · capture %3$s · OCR %4$s</string>
     <string name="settings_ai_configured">Configured</string>
     <string name="settings_ai_not_configured">Not configured</string>
     <string name="settings_storage_summary">%1$d MB · keep %2$d days</string>
@@ -238,10 +258,16 @@
     <string name="settings_local">Local</string>
     <string name="settings_online">Online</string>
     <string name="settings_version_short">v%1$s</string>
+    <string name="settings_group_control">Control &amp; extensions</string>
+    <string name="settings_group_data">Data</string>
 
     <!-- Control & vision -->
-    <string name="ctrl_priority_title">Control mode priority</string>
-    <string name="ctrl_priority_desc">When a capability has multiple available backends, prefer the selected mode.</string>
+    <string name="ctrl_read_priority_title">Read priority</string>
+    <string name="ctrl_read_priority_desc">Preferred backend for reading the screen (screenshots, node tree); choose among ready backends only.</string>
+    <string name="ctrl_operate_priority_title">Operate priority</string>
+    <string name="ctrl_operate_priority_desc">Preferred backend for injecting gestures / keys / text and running Shell; choose among ready backends only.</string>
+    <string name="ctrl_effective">Effective: %1$s</string>
+    <string name="ctrl_priority_no_backend">No backend available; authorize one under "Permissions &amp; capabilities" first.</string>
     <string name="ctrl_cap_priority_title">Priority per capability</string>
     <string name="ctrl_cap_priority_desc">Assign a backend per capability; unassigned capabilities follow the global setting above. Only items with at least two available backends are listed.</string>
     <string name="ctrl_follow_global">Follow global</string>
@@ -366,6 +392,7 @@
     <string name="editor_save_failed">Save failed</string>
     <string name="editor_unsaved">Unsaved</string>
     <string name="editor_console">Console</string>
+    <string name="editor_console_count">%1$d</string>
     <string name="editor_expand_console">Expand console</string>
     <string name="editor_collapse_console">Collapse console</string>
     <string name="editor_placeholder">// Write JS here</string>
@@ -444,6 +471,7 @@
     <string name="console_back_to_latest">Back to latest</string>
     <string name="console_search">Search logs</string>
     <string name="console_clear_search">Clear search</string>
+    <string name="console_level_filter">Level</string>
     <string name="console_wrap">Wrap</string>
     <string name="console_follow">Follow</string>
     <string name="console_copied">Log line copied</string>
@@ -518,11 +546,6 @@
     <string name="mcp_allow_shell_desc">Allow external AI to run Shell commands (needs Shizuku or Root); powerful.</string>
     <string name="mcp_allow_scripts">Allow scripts</string>
     <string name="mcp_allow_scripts_desc">Allow listing saved scripts and triggering run / stop.</string>
-    <string name="mcp_keepalive_title">Background survival</string>
-    <string name="mcp_keepalive_desc">Add this app to the battery optimization allowlist; otherwise the system may kill the process and drop the MCP connection when you switch apps or lock the screen.</string>
-    <string name="mcp_battery_ok">Battery optimization ignored ✓</string>
-    <string name="mcp_battery_warn">Battery optimization not ignored yet; may be killed in background.</string>
-    <string name="mcp_battery_request">Open settings</string>
     <string name="mcp_security_title">Security</string>
     <string name="mcp_security_desc">Constrain risky actions from external AI; normal commands and apps are unaffected.</string>
     <string name="mcp_allow_dangerous_shell">Allow dangerous Shell</string>

@@ -92,7 +92,6 @@ class ScreenCapture(private val logBus: LogBus) {
             width = size[0]
             height = size[1]
             density = size[2]
-            createDisplay(mediaProjection, width, height, density)
 
             mediaProjection.registerCallback(
                 object : MediaProjection.Callback() {
@@ -103,6 +102,8 @@ class ScreenCapture(private val logBus: LogBus) {
                 },
                 Handler(Looper.getMainLooper()),
             )
+
+            createDisplay(mediaProjection, width, height, density)
 
             displayManager = appCtx.getSystemService(DisplayManager::class.java)?.also {
                 it.registerDisplayListener(displayListener, mainHandler)

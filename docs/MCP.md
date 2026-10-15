@@ -143,8 +143,8 @@ adb forward tcp:8765 tcp:8765
 ## 后台保活
 
 - MCP 由前台服务 `McpServerService` 常驻，通知栏显示访问地址与停止入口。
-- 建议在设置页将本应用加入「电池优化白名单」，否则部分 ROM 在切后台 / 锁屏后会回收进程，
-  表现为客户端 `ECONNREFUSED` 或 `Read timed out`。
+- 建议在「权限与能力 → 其他 → 后台保活」将本应用加入「电池优化白名单」，否则部分 ROM 在切后台 / 锁屏后会回收进程，
+  表现为客户端 `ECONNREFUSED` 或 `Read timed out`（该设置对脚本运行同样生效）。
 
 ## 安全护栏
 

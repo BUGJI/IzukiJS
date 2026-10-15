@@ -6,7 +6,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -33,7 +32,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -53,7 +51,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -66,6 +63,7 @@ import com.benton.izukijs.data.EditorSettings
 import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.model.Capability
+import com.benton.izukijs.model.CapabilityGroup
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ocr.OcrConfig
 import com.benton.izukijs.ocr.OcrMode
@@ -96,7 +94,6 @@ import kotlinx.coroutines.withContext
 enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
     GENERAL("general", R.string.settings_general),
     CONTROL("control", R.string.settings_control),
-    EDITOR("editor", R.string.settings_editor),
     STORAGE("storage", R.string.settings_storage),
     BACKUP("backup", R.string.settings_backup),
     ABOUT("about", R.string.settings_about),
@@ -121,7 +118,6 @@ fun SettingsScreen(
     val logSettings by container.logSettingsRepository.settings.collectAsStateWithLifecycle()
     val aiConfig by container.aiConfigRepository.config.collectAsStateWithLifecycle()
     val mcpStatus by container.mcpServerController.status.collectAsStateWithLifecycle()
-    val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
     val language by container.languageRepository.language.collectAsStateWithLifecycle()
     val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
     val updateState by container.updateManager.state.collectAsStateWithLifecycle()
@@ -149,23 +145,19 @@ fun SettingsScreen(
                         appearance.themeMode.localizedName(),
                     ),
                 ) { onOpenCategory(SettingsCategory.GENERAL) }
+            }
+            Spacer(Modifier.height(16.dp))
+            CategoryGroup(stringResource(R.string.settings_group_control)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.CONTROL.titleRes),
                     summary = stringResource(
                         R.string.settings_control_summary,
-                        controllerSettings.preferredMode?.localizedName() ?: stringResource(R.string.common_auto),
+                        controllerSettings.readMode?.localizedName() ?: stringResource(R.string.common_auto),
+                        controllerSettings.operateMode?.localizedName() ?: stringResource(R.string.common_auto),
                         stringResource(if (screenCaptureActive) R.string.common_on else R.string.common_off),
                         stringResource(if (ocrConfig.mode == OcrMode.LOCAL) R.string.settings_local else R.string.settings_online),
                     ),
                 ) { onOpenCategory(SettingsCategory.CONTROL) }
-                CategoryRow(
-                    title = stringResource(SettingsCategory.EDITOR.titleRes),
-                    summary = stringResource(
-                        R.string.settings_editor_summary,
-                        editorSettings.fontSizeSp,
-                        stringResource(if (editorSettings.autoSave) R.string.common_on else R.string.common_off),
-                    ),
-                ) { onOpenCategory(SettingsCategory.EDITOR) }
                 CategoryRow(
                     title = stringResource(R.string.settings_ai_agent),
                     summary = stringResource(
@@ -183,6 +175,9 @@ fun SettingsScreen(
                         stringResource(R.string.settings_mcp_summary_stopped)
                     },
                 ) { onOpenMcp() }
+            }
+            Spacer(Modifier.height(16.dp))
+            CategoryGroup(stringResource(R.string.settings_group_data)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.STORAGE.titleRes),
                     summary = stringResource(
@@ -195,6 +190,9 @@ fun SettingsScreen(
                     title = stringResource(SettingsCategory.BACKUP.titleRes),
                     summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
+            }
+            Spacer(Modifier.height(16.dp))
+            CategoryGroup {
                 CategoryRow(
                     title = stringResource(SettingsCategory.ABOUT.titleRes),
                     summary = when (val state = updateState) {
@@ -270,7 +268,7 @@ private fun GeneralSettings() {
         Spacer(Modifier.height(12.dp))
         HorizontalDivider()
         Spacer(Modifier.height(12.dp))
-        Text(stringResource(R.string.settings_custom_color), style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.settings_custom_color), style = MaterialTheme.typography.bodyMedium)
         Text(
             stringResource(
                 if (!appearance.dynamicColor) {
@@ -305,6 +303,9 @@ private fun GeneralSettings() {
 
     Spacer(Modifier.height(12.dp))
     LanguageSettings()
+
+    Spacer(Modifier.height(12.dp))
+    EditorSettingsSection()
 }
 
 @Composable
@@ -348,7 +349,6 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
         when (category) {
             SettingsCategory.GENERAL -> GeneralSettings()
             SettingsCategory.CONTROL -> ControlVisionSettings()
-            SettingsCategory.EDITOR -> EditorSettingsScreen()
             SettingsCategory.STORAGE -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()
             SettingsCategory.ABOUT -> AboutSettings()
@@ -373,28 +373,33 @@ private fun ControlVisionSettings() {
     fun updateOcr(new: OcrConfig) = container.ocrConfigRepository.save(new)
     fun updateCapture(new: CaptureSettings) = container.captureSettingsRepository.save(new)
 
-    SectionCard(stringResource(R.string.ctrl_priority_title)) {
-        Text(
-            stringResource(R.string.ctrl_priority_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        PreferenceRow(
-            label = stringResource(R.string.common_auto),
-            selected = controllerSettings.preferredMode == null,
-            onSelect = { saveController(controllerSettings.copy(preferredMode = null)) },
-        )
-        ControlMode.entries.forEach { mode ->
-            PreferenceRow(
-                label = mode.localizedName(),
-                selected = controllerSettings.preferredMode == mode,
-                onSelect = { saveController(controllerSettings.copy(preferredMode = mode)) },
-            )
-        }
+    val capabilitiesByMode = container.controllerManager.capabilitiesByMode()
+    val readModes = ControlMode.entries.filter { mode ->
+        mode in readyModes && capabilitiesByMode[mode].orEmpty().any { it.group == CapabilityGroup.READ }
+    }
+    val operateModes = ControlMode.entries.filter { mode ->
+        mode in readyModes && capabilitiesByMode[mode].orEmpty().any { it.group == CapabilityGroup.OPERATE }
     }
 
-    val capabilitiesByMode = container.controllerManager.capabilitiesByMode()
+    PriorityCard(
+        title = stringResource(R.string.ctrl_read_priority_title),
+        description = stringResource(R.string.ctrl_read_priority_desc),
+        effective = container.controllerManager.controllerFor(Capability.SCREENSHOT)?.mode?.localizedName(),
+        availableModes = readModes,
+        selectedMode = controllerSettings.readMode,
+        onSelect = { saveController(controllerSettings.copy(readMode = it)) },
+    )
+
+    Spacer(Modifier.height(12.dp))
+    PriorityCard(
+        title = stringResource(R.string.ctrl_operate_priority_title),
+        description = stringResource(R.string.ctrl_operate_priority_desc),
+        effective = container.controllerManager.controllerFor(Capability.GESTURE)?.mode?.localizedName(),
+        availableModes = operateModes,
+        selectedMode = controllerSettings.operateMode,
+        onSelect = { saveController(controllerSettings.copy(operateMode = it)) },
+    )
+
     val choiceCapabilities = Capability.entries.filter { capability ->
         ControlMode.entries.count { mode ->
             mode in readyModes && capability in (capabilitiesByMode[mode] ?: emptySet())
@@ -409,41 +414,39 @@ private fun ControlVisionSettings() {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            choiceCapabilities.forEach { capability ->
-                Spacer(Modifier.height(8.dp))
-                Text(capability.localizedName(), style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(4.dp))
-                ChipFlow {
-                    FilterChip(
-                        selected = controllerSettings.capabilityPreferences[capability] == null,
-                        onClick = {
-                            saveController(
-                                controllerSettings.copy(
-                                    capabilityPreferences = controllerSettings.capabilityPreferences - capability,
-                                ),
-                            )
-                        },
-                        label = { Text(stringResource(R.string.ctrl_follow_global)) },
-                    )
-                    ControlMode.entries
-                        .filter { mode ->
-                            mode in readyModes && capability in (capabilitiesByMode[mode] ?: emptySet())
-                        }
-                        .forEach { mode ->
-                            FilterChip(
-                                selected = controllerSettings.capabilityPreferences[capability] == mode,
-                                onClick = {
-                                    saveController(
-                                        controllerSettings.copy(
-                                            capabilityPreferences = controllerSettings.capabilityPreferences +
-                                                (capability to mode),
-                                        ),
-                                    )
-                                },
-                                label = { Text(mode.localizedName()) },
-                            )
-                        }
-                }
+            CapabilityPreferenceBlock(
+                title = stringResource(R.string.perm_group_read),
+                capabilities = choiceCapabilities.filter { it.group == CapabilityGroup.READ },
+                readyModes = readyModes,
+                capabilitiesByMode = capabilitiesByMode,
+                preferences = controllerSettings.capabilityPreferences,
+            ) { capability, mode ->
+                saveController(
+                    controllerSettings.copy(
+                        capabilityPreferences = withCapabilityPreference(
+                            controllerSettings.capabilityPreferences,
+                            capability,
+                            mode,
+                        ),
+                    ),
+                )
+            }
+            CapabilityPreferenceBlock(
+                title = stringResource(R.string.perm_group_operate),
+                capabilities = choiceCapabilities.filter { it.group == CapabilityGroup.OPERATE },
+                readyModes = readyModes,
+                capabilitiesByMode = capabilitiesByMode,
+                preferences = controllerSettings.capabilityPreferences,
+            ) { capability, mode ->
+                saveController(
+                    controllerSettings.copy(
+                        capabilityPreferences = withCapabilityPreference(
+                            controllerSettings.capabilityPreferences,
+                            capability,
+                            mode,
+                        ),
+                    ),
+                )
             }
         }
     }
@@ -735,7 +738,7 @@ private fun shareFile(context: android.content.Context, file: File) {
 @Composable
 private fun AboutSettings() {
     SectionCard(stringResource(R.string.settings_about)) {
-        Text(stringResource(R.string.about_name), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.about_name), style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.about_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
@@ -915,7 +918,7 @@ private fun UpdateStatusLine(state: UpdateState) {
 }
 
 @Composable
-private fun EditorSettingsScreen() {
+private fun EditorSettingsSection() {
     val container = rememberAppContainer()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
 
@@ -1059,8 +1062,18 @@ private fun BackupSettingsScreen() {
  * 参照 LSPosed Manager 的设置列表，避免细线在深色卡片上形成明显「隔断」。
  */
 @Composable
-private fun CategoryGroup(content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+private fun CategoryGroup(title: String? = null, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (title != null) {
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp),
+            )
+        }
+        content()
+    }
 }
 
 @Composable
@@ -1124,17 +1137,106 @@ private fun SettingsDetailScaffold(
     }
 }
 
+/**
+ * 全局优先级卡片：以 ChipFlow 呈现「自动 + 各可用后端」，并在下方标注当前实际生效的后端。
+ * 仅列出该分组下已就绪的后端，避免选中用不了的后端。
+ */
 @Composable
-private fun PreferenceRow(label: String, selected: Boolean, onSelect: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            // 整行作为单选语义承载点击，RadioButton 自身不再单独响应，避免出现两个可点焦点。
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect)
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        RadioButton(selected = selected, onClick = null)
-        Text(label)
+private fun PriorityCard(
+    title: String,
+    description: String,
+    effective: String?,
+    availableModes: List<ControlMode>,
+    selectedMode: ControlMode?,
+    onSelect: (ControlMode?) -> Unit,
+) {
+    SectionCard(title) {
+        Text(
+            description,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        if (availableModes.isEmpty()) {
+            Text(
+                stringResource(R.string.ctrl_priority_no_backend),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@SectionCard
+        }
+        ChipFlow {
+            FilterChip(
+                selected = selectedMode == null,
+                onClick = { onSelect(null) },
+                label = { Text(stringResource(R.string.common_auto)) },
+            )
+            availableModes.forEach { mode ->
+                FilterChip(
+                    selected = selectedMode == mode,
+                    onClick = { onSelect(mode) },
+                    label = { Text(mode.localizedName()) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(
+                R.string.ctrl_effective,
+                effective ?: stringResource(R.string.common_none),
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
+
+/**
+ * 单项能力的优先模式选择块。无候选能力时不渲染，便于「读取 / 操作」两段按需显隐。
+ */
+@Composable
+private fun CapabilityPreferenceBlock(
+    title: String,
+    capabilities: List<Capability>,
+    readyModes: Set<ControlMode>,
+    capabilitiesByMode: Map<ControlMode, Set<Capability>>,
+    preferences: Map<Capability, ControlMode>,
+    onSelect: (Capability, ControlMode?) -> Unit,
+) {
+    if (capabilities.isEmpty()) return
+    Spacer(Modifier.height(12.dp))
+    Text(
+        title,
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    capabilities.forEach { capability ->
+        Spacer(Modifier.height(8.dp))
+        Text(capability.localizedName(), style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.height(4.dp))
+        ChipFlow {
+            FilterChip(
+                selected = preferences[capability] == null,
+                onClick = { onSelect(capability, null) },
+                label = { Text(stringResource(R.string.ctrl_follow_global)) },
+            )
+            ControlMode.entries
+                .filter { mode -> mode in readyModes && capability in (capabilitiesByMode[mode] ?: emptySet()) }
+                .forEach { mode ->
+                    FilterChip(
+                        selected = preferences[capability] == mode,
+                        onClick = { onSelect(capability, mode) },
+                        label = { Text(mode.localizedName()) },
+                    )
+                }
+        }
+    }
+}
+
+/** 为某项能力设置 / 清除优先后端：mode 为空表示跟随全局。 */
+private fun withCapabilityPreference(
+    preferences: Map<Capability, ControlMode>,
+    capability: Capability,
+    mode: ControlMode?,
+): Map<Capability, ControlMode> =
+    if (mode == null) preferences - capability else preferences + (capability to mode)

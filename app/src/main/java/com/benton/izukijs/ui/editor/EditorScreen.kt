@@ -669,7 +669,7 @@ private fun LogCountBadge(logsState: State<List<LogEntry>>) {
     if (count > 0) {
         Spacer(Modifier.width(6.dp))
         Text(
-            "$count",
+            stringResource(R.string.editor_console_count, count),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

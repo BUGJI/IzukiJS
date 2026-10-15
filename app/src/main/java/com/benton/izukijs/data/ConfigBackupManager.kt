@@ -140,7 +140,8 @@ class ConfigBackupManager(
     // ---- Controller ----
 
     private fun controllerToJson(c: ControllerSettings): JSONObject = JSONObject().apply {
-        c.preferredMode?.let { put("preferredMode", it.name) }
+        c.readMode?.let { put("readMode", it.name) }
+        c.operateMode?.let { put("operateMode", it.name) }
         put(
             "capabilityPreferences",
             JSONObject().apply {
@@ -153,7 +154,10 @@ class ConfigBackupManager(
     }
 
     private fun controllerFromJson(o: JSONObject): ControllerSettings {
-        val preferred = o.optString("preferredMode", "").toEnumOrNull<ControlMode>()
+        // 兼容旧备份：单一 preferredMode 同时作为读取 / 操作两档的初始值。
+        val legacy = o.optString("preferredMode", "").toEnumOrNull<ControlMode>()
+        val read = o.optString("readMode", "").toEnumOrNull<ControlMode>() ?: legacy
+        val operate = o.optString("operateMode", "").toEnumOrNull<ControlMode>() ?: legacy
         val preferences = buildMap {
             val obj = o.optJSONObject("capabilityPreferences") ?: return@buildMap
             obj.keys().forEach { key ->
@@ -169,7 +173,8 @@ class ConfigBackupManager(
             }
         }
         return ControllerSettings(
-            preferredMode = preferred,
+            readMode = read,
+            operateMode = operate,
             capabilityPreferences = preferences,
             disabledModes = disabled,
         )

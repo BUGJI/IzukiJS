@@ -338,6 +338,20 @@ private fun DetailNavHost(
                 tween(NAV_ANIM_MS),
             )
         },
+        // 预测性返回（边缘拖拽）默认是缩放（scaleOut 0.7），与返回按钮的平移不一致；
+        // 这里显式覆盖为与 pop 相同的共享轴平移，让拖拽过程中当前页随手势横移。
+        predictivePopEnterTransition = {
+            fadeIn(tween(NAV_ANIM_MS)) + slideIntoContainer(
+                AnimatedContentTransitionScope.SlideDirection.Right,
+                tween(NAV_ANIM_MS),
+            )
+        },
+        predictivePopExitTransition = {
+            fadeOut(tween(NAV_ANIM_MS)) + slideOutOfContainer(
+                AnimatedContentTransitionScope.SlideDirection.Right,
+                tween(NAV_ANIM_MS),
+            )
+        },
     ) {
         composable(Routes.MAIN) {
             // 透明占位：保持主界面 pager 可见 / 可交互。

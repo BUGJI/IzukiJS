@@ -1,6 +1,7 @@
 package com.benton.izukijs.controller
 
 import com.benton.izukijs.model.Capability
+import com.benton.izukijs.model.CapabilityGroup
 import com.benton.izukijs.model.ControlMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,11 +21,15 @@ class ControllerManager {
     private val _readyModes = MutableStateFlow<Set<ControlMode>>(emptySet())
     val readyModes: StateFlow<Set<ControlMode>> = _readyModes.asStateFlow()
 
-    /** 全局优先使用的模式；为空时按注册顺序。 */
+    /** 读取能力（截图 / 控件树）全局优先使用的模式；为空时按注册顺序。 */
     @Volatile
-    var preferredMode: ControlMode? = null
+    var readMode: ControlMode? = null
 
-    /** 按能力单独指定的优先模式，优先级高于 [preferredMode]。 */
+    /** 操作能力（输入 / Shell 等）全局优先使用的模式；为空时按注册顺序。 */
+    @Volatile
+    var operateMode: ControlMode? = null
+
+    /** 按能力单独指定的优先模式，优先级高于读取 / 操作全局设置。 */
     private val capabilityPreferences = ConcurrentHashMap<Capability, ControlMode>()
 
     /** 被停用的后端，不参与能力协商（服务连接本身不受影响）。 */
@@ -43,9 +48,12 @@ class ControllerManager {
 
     fun isDisabled(mode: ControlMode): Boolean = mode in disabledModes
 
-    /** 某项能力实际生效的优先模式：能力级偏好优先，其次全局。 */
+    /** 某项能力实际生效的优先模式：能力级偏好优先，其次按分组取全局读取 / 操作偏好。 */
     fun preferredFor(capability: Capability): ControlMode? =
-        capabilityPreferences[capability] ?: preferredMode
+        capabilityPreferences[capability] ?: when (capability.group) {
+            CapabilityGroup.READ -> readMode
+            CapabilityGroup.OPERATE -> operateMode
+        }
 
     /** 当前已注册后端各自声明提供的能力，供设置界面展示可选项。 */
     fun capabilitiesByMode(): Map<ControlMode, Set<Capability>> =
