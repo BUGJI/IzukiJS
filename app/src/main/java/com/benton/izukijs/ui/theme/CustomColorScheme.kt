@@ -1,3 +1,10 @@
+// 刻意复用 Material 组件库内置的 material-color-utilities（com.google.android.material.color.utilities）：
+// 它与系统动态取色（Material You）同源，能保证亮 / 暗两套的对比度与层次一致，且不必引入额外依赖。
+// 这些类在 Material AAR 中标注为 @RestrictTo(LIBRARY_GROUP)，直接调用会触发 lint 的 RestrictedApi
+// （Severity=Error）→ 这里显式抑制并记录理由：行为等价、随 material 版本一并升级。
+// 若将来 Material 公开该 API，应改用公开 API 并删除本抑制。
+@file:Suppress("RestrictedApi")
+
 package com.benton.izukijs.ui.theme
 
 import androidx.compose.material3.ColorScheme
