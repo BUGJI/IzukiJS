@@ -41,6 +41,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -80,11 +81,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.runtime.HttpSettings
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.DebugOverlayService
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.IzukiAccessibilityService
 import com.benton.izukijs.service.ScreenCaptureService
+import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.LabeledField
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.stableTopAppBarColors
@@ -182,6 +186,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     val allFilesGranted = remember(permissionRefresh) { hasAllFilesAccess(context) }
     val ignoringBatteryOptimizations = remember(permissionRefresh) { isIgnoringBatteryOptimizations(context) }
     val runtimeSettings by container.runtimeSettingsRepository.settings.collectAsStateWithLifecycle()
+    val httpSettings by container.httpSettingsRepository.settings.collectAsStateWithLifecycle()
 
     val writeStorageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -192,6 +197,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     }
 
     fun saveRuntimeSettings(new: RuntimeSettings) = container.runtimeSettingsRepository.save(new)
+    fun saveHttpSettings(new: HttpSettings) = container.httpSettingsRepository.save(new)
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -605,6 +611,48 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     }
 
     @Composable
+    fun HttpCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_http_title),
+            description = stringResource(R.string.perm_http_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+            ),
+        )
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                if (httpSettings.enabled) R.string.perm_status_on else R.string.perm_status_off,
+            ),
+            ready = httpSettings.enabled,
+            onShowInfo = { infoSheet = info },
+            action = {
+                Column {
+                    SwitchRow(
+                        label = stringResource(R.string.perm_http_enable),
+                        description = stringResource(R.string.perm_http_desc),
+                        checked = httpSettings.enabled,
+                    ) { saveHttpSettings(httpSettings.copy(enabled = it)) }
+                    if (httpSettings.enabled) {
+                        LabeledField(
+                            label = stringResource(R.string.perm_http_allowlist),
+                            value = httpSettings.allowlist,
+                            placeholder = stringResource(R.string.perm_http_allowlist_hint),
+                        ) { saveHttpSettings(httpSettings.copy(allowlist = it)) }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.perm_http_allowlist_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            },
+        )
+    }
+
+    @Composable
     fun WakeCard() {
         val info = PermissionInfo(
             title = stringResource(R.string.perm_wake_title),
@@ -634,6 +682,53 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                         description = stringResource(R.string.perm_wake_screen_desc),
                         enabled = runtimeSettings.keepAwake,
                     ) { saveRuntimeSettings(runtimeSettings.copy(wakeScreen = it)) }
+                }
+            },
+        )
+    }
+
+    @Composable
+    fun TimeoutCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_timeout_title),
+            description = stringResource(R.string.perm_timeout_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
+            ),
+        )
+        val status = if (runtimeSettings.scriptTimeoutMinutes <= 0) {
+            stringResource(R.string.perm_timeout_unlimited)
+        } else {
+            stringResource(R.string.perm_timeout_minutes, runtimeSettings.scriptTimeoutMinutes)
+        }
+        PermissionCard(
+            info = info,
+            status = status,
+            ready = runtimeSettings.scriptTimeoutMinutes > 0,
+            onShowInfo = { infoSheet = info },
+            action = {
+                Column {
+                    ChipFlow {
+                        listOf(0, 10, 30, 60, 120).forEach { minutes ->
+                            FilterChip(
+                                selected = runtimeSettings.scriptTimeoutMinutes == minutes,
+                                onClick = {
+                                    saveRuntimeSettings(
+                                        runtimeSettings.copy(scriptTimeoutMinutes = minutes),
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        if (minutes == 0) {
+                                            stringResource(R.string.perm_timeout_unlimited)
+                                        } else {
+                                            stringResource(R.string.perm_timeout_minutes, minutes)
+                                        },
+                                    )
+                                },
+                            )
+                        }
+                    }
                 }
             },
         )
@@ -819,7 +914,11 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             Spacer(Modifier.height(12.dp))
                             AllFilesCard()
                             Spacer(Modifier.height(12.dp))
+                            HttpCard()
+                            Spacer(Modifier.height(12.dp))
                             WakeCard()
+                            Spacer(Modifier.height(12.dp))
+                            TimeoutCard()
                             Spacer(Modifier.height(12.dp))
                             KeepAliveCard()
                             Spacer(Modifier.height(12.dp))

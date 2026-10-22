@@ -5,6 +5,37 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.5] - 2026-10-23
+
+### 新增
+
+- **死循环可停止 / 运行超时**：通过 JNI 垫片接入 QuickJS 的 `JS_SetInterruptHandler`，
+  手动「停止」与运行超时都能打断 `while (true) {}` 这类纯计算死循环；「权限与能力 → 其他」
+  新增「运行超时」（不限制 / 10 / 30 / 60 / 120 分钟，默认不限制）。中断回调不可用时自动
+  退化为原有检查点停止。
+- 新增通用等待：`waitUntil(condition, timeoutMs, intervalMs)` 与 `waitUntilGone(...)`。
+- `selector` 新增条件查询与等待：`find` / `findAll` / `nth` / `exists` / `count` /
+  `click` / `longClick` / `waitFor` / `waitGone` / `scrollIntoView`，支持 `id`、精确文本、
+  包含、正则、描述、类名、`clickable` / `editable`、包名等条件组合，并补充
+  `findByTextContains` / `findByTextRegex` / `waitForText` / `waitForId` 等便捷方法。
+- 新增脚本网络 `http.*`：支持 GET / POST / PUT / PATCH / DELETE / HEAD、自定义 Header 与
+  请求体、超时、重定向开关；全局开关默认关闭，可配置域名白名单。
+- 新增剪贴板 `clipboard.get()` / `set()` / `clear()`。
+- 图像能力增强：找图 / 找色支持区域参数，新增 `findAllImages`、`findAllColors` 与
+  `saveTemplate`（从屏幕裁剪模板）。
+- 新增脚本能力声明 `// @need shell, fs`：声明后只注册列出的命名空间，未声明的
+  `shell` / `fs` / `notify` / `http` / `clipboard` / `ai` / `app` / `selector` /
+  `images` / `ocr` 不再暴露；未知能力会拒绝运行。
+- 编辑器新增 API 补全：输入命名空间或函数前缀时在底部显示候选，点击插入。
+- 脚本中心支持标签：条目菜单可编辑标签，搜索同时匹配名称与标签，重命名 / 删除时同步处理。
+- 编辑器新增版本历史：保存前自动留档旧内容（10 分钟节流、每个脚本最多 20 个版本），
+  支持查看时间 / 首行预览并一键恢复。
+- 定时任务新增 Cron（五段式，支持 `@daily` 等别名）、事件触发（充电 / Wi-Fi / 解锁）、
+  条件过滤（充电 / Wi-Fi / 已解锁 / 指定前台应用）与失败重试（次数 + 间隔）。
+- 编辑器新增「从光标处运行」与「变量与状态」面板。
+- MCP 新增 `read_logs` 工具、`izuki://audit` 审计日志资源与 `izuki://screenshot` 截图资源；
+  工具调用的脱敏审计记录写入私有 JSONL。
+
 ## [1.1.4] - 2026-10-16
 
 ### 新增

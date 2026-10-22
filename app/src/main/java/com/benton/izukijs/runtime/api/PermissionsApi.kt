@@ -23,6 +23,7 @@ class PermissionsApi(
     private val controllers: ControllerManager,
     private val screenCapture: ScreenCapture,
     private val appListEnabled: () -> Boolean = { true },
+    private val httpEnabled: () -> Boolean = { false },
 ) {
 
     @JavascriptInterface
@@ -92,6 +93,10 @@ class PermissionsApi(
     @JavascriptInterface
     fun appList(): Boolean = appListEnabled()
 
+    /** 脚本网络（HTTP）是否启用。 */
+    @JavascriptInterface
+    fun http(): Boolean = httpEnabled()
+
     /** 已授予的能力，逗号分隔（如 "accessibility,overlay,screenCapture"）。 */
     @JavascriptInterface
     fun granted(): String = statusMap().filterValues { it }.keys.joinToString(",")
@@ -129,6 +134,7 @@ class PermissionsApi(
         "notificationListener" to notificationListener(),
         "manageStorage" to manageStorage(),
         "appList" to appList(),
+        "http" to http(),
     )
 
     private fun isGranted(permission: String): Boolean =

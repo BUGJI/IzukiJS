@@ -96,6 +96,7 @@ fun ScriptsScreen(
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
     val pinned by container.scriptListPreferences.pinned.collectAsStateWithLifecycle()
+    val tags by container.scriptListPreferences.tags.collectAsStateWithLifecycle()
     val sort by container.scriptListPreferences.sort.collectAsStateWithLifecycle()
     val tileScriptId by container.tileSettingsRepository.scriptId.collectAsStateWithLifecycle()
     val revision by container.scriptRepository.revision.collectAsStateWithLifecycle()
@@ -109,20 +110,29 @@ fun ScriptsScreen(
     var renameName by remember { mutableStateOf("") }
     var exportTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var deleteTarget by remember { mutableStateOf<ScriptInfo?>(null) }
+    var tagTarget by remember { mutableStateOf<ScriptInfo?>(null) }
+    var tagInput by remember { mutableStateOf("") }
     var pendingScanFile by remember { mutableStateOf<File?>(null) }
     var query by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     // 置顶优先，其次按所选排序方式。
-    val filtered = remember(query, scripts, pinned, sort) {
+    val filtered = remember(query, scripts, pinned, tags, sort) {
         val bySort = when (sort) {
             ScriptSort.UPDATED -> compareByDescending<ScriptInfo> { it.updatedAt }
             ScriptSort.NAME -> compareBy { it.name.lowercase() }
         }
         val ordered = scripts.sortedWith(compareByDescending<ScriptInfo> { it.id in pinned }.then(bySort))
-        if (query.isBlank()) ordered
-        else ordered.filter { it.name.contains(query.trim(), ignoreCase = true) }
+        val needle = query.trim()
+        if (needle.isEmpty()) {
+            ordered
+        } else {
+            ordered.filter { script ->
+                script.name.contains(needle, ignoreCase = true) ||
+                    tags[script.id].orEmpty().any { it.contains(needle, ignoreCase = true) }
+            }
+        }
     }
 
     fun refresh() {
@@ -299,6 +309,7 @@ fun ScriptsScreen(
                         items(filtered, key = { it.id }) { script ->
                             ScriptRow(
                                 script = script,
+                                tags = tags[script.id].orEmpty(),
                                 pinned = script.id in pinned,
                                 pinnedToTile = script.id == tileScriptId,
                                 onClick = { onOpenScript(script.id) },
@@ -311,6 +322,10 @@ fun ScriptsScreen(
                                     container.tileSettingsRepository.setScriptId(
                                         if (tileScriptId == script.id) null else script.id,
                                     )
+                                },
+                                onEditTags = {
+                                    tagTarget = script
+                                    tagInput = tags[script.id].orEmpty().joinToString(", ")
                                 },
                                 onRename = { renameTarget = script; renameName = script.name },
                                 onExport = { exportTarget = script; exportLauncher.launch(script.name + ".js") },
@@ -377,6 +392,7 @@ fun ScriptsScreen(
                         scope.launch {
                             val renamed = container.scriptRepository.renameAsync(target, renameName)
                             container.scriptEnvRepository.move(target.id, renamed.id)
+                            container.scriptListPreferences.moveTags(target.id, renamed.id)
                             refresh()
                             renameTarget = null
                             submitting = false
@@ -387,6 +403,31 @@ fun ScriptsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
+
+    tagTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { tagTarget = null },
+            title = { Text(stringResource(R.string.scripts_edit_tags)) },
+            text = {
+                OutlinedTextField(
+                    value = tagInput,
+                    onValueChange = { tagInput = it },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.scripts_tags_label)) },
+                    placeholder = { Text(stringResource(R.string.scripts_tags_placeholder)) },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    container.scriptListPreferences.setTags(target.id, parseTagInput(tagInput))
+                    tagTarget = null
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { tagTarget = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -405,8 +446,10 @@ fun ScriptsScreen(
                         val content = container.scriptRepository.readAsync(target)
                         val values = container.scriptEnvRepository.values(target.id)
                         val state = container.scriptEnvRepository.state(target.id)
+                        val savedTags = tags[target.id].orEmpty()
                         container.scriptRepository.deleteAsync(target)
                         container.scriptEnvRepository.remove(target.id)
+                        container.scriptListPreferences.removeTags(target.id)
                         refresh()
                         val result = snackbar.show(
                             message = resources.getString(R.string.scripts_deleted, target.name),
@@ -415,6 +458,9 @@ fun ScriptsScreen(
                         )
                         if (result == SnackbarResult.ActionPerformed) {
                             val restored = container.scriptRepository.createAsync(target.name, content)
+                            if (savedTags.isNotEmpty()) {
+                                container.scriptListPreferences.setTags(restored.id, savedTags)
+                            }
                             if (values.isNotEmpty()) container.scriptEnvRepository.saveValues(restored.id, values)
                             state.forEach { (key, value) ->
                                 container.scriptEnvRepository.putState(restored.id, key, value)
@@ -434,11 +480,13 @@ fun ScriptsScreen(
 @Composable
 private fun ScriptRow(
     script: ScriptInfo,
+    tags: List<String>,
     pinned: Boolean,
     pinnedToTile: Boolean,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
     onToggleTile: () -> Unit,
+    onEditTags: () -> Unit,
     onRename: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
@@ -458,7 +506,12 @@ private fun ScriptRow(
             }
         },
         headlineContent = { Text(script.name) },
-        supportingContent = { Text(formatDateTime(script.updatedAt)) },
+        supportingContent = {
+            val time = formatDateTime(script.updatedAt)
+            val shown = tags.take(3).joinToString("  ") { "#$it" }
+            val tagText = shown + if (tags.size > 3) " +${tags.size - 3}" else ""
+            Text(if (tagText.isEmpty()) time else "$time · $tagText")
+        },
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
@@ -481,6 +534,10 @@ private fun ScriptRow(
                             )
                         },
                         onClick = { menuOpen = false; onToggleTile() },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.scripts_edit_tags)) },
+                        onClick = { menuOpen = false; onEditTags() },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.scripts_rename)) },
@@ -552,6 +609,11 @@ private fun ShimmerBox(width: Dp, height: Dp) {
             ),
     )
 }
+
+private fun parseTagInput(raw: String): List<String> = raw
+    .split(',', '，', ';', '；', '\n')
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
 
 private fun writeTextToUri(context: Context, uri: Uri, text: String): Boolean = runCatching {
     val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false

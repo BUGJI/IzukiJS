@@ -6,6 +6,7 @@ import com.benton.izukijs.ai.ShellGuard
 import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.McpConfig
+import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import org.json.JSONArray
@@ -27,6 +28,7 @@ class McpToolRegistry(
     private val scriptRepository: ScriptRepository,
     private val executionManager: ScriptExecutionManager,
     private val operations: OperationRegistry,
+    private val logFileStore: LogFileStore,
     private val configProvider: () -> McpConfig,
 ) {
 
@@ -67,6 +69,7 @@ class McpToolRegistry(
         return buildList {
             addAll(sharedTools(agentTools, config))
             add(screenshotTool())
+            add(readLogsTool())
             add(getResultTool())
             add(listOperationsTool())
             if (config.allowScripts) addAll(scriptTools())
@@ -121,6 +124,20 @@ class McpToolRegistry(
             put("message", message)
         }.toString(),
     )
+
+    // ---- 日志 ----
+
+    private fun readLogsTool(): McpTool = McpTool(
+        name = "read_logs",
+        description = "读取应用最近日志的尾部（按行数限制），用于排查脚本运行 / 控制后端问题。",
+        inputSchema = McpSchemas.objectSchema(
+            mapOf("lines" to McpSchemas.integer("返回行数 1~2000，默认 200")),
+        ),
+        readOnly = true,
+        synchronous = true,
+    ) { args ->
+        McpToolResult.text(logFileStore.tail(args.optInt("lines", 200).coerceIn(1, 2000)))
+    }
 
     // ---- 截图（返回图像内容块） ----
 

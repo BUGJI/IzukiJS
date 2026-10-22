@@ -20,6 +20,9 @@
 -keepclassmembers class com.quickjs.** { *; }
 -dontwarn com.quickjs.**
 
+# JNI 垫片：类名 / 原生方法名参与符号查找，不可混淆
+-keep class com.benton.izukijs.runtime.QuickJsInterruptNative { *; }
+
 # ===== Shizuku / Sui =====
 -keep class rikka.shizuku.** { *; }
 -keep class moe.shizuku.** { *; }

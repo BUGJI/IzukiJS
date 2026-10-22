@@ -12,7 +12,10 @@ import java.io.File
 /**
  * 基于应用私有目录的脚本仓库。脚本以 .js 文件形式保存在 files/scripts 下。
  */
-class ScriptRepository(private val context: Context) {
+class ScriptRepository(
+    private val context: Context,
+    val history: ScriptHistoryRepository = ScriptHistoryRepository(context),
+) {
 
     private val _revision = MutableStateFlow(0)
 
@@ -68,12 +71,19 @@ class ScriptRepository(private val context: Context) {
         if (script.file.exists()) script.file.readText() else ""
 
     fun write(script: ScriptInfo, content: String) {
+        val previous = runCatching {
+            if (script.file.exists()) script.file.readText() else null
+        }.getOrNull()
+        if (!previous.isNullOrEmpty() && previous != content) {
+            history.record(script.id, previous)
+        }
         script.file.writeText(content)
         bumpRevision()
     }
 
     fun delete(script: ScriptInfo) {
         script.file.delete()
+        history.deleteFor(script.id)
         bumpRevision()
     }
 
@@ -81,6 +91,7 @@ class ScriptRepository(private val context: Context) {
         val id = uniqueId(sanitize(newName))
         val target = File(scriptsDir, id + EXTENSION)
         script.file.renameTo(target)
+        history.move(script.id, id)
         bumpRevision()
         return target.toScriptInfo()
     }

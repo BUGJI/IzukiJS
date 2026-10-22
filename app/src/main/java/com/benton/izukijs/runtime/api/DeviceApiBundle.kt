@@ -35,6 +35,7 @@ class DeviceApiBundle(
             ocrProcessor: OcrProcessor,
             logBus: LogBus,
             appListEnabled: () -> Boolean = { true },
+            isExitRequested: () -> Boolean = { false },
         ): DeviceApiBundle {
             val screenshotProvider: () -> Bitmap? = {
                 OverlayCoordinator.withoutOverlay {
@@ -64,9 +65,13 @@ class DeviceApiBundle(
                 appApi = AppApi(context, logBus, shellExec, appListEnabled),
                 shellApi = ShellApi(controllers, logBus),
                 ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus),
-                selectorApi = SelectorApi(logBus) {
-                    controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
-                },
+                selectorApi = SelectorApi(
+                    logBus = logBus,
+                    controllerProvider = {
+                        controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
+                    },
+                    isExitRequested = isExitRequested,
+                ),
                 notificationApi = NotificationApi(context),
             )
         }

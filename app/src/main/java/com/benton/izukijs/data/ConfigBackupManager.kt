@@ -8,6 +8,8 @@ import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ocr.OcrConfig
 import com.benton.izukijs.ocr.OcrConfigRepository
+import com.benton.izukijs.runtime.HttpSettings
+import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.service.CaptureSettings
@@ -29,6 +31,7 @@ class ConfigBackupManager(
     private val controllerSettingsRepository: ControllerSettingsRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
     private val logSettingsRepository: LogSettingsRepository,
+    private val httpSettingsRepository: HttpSettingsRepository,
     private val editorSettingsRepository: EditorSettingsRepository,
     private val appearanceRepository: AppearanceRepository,
     private val updateSettingsRepository: UpdateSettingsRepository,
@@ -43,6 +46,7 @@ class ConfigBackupManager(
         root.put("controller", controllerToJson(controllerSettingsRepository.current()))
         root.put("capture", captureToJson(captureSettingsRepository.current()))
         root.put("log", logToJson(logSettingsRepository.current()))
+        root.put("http", httpToJson(httpSettingsRepository.current()))
         root.put("editor", editorToJson(editorSettingsRepository.current()))
         root.put("appearance", appearanceToJson(appearanceRepository.current()))
         root.put("update", updateToJson(updateSettingsRepository.current()))
@@ -57,6 +61,7 @@ class ConfigBackupManager(
         root.optJSONObject("controller")?.let { controllerSettingsRepository.save(controllerFromJson(it)) }
         root.optJSONObject("capture")?.let { captureSettingsRepository.save(captureFromJson(it)) }
         root.optJSONObject("log")?.let { logSettingsRepository.save(logFromJson(it)) }
+        root.optJSONObject("http")?.let { httpSettingsRepository.save(httpFromJson(it)) }
         root.optJSONObject("editor")?.let { editorSettingsRepository.save(editorFromJson(it)) }
         root.optJSONObject("appearance")?.let { appearanceRepository.save(appearanceFromJson(it)) }
         root.optJSONObject("update")?.let { updateSettingsRepository.save(updateFromJson(it)) }
@@ -68,6 +73,7 @@ class ConfigBackupManager(
         controllerSettingsRepository.save(ControllerSettings())
         captureSettingsRepository.save(CaptureSettings())
         logSettingsRepository.save(LogSettings())
+        httpSettingsRepository.save(HttpSettings())
         editorSettingsRepository.save(EditorSettings())
         appearanceRepository.save(AppearanceSettings())
         updateSettingsRepository.save(UpdateSettings())
@@ -211,6 +217,21 @@ class ConfigBackupManager(
             maxSizeMb = o.optInt("maxSizeMb", base.maxSizeMb),
             retentionDays = o.optInt("retentionDays", base.retentionDays),
             minLevel = o.optString("minLevel", base.minLevel.name).toEnumOr(base.minLevel),
+        )
+    }
+
+    // ---- HTTP ----
+
+    private fun httpToJson(c: HttpSettings): JSONObject = JSONObject().apply {
+        put("enabled", c.enabled)
+        put("allowlist", c.allowlist)
+    }
+
+    private fun httpFromJson(o: JSONObject): HttpSettings {
+        val base = HttpSettings()
+        return HttpSettings(
+            enabled = o.optBoolean("enabled", base.enabled),
+            allowlist = o.optString("allowlist", base.allowlist),
         )
     }
 

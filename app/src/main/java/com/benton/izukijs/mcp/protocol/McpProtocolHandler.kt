@@ -1,5 +1,6 @@
 package com.benton.izukijs.mcp.protocol
 
+import com.benton.izukijs.mcp.McpAuditLog
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpContent
 import com.benton.izukijs.mcp.tools.McpToolResult
@@ -24,6 +25,7 @@ class McpProtocolHandler(
     private val registry: McpToolRegistry,
     private val resources: McpResources,
     private val operations: OperationRegistry,
+    private val auditLog: McpAuditLog,
     private val logBus: LogBus,
     private val toolDispatcher: ExecutorService,
     private val serverVersion: String,
@@ -139,6 +141,12 @@ class McpProtocolHandler(
             val started = System.currentTimeMillis()
             val result = runCatching { tool.call(arguments) }
                 .getOrElse { McpToolResult.error("工具执行失败：${it.message}") }
+            auditLog.record(
+                tool = name,
+                arguments = arguments,
+                ok = !result.isError,
+                message = result.content.firstOrNull()?.text?.takeIf { result.isError },
+            )
             return success(id, withElapsed(result, System.currentTimeMillis() - started).toJson())
         }
 
@@ -150,6 +158,7 @@ class McpProtocolHandler(
                 val result = try {
                     tool.call(arguments)
                 } catch (t: Throwable) {
+                    auditLog.record(name, arguments, ok = false, message = t.message)
                     operations.fail(requestId, t.message ?: t.javaClass.simpleName)
                     throw t
                 }
@@ -158,6 +167,12 @@ class McpProtocolHandler(
                 } else {
                     operations.succeed(requestId, result)
                 }
+                auditLog.record(
+                    tool = name,
+                    arguments = arguments,
+                    ok = !result.isError,
+                    message = result.content.firstOrNull()?.text?.takeIf { result.isError },
+                )
                 result
             }
         } catch (t: Throwable) {
@@ -215,12 +230,15 @@ class McpProtocolHandler(
         if (uri.isBlank()) return failure(id, INVALID_PARAMS, "缺少资源 uri")
         val content = resources.read(uri)
             ?: return failure(id, INVALID_PARAMS, "找不到资源：$uri")
-        val contents = JSONArray().put(
-            JSONObject()
-                .put("uri", content.uri)
-                .put("mimeType", content.mimeType)
-                .put("text", content.text),
-        )
+        val item = JSONObject()
+            .put("uri", content.uri)
+            .put("mimeType", content.mimeType)
+        if (content.blob != null) {
+            item.put("blob", content.blob)
+        } else {
+            item.put("text", content.text)
+        }
+        val contents = JSONArray().put(item)
         return success(id, JSONObject().put("contents", contents))
     }
 

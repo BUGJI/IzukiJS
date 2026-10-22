@@ -35,8 +35,8 @@ OCR and AI-Agent recovery.
   Root and Bluetooth HID are unified behind a `Capability` abstraction; set a global or per-capability
   priority and the runtime picks the backend that is actually available.
 - **JavaScript script runtime**: based on QuickJS with an isolated runtime per script; exposes input
-  and the `device` / `app` / `selector` / `shell` / `images` / `ocr` / `notify` / `fs` /
-  `permissions` / `ai` interfaces.
+  and the `device` / `app` / `selector` / `shell` / `images` / `ocr` / `notify` / `fs` / `http` /
+  `clipboard` / `permissions` / `ai` interfaces, with `// @need` to expose only what a script uses.
 - **Hybrid control**: the recommended setup is "read the view tree via Accessibility + inject input
   via HID/Shizuku" — each backend does what it does best.
 - **Vision**: OpenCV image / color matching, local MLKit Chinese OCR or online OCR (Baidu /
@@ -48,22 +48,25 @@ OCR and AI-Agent recovery.
   back to a prompt protocol.
 - **MCP server**: exposes the device's screen-reading and control abilities to external AI clients
   (Claude Desktop / Cursor / Cline) over Model Context Protocol, with LAN / local-only listening,
-  token auth and per-tool toggles.
+  token auth and per-tool toggles; includes script execution, log reading, a screenshot resource
+  and a redacted audit log.
 - **Bluetooth HID injection**: drives the device with real hardware events through an external HID
   device (e.g. an ESP32 digitizer dongle, firmware at
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)) for scenarios that need hardware-level input.
 - **System capability extensions**: opt-in notification listening (`notify.*` read / wait for new /
   clear), usage access (`app.foreground()` and usage records), app list (`app.list()` to enumerate
-  installed apps) and full file access (`fs.*` to read/write shared storage); scripts can hold a wake
-  lock while running (optionally waking the screen), and a Quick Settings tile can run a pinned
-  script with one tap.
+  installed apps), full file access (`fs.*` to read/write shared storage) and script network access
+  (`http.*`, off by default with an optional domain allowlist); scripts can hold a wake lock while
+  running (optionally waking the screen), and a Quick Settings tile can run a pinned script with one tap.
 - **Debugging & tools**: a layout inspector that generates selector code, a draggable debug overlay
-  (layout / OCR coordinate overlay), a floating control bar, scheduled tasks, the Quick Settings
-  tile, per-file log storage with automatic cleanup.
+  (layout / OCR coordinate overlay), a floating control bar, scheduled tasks (cron / charging /
+  Wi-Fi / unlock triggers, condition filters, retries), the Quick Settings tile, per-file log
+  storage with automatic cleanup; the editor supports API completion, tags, version history,
+  run-from-cursor and variable/state inspection, plus run timeouts and dead-loop interruption.
 - **Bilingual UI**: ships with Simplified Chinese and English, switching automatically with the
   system language.
-- **Config backup**: one-tap export / import of AI / OCR / control / screenshot / log / editor
-  preferences; sensitive keys are encrypted with the Android Keystore. Because the Keystore key
+- **Config backup**: one-tap export / import of AI / OCR / control / screenshot / script network /
+  log / editor preferences; sensitive keys are encrypted with the Android Keystore. Because the Keystore key
   cannot migrate across devices, system-level auto backup excludes configs that contain ciphertext —
   **use the in-app export / import when switching devices**.
 
@@ -134,7 +137,8 @@ trusted source.
 
 - Android 9 (API 28) or above
 - Build: JDK 17 (required by Gradle; source compatibility level is Java 11), Android SDK
-  (`compileSdk 37`)
+  (`compileSdk 37`), Android NDK `27.1.12297006` and CMake `3.22.1` (for the JNI shim that
+  exposes QuickJS interrupt callbacks)
 
 #### Build
 
@@ -171,7 +175,8 @@ Artifacts are split per ABI: `arm64-v8a` / `armeabi-v7a` / `x86_64`.
 2. For unlimited screenshots, authorize "Screen capture" once under "Permissions & Capabilities" and
    start it.
 3. Create a script on the "Scripts" page, edit it and run it; the editor supports JS syntax
-   highlighting, find & replace, and undo/redo. You can pin frequently used scripts to the Quick
+   highlighting, find & replace, undo/redo, API completion and version history. Scripts support
+   tags and can be searched by name or tag. You can pin frequently used scripts to the Quick
    Settings tile or add them to scheduled tasks.
 
 > Tip: while a script runs you can revoke unnecessary permissions and keep only the modes that
@@ -240,6 +245,8 @@ app/src/main/java/com/benton/izukijs/
 ├── security/      # Key encryption
 ├── ui/            # Compose UI (run / scripts / editor / settings / ...)
 └── model/         # ControlMode / Capability, etc.
+
+app/src/main/cpp/  # JNI shim for QuickJS interrupt callbacks
 ```
 
 ## Tech Stack

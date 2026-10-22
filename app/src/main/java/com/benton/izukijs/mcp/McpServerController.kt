@@ -32,6 +32,7 @@ data class McpStatus(
  */
 class McpServerController(
     private val logBus: LogBus,
+    private val auditLog: McpAuditLog,
     private val configProvider: () -> McpConfig,
     private val registryFactory: (OperationRegistry) -> McpToolRegistry,
     private val resourcesFactory: () -> McpResources,
@@ -72,6 +73,7 @@ class McpServerController(
             registry = registry,
             resources = resources,
             operations = operations,
+            auditLog = auditLog,
             logBus = logBus,
             toolDispatcher = dispatcher,
             serverVersion = serverVersion,

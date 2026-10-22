@@ -32,7 +32,8 @@
 - **多控制后端，能力协商与降级**：无障碍、Shizuku、Root、蓝牙 HID 统一抽象为 `Capability`，
   可全局或按能力指定优先级，自动选择当前真正可用的后端。
 - **JavaScript 脚本运行时**：基于 QuickJS，每个脚本独立运行时；提供输入、`device` / `app` /
-  `selector` / `shell` / `images` / `ocr` / `notify` / `fs` / `permissions` / `ai` 等接口。
+  `selector` / `shell` / `images` / `ocr` / `notify` / `fs` / `http` / `clipboard` /
+  `permissions` / `ai` 等接口，并支持用 `// @need` 只暴露脚本真正需要的能力。
 - **混合控制**：推荐「无障碍读控件树 + HID/Shizuku 注入输入」——读界面与发指令各取所长。
 - **视觉能力**：OpenCV 找图 / 找色，本地 MLKit 中文 OCR 或在线 OCR（百度 / Google Vision / 自定义），
   在线失败自动回退本地。
@@ -40,16 +41,20 @@
 - **AI Agent 脱困**：脚本卡住时交给 OpenAI 兼容模型观察屏幕并操作设备；支持原生 function calling，
   不支持时自动降级为提示词协议。
 - **MCP 服务器**：把设备读屏与控制能力以 Model Context Protocol 暴露给外部 AI 客户端
-  （Claude Desktop / Cursor / Cline），支持局域网 / 仅本机监听、令牌鉴权与工具级开关。
+  （Claude Desktop / Cursor / Cline），支持局域网 / 仅本机监听、令牌鉴权与工具级开关；
+  提供运行脚本、读日志、截图资源与脱敏审计日志。
 - **蓝牙 HID 注入**：通过外部 HID 硬件（如 ESP32 数位板狗，固件见
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)）以真实硬件事件控制设备，适用于需要硬件级输入的场景。
 - **系统能力扩展**：按需开启通知监听（`notify.*` 读取 / 等待新通知 / 清除）、使用情况访问
   （`app.foreground()` 等前台与使用记录）、应用列表（`app.list()` 枚举已安装应用）、全部文件访问
-  （`fs.*` 读写共享存储）；脚本运行期可保持唤醒（可选点亮屏幕），并支持快捷磁贴一键运行固定脚本。
+  （`fs.*` 读写共享存储）、脚本网络（`http.*`，默认关闭，可配域名白名单）；脚本运行期可保持唤醒
+  （可选点亮屏幕），并支持快捷磁贴一键运行固定脚本。
 - **调试与工具**：布局分析器生成选择器代码、可拖动调试悬浮窗（布局 / OCR 坐标叠加）、
-  悬浮控制条、定时任务、快捷磁贴、日志分文件存储与自动清理。
+  悬浮控制条、定时任务（Cron / 充电 / Wi-Fi / 解锁触发、条件过滤、失败重试）、快捷磁贴、
+  日志分文件存储与自动清理；脚本编辑器支持 API 补全、标签、版本历史、从光标处运行与
+  变量 / 状态查看，运行支持超时与死循环中断。
 - **中英双语界面**：内置简体中文与英文，跟随系统语言自动切换。
-- **配置备份**：AI / OCR / 控制 / 截图 / 日志 / 编辑器偏好一键导出导入，敏感密钥经 Android Keystore 加密。
+- **配置备份**：AI / OCR / 控制 / 截图 / 脚本网络 / 日志 / 编辑器偏好一键导出导入，敏感密钥经 Android Keystore 加密。
   由于 Keystore 密钥无法跨设备迁移，系统级自动备份已排除含密文的配置；**换机请使用应用内导出 / 导入**。
 
 ## 用途与免责声明
@@ -109,7 +114,8 @@ Izuki JS 是一个面向个人设备自动化与无障碍场景的实验性运�
 #### 环境要求
 
 - Android 9（API 28）及以上
-- 构建：JDK 17（运行 Gradle 所需；源码兼容级别为 Java 11）、Android SDK（`compileSdk 37`）
+- 构建：JDK 17（运行 Gradle 所需；源码兼容级别为 Java 11）、Android SDK（`compileSdk 37`）、
+  Android NDK `27.1.12297006`、CMake `3.22.1`（用于 QuickJS 中断回调的 JNI 垫片）
 
 #### 构建
 
@@ -141,7 +147,8 @@ cd IzukiJS
      点亮屏幕、快捷磁贴。
 
 2. 需要无限截图时，在「权限与能力」中授权「屏幕捕获」一次并开始。
-3. 在「脚本」页新建脚本，编辑并运行；编辑器支持 JS 语法高亮、查找替换与撤销重做。
+3. 在「脚本」页新建脚本，编辑并运行；编辑器支持 JS 语法高亮、查找替换、撤销重做、
+   API 补全与版本历史，脚本支持标签与按名称 / 标签搜索。
    可在脚本中心将常用脚本「钉到磁贴」或加入定时任务。
 
 > 提示：脚本运行时可以收回非必要权限，只保留当前脚本真正需要的模式，减少不必要的权限占用。
@@ -207,6 +214,8 @@ app/src/main/java/com/benton/izukijs/
 ├── security/      # 密钥加密
 ├── ui/            # Compose 界面（run / scripts / editor / settings / ...）
 └── model/         # ControlMode / Capability 等
+
+app/src/main/cpp/  # QuickJS 中断回调 JNI 垫片
 ```
 
 ## 技术栈

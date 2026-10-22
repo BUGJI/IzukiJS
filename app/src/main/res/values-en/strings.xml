@@ -121,12 +121,15 @@
     <string name="scripts_import">Import script</string>
     <string name="scripts_schedule">Scheduled tasks</string>
     <string name="scripts_new">New script</string>
-    <string name="scripts_search">Search scripts</string>
+    <string name="scripts_search">Search names or tags</string>
     <string name="scripts_empty">No scripts yet. Tap + in the corner to create one.</string>
     <string name="scripts_no_match">No scripts match \"%1$s\"</string>
     <string name="scripts_name">Name</string>
     <string name="scripts_create">Create</string>
     <string name="scripts_rename">Rename</string>
+    <string name="scripts_edit_tags">Edit tags</string>
+    <string name="scripts_tags_label">Tags</string>
+    <string name="scripts_tags_placeholder">e.g. daily, game, check-in (comma-separated)</string>
     <string name="scripts_pin">Pin to top</string>
     <string name="scripts_unpin">Unpin</string>
     <string name="scripts_tile_pin">Pin to Quick Settings tile</string>
@@ -211,10 +214,20 @@
     <string name="perm_applist_switch">Allow enumerating installed apps</string>
     <string name="perm_allfiles_title">All files access</string>
     <string name="perm_allfiles_desc">Allow scripts to read / write any file on shared storage (e.g. /sdcard paths).</string>
+    <string name="perm_http_title">Script network (HTTP)</string>
+    <string name="perm_http_desc">Allow scripts to reach the network via http.request / get / post for webhooks, verification-code services and more. Off by default; an allowlist is recommended.</string>
+    <string name="perm_http_enable">Enable script network</string>
+    <string name="perm_http_allowlist">Allowed domains</string>
+    <string name="perm_http_allowlist_hint">api.example.com, example.org</string>
+    <string name="perm_http_allowlist_desc">Comma-separated. Leave empty to allow any host; otherwise only these hosts and their subdomains are allowed. Only http / https are supported.</string>
     <string name="perm_wake_title">Keep awake</string>
     <string name="perm_wake_desc">Keep the CPU awake while a script runs, so screen-off / doze does not interrupt it.</string>
     <string name="perm_wake_screen">Also wake the screen</string>
     <string name="perm_wake_screen_desc">Wake the screen when a script runs (may stay on the lock screen).</string>
+    <string name="perm_timeout_title">Run timeout</string>
+    <string name="perm_timeout_desc">Stop the script automatically after the selected duration to avoid runaway loops or a stuck device. Choose \"Unlimited\" to stop only manually.</string>
+    <string name="perm_timeout_unlimited">Unlimited</string>
+    <string name="perm_timeout_minutes">%1$d min</string>
     <string name="perm_keepalive_title">Background keep-alive</string>
     <string name="perm_keepalive_desc">Add this app to the battery optimization allowlist; otherwise the system may kill the process when you switch apps or lock the screen, interrupting scripts or the MCP server.</string>
     <string name="perm_battery_ok">Battery optimization ignored ✓</string>
@@ -409,6 +422,19 @@
     <string name="editor_next_match">Next</string>
     <string name="editor_close_find">Close find</string>
     <string name="editor_run_selection">Running selection</string>
+    <string name="editor_history">Version history</string>
+    <string name="editor_run_from_cursor">Run from cursor</string>
+    <string name="editor_run_from_cursor_hint">Running from the current line to the end</string>
+    <string name="editor_variables">Variables &amp; state</string>
+    <string name="editor_variables_env">Run parameters (env)</string>
+    <string name="editor_variables_state">Run state (state)</string>
+    <string name="editor_variables_empty">(empty)</string>
+    <string name="editor_history_loading">Loading…</string>
+    <string name="editor_history_empty">No versions yet. Older content is archived automatically after you save changes.</string>
+    <string name="editor_history_blank">(empty)</string>
+    <string name="editor_history_restore">Restore</string>
+    <string name="editor_history_restored">Version restored</string>
+    <string name="editor_history_restore_failed">Failed to read version</string>
 
     <!-- Bluetooth HID -->
     <string name="hid_scan">Scan</string>
@@ -460,6 +486,27 @@
     <string name="schedule_interval">Repeat interval (minutes, 0 = once)</string>
     <string name="schedule_next_interval">Next %1$s · every %2$d min</string>
     <string name="schedule_next_once">Once · %1$s</string>
+    <string name="schedule_next_cron">Cron %1$s · next %2$s</string>
+    <string name="schedule_kind_time">Time</string>
+    <string name="schedule_kind_interval">Interval</string>
+    <string name="schedule_kind_cron">Cron</string>
+    <string name="schedule_kind_event">Event</string>
+    <string name="schedule_cron_label">Cron expression</string>
+    <string name="schedule_cron_hint">minute hour day month weekday, e.g. 0 8 * * *</string>
+    <string name="schedule_cron_invalid">Invalid cron expression</string>
+    <string name="schedule_event_charging">Charging</string>
+    <string name="schedule_event_wifi">Wi-Fi connected</string>
+    <string name="schedule_event_unlock">Unlocked</string>
+    <string name="schedule_event_desc">Event: %1$s</string>
+    <string name="schedule_conditions">Extra conditions (all required)</string>
+    <string name="schedule_condition_charging">Charging</string>
+    <string name="schedule_condition_wifi">Wi-Fi</string>
+    <string name="schedule_condition_unlocked">Unlocked</string>
+    <string name="schedule_conditions_suffix"> · conditions: %1$s</string>
+    <string name="schedule_foreground_label">Foreground package (optional)</string>
+    <string name="schedule_retry_count">Retry attempts</string>
+    <string name="schedule_retry_delay">Retry delay (minutes)</string>
+    <string name="schedule_retry_suffix"> · retry %1$d× / %2$d min</string>
     <string name="schedule_delete_title">Delete schedule</string>
     <string name="schedule_delete_confirm">Delete the scheduled task for \"%1$s\"?</string>
 

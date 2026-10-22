@@ -93,6 +93,7 @@ adb forward tcp:8765 tcp:8765
 | `app` | `action=launch`（package；命中黑名单则拒绝）或 `action=open_url`（url） |
 | `batch` | 一次调用顺序执行多个动作：`actions=[{tool,arguments}]`；默认失败即停并回传每步结果 |
 | `get_result` / `list_operations` | 查询异步操作结果 / 列出最近操作 |
+| `read_logs` | 读取应用最近日志尾部（`lines` 1~2000，默认 200） |
 
 需显式开启后可用：
 
@@ -153,7 +154,9 @@ adb forward tcp:8765 tcp:8765
 - **高危 Shell 拦截**：`shell` 工具会拦截 `rm -rf /`、`mkfs`、`dd` 写块设备、`pm uninstall/clear`、
   `settings put`、`mount remount`、`reboot` 等破坏性命令；确需放行时在设置页开启「允许高危 Shell」。
 - **敏感 App 黑名单**：设置页可填写包名列表，`app(action=launch)` 命中即拒绝；支持结尾 `*` 前缀通配。
-- **审计日志**：所有 Shell 调用都会以 `🛡️ shell` 前缀写入应用日志（含退出码），便于事后追溯。
+- **审计日志**：所有 Shell 调用都会以 `🛡️ shell` 前缀写入应用日志（含退出码）；每次 MCP 工具调用
+  （工具名、脱敏参数、成功 / 失败）都会写入 `izuki://audit` 资源对应的 JSONL 文件，便于事后追溯。
+  `token` / `password` / `secret` / `authorization` 等敏感键在落盘前替换为 `***`。
 
 ## 资源
 
@@ -164,6 +167,8 @@ adb forward tcp:8765 tcp:8765
 | `izuki://scripts` | 脚本列表（JSON） |
 | `izuki://scripts/{id}` | 指定脚本源码 |
 | `izuki://logs` | 最近日志（尾部） |
+| `izuki://audit` | MCP 工具调用审计日志（JSONL，敏感参数脱敏） |
+| `izuki://screenshot` | 当前屏幕截图（`blob`，JPEG Base64，75% 缩放） |
 
 ## 实现说明
 

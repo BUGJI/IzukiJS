@@ -158,14 +158,28 @@ class AccessibilityController(
     data class NodeCriteria(
         val viewId: String? = null,
         val text: String? = null,
+        val textContains: String? = null,
+        val textRegex: String? = null,
         val desc: String? = null,
+        val descContains: String? = null,
+        val descRegex: String? = null,
         val className: String? = null,
+        val clickable: Boolean? = null,
+        val editable: Boolean? = null,
+        val packageName: String? = null,
     ) {
+        private val textPattern = textRegex?.let { Regex(it) }
+        private val descPattern = descRegex?.let { Regex(it) }
+
         fun matches(node: AccessibilityNodeInfo): Boolean {
             if (viewId != null && node.viewIdResourceName != viewId) return false
-            if (text != null && node.text?.toString() != text) return false
-            if (desc != null && node.contentDescription?.toString() != desc) return false
+            if (!matchesNodeValue(node.text?.toString(), text, textContains, textPattern)) return false
+            val description = node.contentDescription?.toString()
+            if (!matchesNodeValue(description, desc, descContains, descPattern)) return false
             if (className != null && node.className?.toString() != className) return false
+            if (clickable != null && node.isClickable != clickable) return false
+            if (editable != null && node.isEditable != editable) return false
+            if (packageName != null && node.packageName?.toString() != packageName) return false
             return true
         }
     }

@@ -22,12 +22,14 @@ import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.i18n.LanguageRepository
+import com.benton.izukijs.mcp.McpAuditLog
 import com.benton.izukijs.mcp.McpConfigRepository
 import com.benton.izukijs.mcp.McpServerController
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
+import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogBus
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
@@ -36,6 +38,7 @@ import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.schedule.ScheduleManager
 import com.benton.izukijs.schedule.ScheduleRepository
+import com.benton.izukijs.schedule.ScheduleRunner
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.WakeLockController
@@ -79,6 +82,8 @@ class AppContainer(private val application: Application) {
 
     val runtimeSettingsRepository = RuntimeSettingsRepository(application)
 
+    val httpSettingsRepository = HttpSettingsRepository(application)
+
     val wakeLockController = WakeLockController(application)
 
     val screenCapture = ScreenCapture(logBus)
@@ -105,6 +110,7 @@ class AppContainer(private val application: Application) {
         controllerSettingsRepository = controllerSettingsRepository,
         captureSettingsRepository = captureSettingsRepository,
         logSettingsRepository = logSettingsRepository,
+        httpSettingsRepository = httpSettingsRepository,
         editorSettingsRepository = editorSettingsRepository,
         appearanceRepository = appearanceRepository,
         updateSettingsRepository = updateSettingsRepository,
@@ -121,6 +127,7 @@ class AppContainer(private val application: Application) {
         scriptEnvRepository,
         runHistoryRepository,
         runtimeSettingsRepository,
+        httpSettingsRepository,
         wakeLockController,
         moduleSourceProvider = { raw ->
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
@@ -130,8 +137,10 @@ class AppContainer(private val application: Application) {
 
     val mcpConfigRepository = McpConfigRepository(application)
 
+    val mcpAuditLog = McpAuditLog(application)
+
     /** 脚本与 MCP 共用的设备 API 集合；懒加载，首次使用时组装。 */
-    private val deviceApiBundle: DeviceApiBundle by lazy {
+    val deviceApiBundle: DeviceApiBundle by lazy {
         DeviceApiBundle.create(
             application,
             controllerManager,
@@ -149,6 +158,7 @@ class AppContainer(private val application: Application) {
 
     val mcpServerController = McpServerController(
         logBus = logBus,
+        auditLog = mcpAuditLog,
         configProvider = { mcpConfigRepository.current() },
         registryFactory = { operations ->
             McpToolRegistry(
@@ -157,6 +167,7 @@ class AppContainer(private val application: Application) {
                 scriptRepository = scriptRepository,
                 executionManager = scriptExecutionManager,
                 operations = operations,
+                logFileStore = logFileStore,
                 configProvider = { mcpConfigRepository.current() },
             )
         },
@@ -167,6 +178,7 @@ class AppContainer(private val application: Application) {
                 scriptRepository = scriptRepository,
                 executionManager = scriptExecutionManager,
                 logFileStore = logFileStore,
+                auditLog = mcpAuditLog,
             )
         },
         serverVersion = BuildConfig.VERSION_NAME,
@@ -182,6 +194,16 @@ class AppContainer(private val application: Application) {
 
     val scheduleManager = ScheduleManager(application, scheduleRepository, logBus)
 
+    val scheduleRunner = ScheduleRunner(
+        context = application,
+        repository = scheduleRepository,
+        scriptRepository = scriptRepository,
+        scheduleManager = scheduleManager,
+        executionManager = scriptExecutionManager,
+        foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
+        logBus = logBus,
+    )
+
     /** 初始化控制后端。会注册 Shizuku 监听并异步探测 Root。 */
     fun init() {
         logBus.setSink { logFileStore.append(it) }
@@ -189,6 +211,7 @@ class AppContainer(private val application: Application) {
         shizukuManager.init()
         rootManager.init()
         hidManager.init()
+        scheduleManager.start()
         // 控制偏好以持久化的 Repository 为唯一数据源，实时同步到内存中的 ControllerManager。
         appScope.launch {
             controllerSettingsRepository.settings.collect { settings ->

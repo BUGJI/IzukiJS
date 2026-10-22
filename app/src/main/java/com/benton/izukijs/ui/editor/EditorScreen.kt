@@ -16,10 +16,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,8 +32,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -38,6 +46,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
@@ -80,17 +90,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.data.ScriptVersion
 import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.runtime.LogEntry
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.ScriptEnvDialog
+import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -120,11 +133,21 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var envFields by remember(scriptId) { mutableStateOf<List<EnvField>>(emptyList()) }
     var envInitial by remember(scriptId) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
+    // 版本历史
+    var historyOpen by remember(scriptId) { mutableStateOf(false) }
+    var historyLoading by remember(scriptId) { mutableStateOf(false) }
+    var historyEntries by remember(scriptId) {
+        mutableStateOf<List<Pair<ScriptVersion, String>>>(emptyList())
+    }
+    var historyMenuOpen by remember(scriptId) { mutableStateOf(false) }
+    var variablesOpen by remember(scriptId) { mutableStateOf(false) }
+
     // 查找 / 替换
     var findVisible by rememberSaveable(scriptId) { mutableStateOf(false) }
     var query by rememberSaveable(scriptId) { mutableStateOf("") }
     var replacement by rememberSaveable(scriptId) { mutableStateOf("") }
     var activeMatch by remember(scriptId) { mutableStateOf(0) }
+    var editorFocused by remember(scriptId) { mutableStateOf(false) }
 
     // 撤销 / 重做历史。以脚本 id 为键，切脚本时清空。栈不参与实例状态保存：
     // 进程回收后栈为空，按钮可用性也随之归零，二者保持一致。
@@ -191,6 +214,15 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val text = editorValue.text
     val dirty = text != savedCode
 
+    val completionToken = if (editorFocused && !findVisible && editorValue.selection.collapsed) {
+        ApiSuggestions.tokenAt(text, editorValue.selection.start)
+    } else {
+        null
+    }
+    val completions = remember(completionToken) {
+        completionToken?.let { ApiSuggestions.suggestions(it) } ?: emptyList()
+    }
+
     val effectiveQuery = if (findVisible) query else ""
     val matches = remember(text, effectiveQuery) {
         if (effectiveQuery.isEmpty()) emptyList() else findAllMatches(text, effectiveQuery)
@@ -221,6 +253,19 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         lastEditAt = now
         canUndo = undoStack.isNotEmpty()
         canRedo = false
+    }
+
+    fun applyCompletion(suggestion: ApiSuggestion) {
+        val cursor = editorValue.selection.start
+        val start = ApiSuggestions.tokenStart(text, cursor)
+        val inserted = suggestion.text
+        val newText = text.substring(0, start) + inserted + text.substring(cursor)
+        recordEdit(snapshot(), force = true)
+        editorValue = TextFieldValue(
+            text = newText,
+            selection = TextRange(start + inserted.length),
+        )
+        focusRequester.requestFocus()
     }
 
     // 程序化编辑（替换等），始终单独占一格历史；并重置合并窗口，
@@ -320,6 +365,49 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
+    fun openHistory() {
+        historyOpen = true
+        historyLoading = true
+        scope.launch {
+            historyEntries = withContext(Dispatchers.IO) {
+                container.scriptRepository.history.list(current.id).map { version ->
+                    val preview = container.scriptRepository.history.read(version)
+                        .lineSequence()
+                        .firstOrNull()
+                        .orEmpty()
+                        .take(80)
+                    version to preview
+                }
+            }
+            historyLoading = false
+        }
+    }
+
+    fun restoreVersion(version: ScriptVersion) {
+        scope.launch {
+            val content = withContext(Dispatchers.IO) {
+                container.scriptRepository.history.read(version)
+            }
+            if (content.isBlank()) {
+                snackbar.show(resources.getString(R.string.editor_history_restore_failed))
+                return@launch
+            }
+            val before = snapshot()
+            withContext(Dispatchers.IO) {
+                // 恢复前强制留档当前内容，避免自动保存节流把当前版本吞掉。
+                container.scriptRepository.history.record(current.id, editorValue.text, force = true)
+            }
+            editorValue = TextFieldValue(content)
+            recordEdit(before, force = true)
+            if (persist(content)) {
+                snackbar.show(resources.getString(R.string.editor_history_restored))
+            } else {
+                snackbar.show(resources.getString(R.string.editor_save_failed))
+            }
+            historyOpen = false
+        }
+    }
+
     // 自动保存：停止输入片刻后静默落盘，避免只依赖返回时写盘导致丢失。
     // 写盘用 NonCancellable 包裹，防止下一次按键取消协程时写到一半被中断。
     LaunchedEffect(text, editorSettings.autoSave) {
@@ -340,6 +428,37 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             }
             action()
         }
+    }
+
+    fun startRun(runText: String, message: Int? = null) {
+        haptics.tap()
+        val fullText = editorValue.text
+        scope.launch {
+            if (!persist(fullText)) {
+                snackbar.show(resources.getString(R.string.editor_save_failed))
+            }
+            message?.let { snackbar.show(resources.getString(it)) }
+            val spec = ScriptEnvSpec.parse(runText)
+            val stored = container.scriptEnvRepository.values(current.id)
+            if (spec.isEmpty && stored.isEmpty()) {
+                container.scriptExecutionManager.run(current.name, runText)
+            } else {
+                envFields = spec.fields
+                envInitial = spec.defaults() + stored
+                envSource = runText
+            }
+        }
+    }
+
+    fun codeFromCursor(): String {
+        val text = editorValue.text
+        val cursor = editorValue.selection.min.coerceIn(0, text.length)
+        val lineStart = if (cursor <= 0) {
+            0
+        } else {
+            text.lastIndexOf('\n', cursor - 1).let { if (it < 0) 0 else it + 1 }
+        }
+        return text.substring(lineStart)
     }
 
     BackHandler { saveAndThen(onBack) }
@@ -389,6 +508,37 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                             contentDescription = stringResource(R.string.editor_find),
                         )
                     }
+                    Box {
+                        IconButton(onClick = { historyMenuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
+                        }
+                        DropdownMenu(
+                            expanded = historyMenuOpen,
+                            onDismissRequest = { historyMenuOpen = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_history)) },
+                                onClick = {
+                                    historyMenuOpen = false
+                                    openHistory()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_run_from_cursor)) },
+                                onClick = {
+                                    historyMenuOpen = false
+                                    startRun(codeFromCursor(), R.string.editor_run_from_cursor_hint)
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_variables)) },
+                                onClick = {
+                                    historyMenuOpen = false
+                                    variablesOpen = true
+                                },
+                            )
+                        }
+                    }
                     if (running) {
                         IconButton(onClick = {
                             haptics.reject()
@@ -398,32 +548,17 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                         }
                     } else {
                         IconButton(onClick = {
-                            haptics.tap()
                             val fullText = editorValue.text
                             val selection = editorValue.selection
                             val isSelection = !selection.collapsed
-                            val runText = if (isSelection) {
-                                fullText.substring(selection.min, selection.max)
-                            } else {
-                                fullText
-                            }
-                            scope.launch {
-                                if (!persist(fullText)) {
-                                    snackbar.show(resources.getString(R.string.editor_save_failed))
-                                }
-                                if (isSelection) {
-                                    snackbar.show(resources.getString(R.string.editor_run_selection))
-                                }
-                                val spec = ScriptEnvSpec.parse(runText)
-                                val stored = container.scriptEnvRepository.values(current.id)
-                                if (spec.isEmpty && stored.isEmpty()) {
-                                    container.scriptExecutionManager.run(current.name, runText)
+                            startRun(
+                                runText = if (isSelection) {
+                                    fullText.substring(selection.min, selection.max)
                                 } else {
-                                    envFields = spec.fields
-                                    envInitial = spec.defaults() + stored
-                                    envSource = runText
-                                }
-                            }
+                                    fullText
+                                },
+                                message = if (isSelection) R.string.editor_run_selection else null,
+                            )
                         }) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.common_run))
                         }
@@ -482,37 +617,55 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
                         .padding(12.dp),
                 ) {
-                    BasicTextField(
-                        value = editorValue,
-                        onValueChange = { newValue ->
-                            if (newValue.text != editorValue.text) {
-                                recordEdit(snapshot(), force = false)
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        BasicTextField(
+                            value = editorValue,
+                            onValueChange = { newValue ->
+                                if (newValue.text != editorValue.text) {
+                                    recordEdit(snapshot(), force = false)
+                                }
+                                editorValue = newValue
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { editorFocused = it.isFocused }
+                                .onPreviewKeyEvent { event -> handleShortcut(event) },
+                            textStyle = editorStyle,
+                            visualTransformation = visualTransformation,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.None,
+                                autoCorrectEnabled = false,
+                                keyboardType = KeyboardType.Ascii,
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            decorationBox = { inner ->
+                                if (text.isEmpty()) {
+                                    Text(
+                                        stringResource(R.string.editor_placeholder),
+                                        style = editorStyle,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                inner()
+                            },
+                        )
+                        if (completions.isNotEmpty()) {
+                            HorizontalDivider(modifier = Modifier.padding(top = 6.dp))
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                items(completions) { suggestion ->
+                                    SuggestionChip(
+                                        onClick = { applyCompletion(suggestion) },
+                                        label = { Text(suggestion.text) },
+                                    )
+                                }
                             }
-                            editorValue = newValue
-                        },
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .focusRequester(focusRequester)
-                            .onPreviewKeyEvent { event -> handleShortcut(event) },
-                        textStyle = editorStyle,
-                        visualTransformation = visualTransformation,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.None,
-                            autoCorrectEnabled = false,
-                            keyboardType = KeyboardType.Ascii,
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        decorationBox = { inner ->
-                            if (text.isEmpty()) {
-                                Text(
-                                    stringResource(R.string.editor_placeholder),
-                                    style = editorStyle,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            inner()
-                        },
-                    )
+                        }
+                    }
                 }
                 HorizontalDivider()
                 Row(
@@ -566,6 +719,107 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
+    if (variablesOpen) {
+        val env = container.scriptEnvRepository.values(current.id)
+        val state = container.scriptEnvRepository.state(current.id)
+        AlertDialog(
+            onDismissRequest = { variablesOpen = false },
+            title = { Text(stringResource(R.string.editor_variables)) },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    item {
+                        Text(
+                            stringResource(R.string.editor_variables_env),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    if (env.isEmpty()) {
+                        item {
+                            Text(
+                                stringResource(R.string.editor_variables_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        items(env.entries.toList()) { entry ->
+                            KeyValueRow(entry.key, entry.value)
+                        }
+                    }
+                    item { Spacer(Modifier.height(12.dp)) }
+                    item {
+                        Text(
+                            stringResource(R.string.editor_variables_state),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                    if (state.isEmpty()) {
+                        item {
+                            Text(
+                                stringResource(R.string.editor_variables_empty),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        items(state.entries.toList()) { entry ->
+                            KeyValueRow(entry.key, entry.value)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { variablesOpen = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    if (historyOpen) {
+        AlertDialog(
+            onDismissRequest = { historyOpen = false },
+            title = { Text(stringResource(R.string.editor_history)) },
+            text = {
+                when {
+                    historyLoading -> Text(stringResource(R.string.editor_history_loading))
+                    historyEntries.isEmpty() -> Text(stringResource(R.string.editor_history_empty))
+                    else -> LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(historyEntries, key = { it.first.timestamp }) { (version, preview) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        formatDateTime(version.timestamp),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    Text(
+                                        preview.ifBlank { stringResource(R.string.editor_history_blank) },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                TextButton(onClick = { restoreVersion(version) }) {
+                                    Text(stringResource(R.string.editor_history_restore))
+                                }
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { historyOpen = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
     envSource?.let { source ->
         ScriptEnvDialog(
             scriptName = current.name,
@@ -577,6 +831,31 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 container.scriptExecutionManager.run(current.name, source, values)
                 envSource = null
             },
+        )
+    }
+}
+
+@Composable
+private fun KeyValueRow(key: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(
+            key,
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.width(120.dp),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
         )
     }
 }

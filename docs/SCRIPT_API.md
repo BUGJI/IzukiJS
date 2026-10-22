@@ -9,6 +9,8 @@
 | `log(msg)` / `debug(msg)` / `warn(msg)` / `error(msg)` | 输出日志（同时写入日志文件） |
 | `toast(msg)` | 弹出 Toast |
 | `sleep(ms)` | 休眠，可被「停止」中断 |
+| `waitUntil(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回真值，并返回该值；超时返回 `null` |
+| `waitUntilGone(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回假值，返回是否在超时前消失 |
 | `exit()` | 立即结束脚本 |
 | `captureScreen(path)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`） |
 
@@ -122,6 +124,56 @@ fs.writeText("/sdcard/izuki/out.txt", "hello\n", false);
 var entries = fs.list("/sdcard/izuki");
 ```
 
+## `http`（需启用「脚本网络」）
+
+默认关闭，可在「权限与能力 → 其他 → 脚本网络（HTTP）」启用并配置域名白名单。
+白名单留空表示不限制；填写后仅允许这些主机及其子域。只支持 `http` / `https`，
+单次响应体上限 2 MB（超出会截断并返回 `truncated: true`）。
+
+| 方法 | 说明 |
+|---|---|
+| `http.available()` | 脚本网络是否已启用 |
+| `http.isAllowed(url)` | 当前开关 / 白名单是否允许该 URL |
+| `http.request(options)` | 通用请求，返回结果对象 |
+| `http.get(url, options?)` | GET |
+| `http.post(url, body, options?)` | POST 文本 |
+| `http.postJson(url, data, options?)` | POST JSON（自动设置 `Content-Type: application/json`） |
+
+`options` 字段：
+
+| 字段 | 说明 |
+|---|---|
+| `method` | 默认 `GET`；支持 GET / POST / PUT / PATCH / DELETE / HEAD 等 |
+| `headers` | 请求头对象 |
+| `body` | 请求体字符串（GET / HEAD 会忽略） |
+| `timeoutMs` | 连接 / 读取超时，默认 15000，范围 1000~60000 |
+| `followRedirects` | 是否跟随重定向，默认 `true` |
+
+返回对象：`{ok, status, headers, body, url, durationMs, truncated?, error?}`。
+网络错误 / 被拦截时 `ok=false`、`status=0`，并带 `error` 说明。
+
+```js
+var r = http.postJson("https://api.example.com/hook", { event: "done" }, {
+  headers: { "Authorization": "Bearer xxx" },
+  timeoutMs: 5000
+});
+if (r && r.ok) log("响应: " + r.body);
+else warn("请求失败: " + (r && r.error));
+```
+
+> 日志只记录方法、主机、状态码与耗时，不记录 Header / 请求体 / 响应体，避免密钥泄漏。
+> 但仍请避免在脚本里把密钥写进日志。
+
+## `clipboard`
+
+| 方法 | 说明 |
+|---|---|
+| `clipboard.get()` | 读取剪贴板文本，空或失败返回 `null` |
+| `clipboard.set(text)` | 写入文本，返回是否成功 |
+| `clipboard.clear()` | 清空剪贴板 |
+
+> Android 10+ 对后台应用读取剪贴板有额外限制；读不到时可降级为 OCR / 通知读取。
+
 ## `selector`（需无障碍）
 
 | 方法 | 说明 |
@@ -133,6 +185,50 @@ var entries = fs.list("/sdcard/izuki");
 | `selector.setTextById(id, text)` | 设置文本 |
 | `selector.getTextById(id)` / `getTextByText(t)` | 取文本 |
 | `selector.boundsById(id)` | 返回 `"left,top,right,bottom"` |
+
+### 条件查询与等待
+
+除上面的便捷方法外，`selector` 还提供统一的条件查询，列表 / 多匹配 / 等待场景更省事：
+
+```js
+var el = selector.find({ text: "登录" });          // 第 1 个匹配元素
+var items = selector.findAll({ textContains: "订单" });
+selector.waitFor({ id: "com.example:id/confirm" }, 5000);
+selector.waitGone({ text: "加载中" }, 10000);
+selector.click({ textRegex: "^同意" });
+selector.scrollIntoView({ text: "隐私政策" });
+```
+
+条件字段可组合，全部满足才匹配：
+
+| 字段 | 说明 |
+|---|---|
+| `id` / `viewId` | 完整 viewId |
+| `text` | 文本完全相等 |
+| `textContains` / `contains` | 文本包含子串 |
+| `textRegex` | 文本正则（搜索语义） |
+| `desc` / `description` | 描述完全相等 |
+| `descContains` / `descRegex` | 描述包含 / 正则 |
+| `className` / `class` | 类名完全相等 |
+| `clickable` / `editable` | 布尔属性 |
+| `package` / `packageName` | 包名 |
+
+| 方法 | 说明 |
+|---|---|
+| `selector.find(criteria, index=0)` | 第 index 个匹配元素，未找到返回 `null` |
+| `selector.findAll(criteria)` | 全部匹配元素数组 |
+| `selector.nth(criteria, index)` | 等同于 `find(criteria, index)` |
+| `selector.exists(criteria)` / `selector.count(criteria)` | 是否存在 / 匹配数量 |
+| `selector.click(criteria, index=0)` / `longClick(criteria, index=0)` | 点击 / 长按 |
+| `selector.waitFor(criteria, timeoutMs=5000, intervalMs=200, index=0)` | 等待出现，返回元素或 `null` |
+| `selector.waitGone(criteria, timeoutMs=5000, intervalMs=200)` | 等待消失，返回是否成功 |
+| `selector.scrollIntoView(criteria, index=0)` | 尝试滚动到可见区域 |
+
+元素对象字段：`{id,text,desc,className,package,left,top,right,bottom,x,y,width,height,clickable,longClickable,editable,scrollable,enabled,index}`。
+
+`waitForText(text, ...)` / `waitForId(id, ...)` / `waitForTextContains` / `waitForTextRegex` 是
+`waitFor` 的便捷包装；`findByText` / `findByTextContains` / `findByTextRegex` / `findByDesc*`
+同理。所有等待方法都会响应「停止」，不会把界面卡死；单次 `waitFor` / `waitGone` 最长等待 10 分钟。
 
 ## `shell`（需 Shizuku 或 Root）
 
@@ -147,14 +243,23 @@ var entries = fs.list("/sdcard/izuki");
 
 | 方法 | 说明 |
 |---|---|
-| `images.findImage(template, threshold=0.8)` | 找图，返回 `{x, y, confidence}` 或 `null`（坐标为模板中心） |
-| `images.findColor(color, threshold=4)` | 找色，返回 `{x, y}` 或 `null`，`color` 形如 `"#RRGGBB"` |
+| `images.findImage(template, threshold=0.8, region?)` | 找图，返回 `{x, y, confidence}` 或 `null`（坐标为模板中心） |
+| `images.findAllImages(template, threshold=0.8, region?, limit=20)` | 找全部匹配，返回数组 |
+| `images.findColor(color, threshold=4, region?)` | 找色，返回 `{x, y}` 或 `null`，`color` 形如 `"#RRGGBB"` |
+| `images.findAllColors(color, threshold=4, region?, limit=100)` | 找全部同色像素，返回 `[{x,y}]`（按扫描顺序截断到 limit） |
 | `images.findImageInRaw(screenPath, template, threshold)` | 在指定截图上找图 |
+| `images.saveTemplate(path, x, y, width, height)` | 从当前屏幕裁剪区域保存为 PNG 模板，返回路径；`path` 传 `""` 存到缓存目录 |
 | `images.available()` | OpenCV 是否可用 |
 
+`region` 为 `{x, y, width, height}`（屏幕像素），省略时搜索整屏。`limit` 上限 200。
+
 ```js
-var p = images.findImage("/sdcard/tpl.png", 0.85);
+var p = images.findImage("/sdcard/tpl.png", 0.85, { x: 0, y: 300, width: 1080, height: 1500 });
 if (p) click(p.x, p.y);
+
+images.saveTemplate("/sdcard/tpl/ok.png", 420, 1800, 240, 80);
+var hits = images.findAllImages("/sdcard/tpl/item.png", 0.9, null, 10);
+hits.forEach(function (hit) { log(hit.x + "," + hit.y); });
 ```
 
 ## `ocr`（本地 / 在线可切换）
@@ -188,6 +293,7 @@ if (hit) click(hit.x, hit.y);
 | `permissions.notificationListener()` | 通知使用权 |
 | `permissions.manageStorage()` | 全部文件访问 |
 | `permissions.appList()` | 应用列表是否开启 |
+| `permissions.http()` | 脚本网络（HTTP）是否启用 |
 | `permissions.granted()` | 已授予项，逗号分隔 |
 | `permissions.all()` | 全部项 `key=value` |
 | `permissions.has(name)` | 单项查询 |
@@ -220,6 +326,25 @@ if (!permissions.canScreenshot()) {
 | `env.has(key)` | 是否存在 |
 | `env.mode()` | 便捷读取 `MODE` / `mode` |
 | `env.all()` | 全部参数对象 |
+
+## 能力声明 `@need`
+
+为了让脚本只暴露真正需要的高风险命名空间，可在头部用注释声明：
+
+```js
+// @need shell, fs
+// @need http
+```
+
+- 声明后，**只有列出的命名空间会被注册**；未声明的 `shell` / `fs` / `notify` /
+  `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` 在脚本里不存在。
+- 没有 `@need` 时保持旧行为：暴露所有已启用的命名空间。
+- 支持逗号、分号或空格分隔，大小写不敏感；多行会合并。
+- 未知能力名会直接拒绝运行；缺少前置条件（如 `http` 未启用、`shell` 后端未就绪）会记录警告。
+- 这是「最小暴露」而不是安全沙箱：输入（`click` / `swipe` 等）、`device`、`permissions`、
+  `env` / `state` 与 `captureScreen()` 始终可用。
+- `@need` 只控制脚本可直接调用的命名空间；AI Agent 自身的工具（例如 AI 设置里允许的
+  `shell`）不受此声明限制。
 
 ## `state`（运行状态）
 
