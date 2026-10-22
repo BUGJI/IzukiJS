@@ -54,11 +54,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          NOTES="$(cat <<'EOF'
+          ### 下载说明
+
+          - 手机用户：优先下载 `app-arm64-v8a-release.apk`；若设备不支持或安装失败，再尝试 `app-armeabi-v7a-release.apk`。
+          - X86 架构设备或模拟器：请下载 `app-x86_64-release.apk`。
+          EOF
+          )"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" app/build/outputs/apk/release/*.apk --clobber
+            BODY="$(gh release view "$TAG" --json body -q .body)"
+            if ! printf '%s' "$BODY" | grep -qF 'app-arm64-v8a-release.apk'; then
+              gh release edit "$TAG" --notes "$(printf '%s\n\n%s' "$NOTES" "$BODY")"
+            fi
           else
             gh release create "$TAG" \
               --title "$TAG" \
               --generate-notes \
+              --notes "$NOTES" \
               app/build/outputs/apk/release/*.apk
           fi
