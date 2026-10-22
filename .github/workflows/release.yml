@@ -48,9 +48,54 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # 未提供 keystore.properties 时回退 debug 签名，仅用于分发验证。
+      # 固定发布签名。之前没有注入 keystore，release 会回退到 debug 签名，
+      # 而 GitHub runner 每次都是全新的 ~/.android/debug.keystore，
+      # 于是每个版本的证书都不一样，旧版本无法覆盖安装。这里改为缺 keystore 直接失败。
+      - name: Write release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PATH: ${{ runner.temp }}/izukijs-release.jks
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::缺少仓库 secret KEYSTORE_BASE64，拒绝用 debug 签名发布"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          {
+            echo "storeFile=$KEYSTORE_PATH"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > keystore.properties
+          echo "keystore 已写入 $KEYSTORE_PATH"
+
       - name: Build release APKs
         run: ./gradlew :app:assembleRelease --stacktrace
+
+      # 上传前断言证书指纹，防止再次发布出签名不一致的包。
+      - name: Verify release signature
+        run: |
+          set -euo pipefail
+          EXPECTED="95392aa229296dbe946c52328450e22b73fc05b417e068dbf6ba2193a7771ea5"
+          APKSIGNER="$(command -v apksigner || true)"
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)"
+          fi
+          echo "apksigner: $APKSIGNER"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            "$APKSIGNER" verify --print-certs "$apk" | head -20
+            GOT="$("$APKSIGNER" verify --print-certs "$apk" \
+              | awk '/certificate SHA-256 digest/{print $NF; exit}' | tr 'A-F' 'a-f')"
+            if [ "$GOT" != "$EXPECTED" ]; then
+              echo "::error::签名指纹不匹配：$apk -> $GOT"
+              exit 1
+            fi
+            echo "OK: $apk"
+          done
 
       - name: Publish GitHub Release
         env:
