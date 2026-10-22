@@ -21,7 +21,7 @@ enum class McpBindMode(val displayName: String) {
 data class McpConfig(
     val enabled: Boolean = false,
     val port: Int = DEFAULT_PORT,
-    val bindMode: McpBindMode = McpBindMode.LAN,
+    val bindMode: McpBindMode = McpBindMode.LOCALHOST,
     val token: String = "",
     val allowShell: Boolean = false,
     val allowScripts: Boolean = false,

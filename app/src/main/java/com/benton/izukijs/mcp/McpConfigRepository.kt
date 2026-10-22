@@ -35,7 +35,7 @@ class McpConfigRepository(context: Context) {
     private fun load(): McpConfig {
         val mode = prefs.getString(KEY_BIND_MODE, null)
             ?.let { runCatching { McpBindMode.valueOf(it) }.getOrNull() }
-            ?: McpBindMode.LAN
+            ?: McpBindMode.LOCALHOST
         return McpConfig(
             enabled = prefs.getBoolean(KEY_ENABLED, false),
             port = prefs.getInt(KEY_PORT, McpConfig.DEFAULT_PORT),

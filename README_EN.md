@@ -262,9 +262,9 @@ app/src/main/cpp/  # JNI shim for QuickJS interrupt callbacks
 - **Generated on-device, encrypted locally**: the MCP access token is generated locally on the
   device and stored encrypted with the Android Keystore (`SecretCipher`); it is never uploaded to any
   server, and can be rotated via "Regenerate" on the settings page.
-- **Network listening**: MCP listens on the LAN by default (reachable by devices on the same Wi-Fi),
-  and can be switched to "local only" (used with `adb forward`). Anyone holding the token can read
-  the screen and control the device, so use it only on trusted networks.
+- **Network listening**: MCP listens on localhost only by default (used with `adb forward`),
+  and can be switched to the LAN (reachable by devices on the same Wi-Fi). Anyone holding the token
+  can read the screen and control the device, so use it only on trusted networks.
 - **Least privilege by default**: `shell` and script execution are off by default and must be
   explicitly enabled on the settings page; high-risk commands are blocked by default. See
   [`docs/MCP.md`](docs/MCP.md) for details.
