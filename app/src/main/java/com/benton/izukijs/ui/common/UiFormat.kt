@@ -2,6 +2,8 @@ package com.benton.izukijs.ui.common
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.benton.izukijs.R
 import com.benton.izukijs.runtime.LogLevel
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
 import java.time.Instant
@@ -51,3 +53,15 @@ fun formatDateTime(millis: Long): String =
 /** 月-日 时:分（定时任务下次触发时间等）。 */
 fun formatMonthDayTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).format(MONTH_DAY_TIME_FORMAT)
+
+/** 订阅拉取间隔的统一展示；0 表示不会自动拉取。 */
+@Composable
+fun intervalLabel(minutes: Long): String {
+    if (minutes <= 0L) return stringResource(R.string.subscription_interval_disabled)
+    val value = minutes.toInt()
+    return when {
+        minutes % 1_440L == 0L -> stringResource(R.string.subscription_interval_days, value / 1_440)
+        minutes % 60L == 0L -> stringResource(R.string.subscription_interval_hours, value / 60)
+        else -> stringResource(R.string.subscription_interval_minutes, value)
+    }
+}

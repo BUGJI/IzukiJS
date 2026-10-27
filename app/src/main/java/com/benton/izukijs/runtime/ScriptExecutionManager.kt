@@ -6,9 +6,11 @@ import android.os.Environment
 import androidx.core.app.NotificationManagerCompat
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.model.Capability
+import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.service.CaptureSettingsRepository
@@ -37,6 +39,7 @@ class ScriptExecutionManager(
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
     private val scriptEnvRepository: ScriptEnvRepository,
+    private val globalEnvRepository: GlobalEnvRepository,
     private val runHistoryRepository: RunHistoryRepository,
     private val runtimeSettings: RuntimeSettingsRepository,
     private val httpSettingsRepository: HttpSettingsRepository,
@@ -75,13 +78,27 @@ class ScriptExecutionManager(
             logBus.warn("已有脚本正在运行，请先停止")
             return false
         }
-        // 解析脚本头部声明的运行参数，合并（默认值 < 上次保存值 < 本次传入值）。
+        // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
         val spec = ScriptEnvSpec.parse(source)
-        val resolved = spec.defaults() + scriptEnvRepository.values(scriptName) + values
-        if (values.isNotEmpty()) scriptEnvRepository.saveValues(scriptName, resolved)
+        val useGlobal = scriptEnvRepository.useGlobalEnv(scriptName)
+        val resolved = EnvText.resolve(
+            defaults = spec.defaults(),
+            global = globalEnvRepository.current(),
+            script = scriptEnvRepository.env(scriptName),
+            runtime = scriptEnvRepository.values(scriptName) + values,
+            useGlobal = useGlobal,
+        )
+        if (values.isNotEmpty()) {
+            // 只持久化本次表单输入与已有脚本参数，避免把全局变量快照写进脚本参数。
+            scriptEnvRepository.saveValues(
+                scriptName,
+                spec.defaults() + scriptEnvRepository.values(scriptName) + values,
+            )
+        }
         val scriptEnv = ScriptEnv(scriptName, resolved, scriptEnvRepository)
         if (resolved.isNotEmpty()) {
-            logBus.info("⚙ 运行参数: " + resolved.entries.joinToString(", ") { "${it.key}=${it.value}" })
+            // 只记录键名，避免把可能含密钥的变量值写入日志。
+            logBus.info("⚙ 运行参数: " + resolved.keys.sorted().joinToString(", "))
         }
 
         _runningScript.value = scriptName

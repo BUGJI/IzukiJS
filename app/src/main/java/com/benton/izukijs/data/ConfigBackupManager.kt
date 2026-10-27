@@ -35,6 +35,7 @@ class ConfigBackupManager(
     private val editorSettingsRepository: EditorSettingsRepository,
     private val appearanceRepository: AppearanceRepository,
     private val updateSettingsRepository: UpdateSettingsRepository,
+    private val globalEnvRepository: GlobalEnvRepository,
 ) {
 
     fun exportJson(): String {
@@ -50,6 +51,7 @@ class ConfigBackupManager(
         root.put("editor", editorToJson(editorSettingsRepository.current()))
         root.put("appearance", appearanceToJson(appearanceRepository.current()))
         root.put("update", updateToJson(updateSettingsRepository.current()))
+        root.put("globalEnv", globalEnvToJson(globalEnvRepository.current()))
         return root.toString(2)
     }
 
@@ -65,6 +67,7 @@ class ConfigBackupManager(
         root.optJSONObject("editor")?.let { editorSettingsRepository.save(editorFromJson(it)) }
         root.optJSONObject("appearance")?.let { appearanceRepository.save(appearanceFromJson(it)) }
         root.optJSONObject("update")?.let { updateSettingsRepository.save(updateFromJson(it)) }
+        root.optJSONObject("globalEnv")?.let { globalEnvRepository.save(globalEnvFromJson(it)) }
     }
 
     fun resetAll() {
@@ -77,6 +80,7 @@ class ConfigBackupManager(
         editorSettingsRepository.save(EditorSettings())
         appearanceRepository.save(AppearanceSettings())
         updateSettingsRepository.save(UpdateSettings())
+        globalEnvRepository.save(emptyMap())
     }
 
     // ---- AI ----
@@ -284,6 +288,14 @@ class ConfigBackupManager(
             autoCheck = o.optBoolean("autoCheck", base.autoCheck),
             method = o.optString("method", base.method.name).toEnumOr(base.method),
         )
+    }
+
+    // ---- Global env ----
+
+    private fun globalEnvToJson(values: Map<String, String>): JSONObject = JSONObject(values as Map<*, *>)
+
+    private fun globalEnvFromJson(o: JSONObject): Map<String, String> = buildMap {
+        o.keys().forEach { key -> put(key, o.optString(key, "")) }
     }
 
     private companion object {

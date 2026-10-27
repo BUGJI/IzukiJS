@@ -33,6 +33,19 @@ class ScheduleRepository(context: Context) {
         write(list().filterNot { it.id == id })
     }
 
+    fun moveScript(oldId: String, newId: String, newName: String) = synchronized(lock) {
+        if (oldId == newId) return@synchronized
+        val current = list()
+        val next = current.map { schedule ->
+            if (schedule.scriptId == oldId) {
+                schedule.copy(scriptId = newId, scriptName = newName)
+            } else {
+                schedule
+            }
+        }
+        if (next != current) write(next)
+    }
+
     private fun write(list: List<Schedule>) {
         val array = JSONArray()
         list.sortedWith(compareBy({ it.kind == ScheduleKind.EVENT }, { it.triggerAtMillis }))
@@ -44,6 +57,9 @@ class ScheduleRepository(context: Context) {
     suspend fun listAsync(): List<Schedule> = withContext(Dispatchers.IO) { list() }
 
     suspend fun deleteAsync(id: String) = withContext(Dispatchers.IO) { delete(id) }
+
+    suspend fun moveScriptAsync(oldId: String, newId: String, newName: String) =
+        withContext(Dispatchers.IO) { moveScript(oldId, newId, newName) }
 
     private fun Schedule.toJson(): JSONObject = JSONObject().apply {
         put("id", id)

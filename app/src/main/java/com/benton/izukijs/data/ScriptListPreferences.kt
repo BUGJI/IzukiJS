@@ -10,6 +10,9 @@ import org.json.JSONObject
 /** 脚本列表排序方式。 */
 enum class ScriptSort { UPDATED, NAME }
 
+/** 脚本列表分组方式。 */
+enum class ScriptGroupMode { NONE, TAG }
+
 /**
  * 脚本列表的展示偏好：置顶（收藏）集合、标签与排序方式，持久化到 SharedPreferences。
  */
@@ -31,15 +34,37 @@ class ScriptListPreferences(context: Context) {
     )
     val sort: StateFlow<ScriptSort> = _sort.asStateFlow()
 
+    private val _groupMode = MutableStateFlow(
+        runCatching { ScriptGroupMode.valueOf(prefs.getString(KEY_GROUP_MODE, null).orEmpty()) }
+            .getOrDefault(ScriptGroupMode.NONE),
+    )
+    val groupMode: StateFlow<ScriptGroupMode> = _groupMode.asStateFlow()
+
     fun togglePinned(id: String) {
-        val next = if (id in _pinned.value) _pinned.value - id else _pinned.value + id
+        setPinned(id, id !in _pinned.value)
+    }
+
+    fun setPinned(id: String, pinned: Boolean) {
+        val next = if (pinned) _pinned.value + id else _pinned.value - id
+        if (next == _pinned.value) return
         _pinned.value = next
         prefs.edit().putStringSet(KEY_PINNED, next).apply()
+    }
+
+    fun movePinned(oldId: String, newId: String) {
+        if (oldId == newId || oldId !in _pinned.value) return
+        setPinned(oldId, false)
+        setPinned(newId, true)
     }
 
     fun setSort(sort: ScriptSort) {
         _sort.value = sort
         prefs.edit().putString(KEY_SORT, sort.name).apply()
+    }
+
+    fun setGroupMode(mode: ScriptGroupMode) {
+        _groupMode.value = mode
+        prefs.edit().putString(KEY_GROUP_MODE, mode.name).apply()
     }
 
     fun setTags(id: String, tags: List<String>) {
@@ -100,6 +125,7 @@ class ScriptListPreferences(context: Context) {
         const val KEY_PINNED = "pinned"
         const val KEY_SORT = "sort"
         const val KEY_TAGS = "tags"
+        const val KEY_GROUP_MODE = "group_mode"
         const val MAX_TAGS = 12
         const val MAX_TAG_LENGTH = 24
     }

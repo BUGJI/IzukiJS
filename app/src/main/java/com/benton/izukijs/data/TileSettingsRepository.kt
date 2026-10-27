@@ -24,6 +24,11 @@ class TileSettingsRepository(context: Context) {
         }.apply()
     }
 
+    fun moveScriptId(oldId: String, newId: String) {
+        if (oldId == newId || _scriptId.value != oldId) return
+        setScriptId(newId)
+    }
+
     private companion object {
         const val PREFS = "izukijs_tile"
         const val KEY_SCRIPT_ID = "script_id"

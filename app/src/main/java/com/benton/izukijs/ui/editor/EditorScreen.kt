@@ -92,6 +92,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.data.ScriptVersion
 import com.benton.izukijs.model.EnvField
+import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.runtime.LogEntry
@@ -444,7 +445,13 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 container.scriptExecutionManager.run(current.name, runText)
             } else {
                 envFields = spec.fields
-                envInitial = spec.defaults() + stored
+                envInitial = EnvText.resolve(
+                    defaults = spec.defaults(),
+                    global = container.globalEnvRepository.current(),
+                    script = container.scriptEnvRepository.env(current.id),
+                    runtime = stored,
+                    useGlobal = container.scriptEnvRepository.useGlobalEnv(current.id),
+                )
                 envSource = runText
             }
         }

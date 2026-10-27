@@ -57,12 +57,12 @@ import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SnackbarController
 import com.benton.izukijs.ui.editor.EditorScreen
 import com.benton.izukijs.ui.hid.HidSetupScreen
-import com.benton.izukijs.ui.inspector.LayoutInspectorScreen
 import com.benton.izukijs.ui.logs.LogsScreen
 import com.benton.izukijs.ui.mcp.McpServerScreen
 import com.benton.izukijs.ui.permission.PermissionScreen
 import com.benton.izukijs.ui.run.RunScreen
 import com.benton.izukijs.ui.schedule.ScheduleScreen
+import com.benton.izukijs.ui.scriptedit.ScriptEditScreen
 import com.benton.izukijs.ui.scripts.ScriptsScreen
 import com.benton.izukijs.ui.settings.SettingsCategory
 import com.benton.izukijs.ui.settings.SettingsDetailScreen
@@ -79,14 +79,16 @@ object Routes {
 
     const val SETTINGS_DETAIL = "settings/{$ARG_SETTINGS_CATEGORY}"
     const val EDITOR = "editor/{$ARG_SCRIPT_ID}"
+    const val SCRIPT_EDIT = "script_edit/{$ARG_SCRIPT_ID}"
     const val SETUP = "setup"
-    const val INSPECTOR = "inspector"
     const val SCHEDULE = "schedule"
     const val HID = "hid"
     const val AI = "ai"
     const val MCP = "mcp"
 
     fun editor(scriptId: String) = "editor/$scriptId"
+
+    fun scriptEdit(scriptId: String) = "script_edit/$scriptId"
 
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
 }
@@ -245,7 +247,7 @@ private fun MainTabsHost(
         onOpenSetup = { open(Routes.SETUP) },
         onOpenScripts = { onSelectTab(BottomItem.SCRIPTS.ordinal) },
         onOpenScript = { id -> open(Routes.editor(id)) },
-        onOpenInspector = { open(Routes.INSPECTOR) },
+        onOpenScriptEdit = { id -> open(Routes.scriptEdit(id)) },
         onOpenSchedule = { open(Routes.SCHEDULE) },
         onOpenCategory = { category -> open(Routes.settingsDetail(category)) },
         onOpenAi = { open(Routes.AI) },
@@ -264,7 +266,7 @@ private fun MainTabs(
     onOpenSetup: () -> Unit,
     onOpenScripts: () -> Unit,
     onOpenScript: (String) -> Unit,
-    onOpenInspector: () -> Unit,
+    onOpenScriptEdit: (String) -> Unit,
     onOpenSchedule: () -> Unit,
     onOpenCategory: (SettingsCategory) -> Unit,
     onOpenAi: () -> Unit,
@@ -285,7 +287,7 @@ private fun MainTabs(
 
             BottomItem.SCRIPTS -> ScriptsScreen(
                 onOpenScript = onOpenScript,
-                onOpenInspector = onOpenInspector,
+                onEditScript = onOpenScriptEdit,
                 onOpenSchedule = onOpenSchedule,
             )
 
@@ -376,14 +378,20 @@ private fun DetailNavHost(
                 onBack = { navController.popBackStack() },
             )
         }
+        composable(
+            route = Routes.SCRIPT_EDIT,
+            arguments = listOf(navArgument(Routes.ARG_SCRIPT_ID) { type = NavType.StringType }),
+        ) { entry ->
+            ScriptEditScreen(
+                scriptId = entry.arguments?.getString(Routes.ARG_SCRIPT_ID).orEmpty(),
+                onBack = { navController.popBackStack() },
+            )
+        }
         composable(Routes.SETUP) {
             PermissionScreen(
                 onBack = { navController.popBackStack() },
                 onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
             )
-        }
-        composable(Routes.INSPECTOR) {
-            LayoutInspectorScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.SCHEDULE) {
             ScheduleScreen(onBack = { navController.popBackStack() })

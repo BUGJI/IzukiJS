@@ -42,10 +42,38 @@ class ScriptEnvRepository(context: Context) {
         entries[scriptId]?.state.orEmpty()
     }
 
+    fun useGlobalEnv(scriptId: String): Boolean = synchronized(lock) {
+        entries[scriptId]?.useGlobalEnv ?: true
+    }
+
+    fun env(scriptId: String): Map<String, String> = synchronized(lock) {
+        entries[scriptId]?.env.orEmpty()
+    }
+
+    fun envText(scriptId: String): String = synchronized(lock) {
+        entries[scriptId]?.envText.orEmpty()
+    }
+
     /** 覆盖某个脚本的全部输入参数。 */
     fun saveValues(scriptId: String, values: Map<String, String>) = synchronized(lock) {
         val current = entries[scriptId] ?: ScriptEnvData()
         entries[scriptId] = current.copy(values = values)
+        persist()
+    }
+
+    /** 保存脚本级环境变量与全局变量开关。 */
+    fun saveEnvSettings(
+        scriptId: String,
+        useGlobalEnv: Boolean,
+        env: Map<String, String>,
+        envText: String? = null,
+    ) = synchronized(lock) {
+        val current = entries[scriptId] ?: ScriptEnvData()
+        entries[scriptId] = current.copy(
+            useGlobalEnv = useGlobalEnv,
+            env = env,
+            envText = envText ?: current.envText,
+        )
         persist()
     }
 
@@ -86,6 +114,9 @@ class ScriptEnvRepository(context: Context) {
                 entries[id] = ScriptEnvData(
                     values = obj.optJSONObject("values").toStringMap(),
                     state = obj.optJSONObject("state").toStringMap(),
+                    useGlobalEnv = obj.optBoolean("useGlobalEnv", true),
+                    env = obj.optJSONObject("env").toStringMap(),
+                    envText = obj.optString("envText", ""),
                 )
             }
         }
@@ -99,6 +130,9 @@ class ScriptEnvRepository(context: Context) {
                 JSONObject().apply {
                     put("values", JSONObject(entry.values as Map<*, *>))
                     put("state", JSONObject(entry.state as Map<*, *>))
+                    put("useGlobalEnv", entry.useGlobalEnv)
+                    put("env", JSONObject(entry.env as Map<*, *>))
+                    if (entry.envText.isNotBlank()) put("envText", entry.envText)
                 },
             )
         }

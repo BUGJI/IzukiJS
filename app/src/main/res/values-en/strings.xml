@@ -10,6 +10,8 @@
     <string name="common_confirm">OK</string>
     <string name="common_cancel">Cancel</string>
     <string name="common_delete">Delete</string>
+    <string name="common_save">Save</string>
+    <string name="common_edit">Edit</string>
     <string name="common_undo">Undo</string>
     <string name="common_run">Run</string>
     <string name="common_stop">Stop</string>
@@ -117,17 +119,18 @@
 
     <!-- Scripts -->
     <string name="scripts_title">Scripts</string>
-    <string name="scripts_inspector">Layout inspector</string>
     <string name="scripts_import">Import script</string>
     <string name="scripts_schedule">Scheduled tasks</string>
     <string name="scripts_new">New script</string>
+    <string name="scripts_default_name">New script</string>
     <string name="scripts_search">Search names or tags</string>
     <string name="scripts_empty">No scripts yet. Tap + in the corner to create one.</string>
     <string name="scripts_no_match">No scripts match \"%1$s\"</string>
     <string name="scripts_name">Name</string>
     <string name="scripts_create">Create</string>
-    <string name="scripts_rename">Rename</string>
     <string name="scripts_edit_tags">Edit tags</string>
+    <string name="scripts_manage_tags">Manage tags</string>
+    <string name="scripts_settings">Script settings</string>
     <string name="scripts_tags_label">Tags</string>
     <string name="scripts_tags_placeholder">e.g. daily, game, check-in (comma-separated)</string>
     <string name="scripts_pin">Pin to top</string>
@@ -136,8 +139,11 @@
     <string name="scripts_tile_unpin">Unpin from tile</string>
     <string name="scripts_sort_updated">Sort by updated</string>
     <string name="scripts_sort_name">Sort by name</string>
+    <string name="scripts_group_none">No grouping</string>
+    <string name="scripts_group_by_tag">Group by tag</string>
+    <string name="scripts_untagged">Untagged</string>
     <string name="scripts_delete_title">Delete script</string>
-    <string name="scripts_delete_message">Delete \"%1$s\"? You can undo from the message afterwards.</string>
+    <string name="scripts_delete_message">Delete \"%1$s\"? You can undo this from the message at the bottom.</string>
     <string name="scripts_deleted">Deleted \"%1$s\"</string>
     <string name="scripts_exported">Exported %1$s</string>
     <string name="scripts_export_failed">Export failed</string>
@@ -148,7 +154,57 @@
     <string name="scripts_scan_no_code">No QR code detected</string>
     <string name="scripts_scan_invalid_link">QR code does not contain a valid download link</string>
     <string name="scripts_scan_download_failed">Failed to download script</string>
-    <string name="scripts_scan_failed">Could not open the camera to scan</string>
+    <string name="scripts_scan_failed">Scanning failed. Please try again.</string>
+    <string name="scripts_subscription_badge">Subscription · sync every %1$s</string>
+    <string name="scripts_subscription_badge_disabled">Subscription · disabled</string>
+    <string name="scripts_subscription_failed">%1$s · sync failed</string>
+
+    <!-- Script editor -->
+    <string name="script_edit_title">Edit \"%1$s\"</string>
+    <string name="script_edit_title_fallback">Edit script</string>
+    <string name="script_edit_not_found">Script not found</string>
+    <string name="script_edit_name">Name</string>
+    <string name="script_edit_name_required">Enter a script name</string>
+    <string name="script_edit_discard_title">Unsaved changes</string>
+    <string name="script_edit_discard_message">Discard your changes and go back?</string>
+    <string name="script_edit_discard">Discard</string>
+    <string name="script_edit_save_and_back">Save and go back</string>
+    <string name="script_edit_continue">Keep editing</string>
+    <string name="script_edit_tab_env">Environment</string>
+    <string name="script_edit_env_use_global">Use global variables</string>
+    <string name="script_edit_env_use_global_desc">Merges with %1$d global variable(s); this script wins on conflicts.</string>
+    <string name="script_edit_env_variables">Script environment variables</string>
+    <string name="script_edit_tab_subscription">Subscription</string>
+    <string name="subscription_url">Download URL</string>
+    <string name="subscription_url_hint">https://example.com/script.js</string>
+    <string name="subscription_url_invalid">Enter a valid http/https link</string>
+    <string name="subscription_enabled">Enable subscription</string>
+    <string name="subscription_disabled_hint">When enabled, the script syncs on the interval</string>
+    <string name="subscription_not_configured">No subscription configured</string>
+    <string name="subscription_interval">Sync interval</string>
+    <string name="subscription_interval_minutes">%1$d min</string>
+    <string name="subscription_interval_hours">%1$d h</string>
+    <string name="subscription_interval_days">%1$d d</string>
+    <string name="subscription_interval_disabled">Disabled</string>
+    <string name="subscription_interval_zero_hint">0 disables automatic syncing</string>
+    <string name="subscription_interval_invalid">Enter 0 (disabled) or at least %1$d minutes</string>
+    <string name="subscription_interval_needs_url">Enter a download URL to set a sync interval</string>
+    <string name="subscription_min_interval">Minimum %1$d min</string>
+    <string name="subscription_sync_now">Sync now</string>
+    <string name="subscription_delete">Delete subscription</string>
+    <string name="subscription_delete_title">Delete subscription</string>
+    <string name="subscription_delete_confirm">Delete the subscription for \"%1$s\"?</string>
+    <string name="subscription_last_sync">Last sync: %1$s</string>
+    <string name="subscription_next_sync">Next sync: %1$s</string>
+    <string name="subscription_next_none">Not scheduled</string>
+    <string name="subscription_never">Never synced</string>
+    <string name="subscription_error">Sync failed: %1$s</string>
+    <string name="subscription_saved">Subscription saved</string>
+    <string name="subscription_saved_disabled">Subscription saved; automatic syncing is off</string>
+    <string name="subscription_deleted">Subscription deleted</string>
+    <string name="subscription_sync_success">Sync complete</string>
+    <string name="subscription_sync_failed">Sync failed</string>
+    <string name="script_saved">Saved</string>
 
     <!-- Permissions -->
     <string name="perm_tip">Tip: you can revoke unnecessary permissions while a script runs to lower the risk of detection. Pick the permissions your current script actually needs based on the pros and cons below.</string>
@@ -262,6 +318,14 @@
     <string name="settings_storage">Storage &amp; logs</string>
     <string name="settings_backup">Backup &amp; restore</string>
     <string name="settings_about">About</string>
+    <string name="settings_env">Environment variables</string>
+    <string name="settings_env_summary">%1$d variables defined</string>
+    <string name="settings_env_desc">Shared by all scripts by default; same-name script variables take precedence.</string>
+    <string name="settings_env_placeholder">Global variables</string>
+    <string name="settings_env_saved">Global variables saved</string>
+    <string name="env_example">KEY=VALUE</string>
+    <string name="env_hint">One per line; blank lines and lines starting with # are ignored.</string>
+    <string name="env_invalid_line">Line %1$d is invalid; expected KEY=VALUE</string>
     <string name="settings_unknown_category">Unknown settings category.</string>
     <string name="settings_control_summary">Read %1$s · operate %2$s · capture %3$s · OCR %4$s</string>
     <string name="settings_ai_configured">Configured</string>
@@ -462,19 +526,6 @@
     <string name="hid_state_error">Connection error</string>
     <string name="hid_need_bt_permission">Bluetooth permission is required to scan devices</string>
     <string name="hid_enable_bt">Please turn on Bluetooth first</string>
-
-    <!-- Layout inspector -->
-    <string name="inspector_title">Layout inspector</string>
-    <string name="inspector_no_tree">Cannot read the node tree, enable the accessibility service first</string>
-    <string name="inspector_no_nodes">No nodes to inspect on this screen</string>
-    <string name="inspector_tap_hint">Tap a control in the screenshot to view its selector</string>
-    <string name="inspector_select_hint">Select a node to view its selector</string>
-    <string name="inspector_copy_selector">Copy selector</string>
-    <string name="inspector_copied">Selector copied</string>
-    <string name="inspector_field_id">id</string>
-    <string name="inspector_field_text">text</string>
-    <string name="inspector_field_desc">desc</string>
-    <string name="inspector_field_bounds">bounds</string>
 
     <!-- Scheduled tasks -->
     <string name="schedule_title">Scheduled tasks</string>

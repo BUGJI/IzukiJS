@@ -318,6 +318,9 @@ fun EmptyState(text: String, modifier: Modifier = Modifier) {
     }
 }
 
+/** 页面内容的最大宽度；宽屏下据此居中，避免单列被拉得过宽。 */
+val PageMaxWidth: Dp = 840.dp
+
 /**
  * 可纵向滚动的页面内容容器：限制最大宽度并居中，避免平板 / 折叠屏上单列被拉得过宽。
  * 调用方通过 [modifier] 传入 Scaffold 的 padding 与页面内边距。
@@ -325,7 +328,7 @@ fun EmptyState(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun PageColumn(
     modifier: Modifier = Modifier,
-    maxWidth: Dp = 840.dp,
+    maxWidth: Dp = PageMaxWidth,
     verticalArrangement: androidx.compose.foundation.layout.Arrangement.Vertical =
         androidx.compose.foundation.layout.Arrangement.Top,
     content: @Composable ColumnScope.() -> Unit,
@@ -336,7 +339,8 @@ fun PageColumn(
         verticalArrangement = verticalArrangement,
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth().widthIn(max = maxWidth),
+            // 顺序不能反：fillMaxWidth 在前会把宽度锁死，widthIn 就再也收不回来了。
+            modifier = Modifier.widthIn(max = maxWidth).fillMaxWidth(),
             verticalArrangement = verticalArrangement,
             content = content,
         )

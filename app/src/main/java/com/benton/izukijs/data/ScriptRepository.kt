@@ -71,6 +71,7 @@ class ScriptRepository(
         if (script.file.exists()) script.file.readText() else ""
 
     fun write(script: ScriptInfo, content: String) {
+        if (!script.file.exists()) return
         val previous = runCatching {
             if (script.file.exists()) script.file.readText() else null
         }.getOrNull()

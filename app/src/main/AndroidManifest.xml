@@ -150,6 +150,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".subscription.SubscriptionReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".schedule.ScheduleEventReceiver"
             android:exported="false">
             <intent-filter>

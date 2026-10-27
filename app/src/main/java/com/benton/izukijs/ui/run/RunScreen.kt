@@ -54,6 +54,7 @@ import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.EnvField
+import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.PageColumn
@@ -95,6 +96,7 @@ fun RunScreen(
             val source = container.scriptRepository.readAsync(script)
             val spec = ScriptEnvSpec.parse(source)
             val stored = container.scriptEnvRepository.values(script.id)
+            val useGlobalEnv = container.scriptEnvRepository.useGlobalEnv(script.id)
             if (spec.isEmpty && stored.isEmpty()) {
                 container.scriptExecutionManager.run(script.name, source)
             } else {
@@ -102,7 +104,13 @@ fun RunScreen(
                     script = script,
                     source = source,
                     fields = spec.fields,
-                    initial = spec.defaults() + stored,
+                    initial = EnvText.resolve(
+                        defaults = spec.defaults(),
+                        global = container.globalEnvRepository.current(),
+                        script = container.scriptEnvRepository.env(script.id),
+                        runtime = stored,
+                        useGlobal = useGlobalEnv,
+                    ),
                 )
             }
         }

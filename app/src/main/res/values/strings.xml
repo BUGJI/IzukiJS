@@ -10,6 +10,8 @@
     <string name="common_confirm">确定</string>
     <string name="common_cancel">取消</string>
     <string name="common_delete">删除</string>
+    <string name="common_save">保存</string>
+    <string name="common_edit">编辑</string>
     <string name="common_undo">撤销</string>
     <string name="common_run">运行</string>
     <string name="common_stop">停止</string>
@@ -117,27 +119,31 @@
 
     <!-- 脚本中心 -->
     <string name="scripts_title">脚本中心</string>
-    <string name="scripts_inspector">布局分析</string>
     <string name="scripts_import">导入脚本</string>
     <string name="scripts_schedule">定时任务</string>
     <string name="scripts_new">新建脚本</string>
+    <string name="scripts_default_name">新脚本</string>
     <string name="scripts_search">搜索名称或标签</string>
     <string name="scripts_empty">还没有脚本，点击右下角新建</string>
     <string name="scripts_no_match">没有匹配「%1$s」的脚本</string>
     <string name="scripts_name">名称</string>
     <string name="scripts_create">创建</string>
-    <string name="scripts_rename">重命名</string>
     <string name="scripts_edit_tags">编辑标签</string>
+    <string name="scripts_manage_tags">管理标签</string>
+    <string name="scripts_settings">脚本设置</string>
     <string name="scripts_tags_label">标签</string>
-    <string name="scripts_tags_placeholder">如：日常, 游戏, 签到（逗号分隔）</string>
+    <string name="scripts_tags_placeholder">如：日常、游戏、签到（逗号分隔）</string>
     <string name="scripts_pin">置顶</string>
     <string name="scripts_unpin">取消置顶</string>
     <string name="scripts_tile_pin">钉到磁贴</string>
     <string name="scripts_tile_unpin">取消钉选磁贴</string>
     <string name="scripts_sort_updated">按更新时间排序</string>
     <string name="scripts_sort_name">按名称排序</string>
+    <string name="scripts_group_none">不分组</string>
+    <string name="scripts_group_by_tag">按标签分组</string>
+    <string name="scripts_untagged">未分类</string>
     <string name="scripts_delete_title">删除脚本</string>
-    <string name="scripts_delete_message">确定删除「%1$s」吗？删除后可在提示中撤销。</string>
+    <string name="scripts_delete_message">确定删除「%1$s」吗？删除后可在底部提示条中撤销。</string>
     <string name="scripts_deleted">已删除「%1$s」</string>
     <string name="scripts_exported">已导出 %1$s</string>
     <string name="scripts_export_failed">导出失败</string>
@@ -148,7 +154,57 @@
     <string name="scripts_scan_no_code">未识别到二维码</string>
     <string name="scripts_scan_invalid_link">二维码内容不是有效的下载链接</string>
     <string name="scripts_scan_download_failed">脚本下载失败</string>
-    <string name="scripts_scan_failed">无法启动相机，扫码失败</string>
+    <string name="scripts_scan_failed">扫码失败，请重试</string>
+    <string name="scripts_subscription_badge">订阅 · 每 %1$s 同步</string>
+    <string name="scripts_subscription_badge_disabled">订阅 · 已禁用</string>
+    <string name="scripts_subscription_failed">%1$s · 同步失败</string>
+
+    <!-- 脚本编辑 -->
+    <string name="script_edit_title">编辑「%1$s」</string>
+    <string name="script_edit_title_fallback">编辑脚本</string>
+    <string name="script_edit_not_found">脚本不存在</string>
+    <string name="script_edit_name">名称</string>
+    <string name="script_edit_name_required">请输入脚本名称</string>
+    <string name="script_edit_discard_title">未保存的修改</string>
+    <string name="script_edit_discard_message">放弃本次修改并返回？</string>
+    <string name="script_edit_discard">放弃修改</string>
+    <string name="script_edit_save_and_back">保存并返回</string>
+    <string name="script_edit_continue">继续编辑</string>
+    <string name="script_edit_tab_env">环境变量</string>
+    <string name="script_edit_env_use_global">使用全局变量</string>
+    <string name="script_edit_env_use_global_desc">与 %1$d 个全局变量合并；同名时本脚本优先。</string>
+    <string name="script_edit_env_variables">脚本环境变量</string>
+    <string name="script_edit_tab_subscription">订阅</string>
+    <string name="subscription_url">下载链接</string>
+    <string name="subscription_url_hint">https://example.com/script.js</string>
+    <string name="subscription_url_invalid">请输入有效的 http/https 链接</string>
+    <string name="subscription_enabled">启用订阅</string>
+    <string name="subscription_disabled_hint">启用后会按间隔自动同步并更新脚本</string>
+    <string name="subscription_not_configured">未配置订阅</string>
+    <string name="subscription_interval">同步间隔</string>
+    <string name="subscription_interval_minutes">%1$d 分钟</string>
+    <string name="subscription_interval_hours">%1$d 小时</string>
+    <string name="subscription_interval_days">%1$d 天</string>
+    <string name="subscription_interval_disabled">已禁用</string>
+    <string name="subscription_interval_zero_hint">0 表示不自动同步</string>
+    <string name="subscription_interval_invalid">请输入 0（禁用）或不小于 %1$d 的分钟数</string>
+    <string name="subscription_interval_needs_url">填写下载链接后可设置同步间隔</string>
+    <string name="subscription_min_interval">最短 %1$d 分钟</string>
+    <string name="subscription_sync_now">立即同步</string>
+    <string name="subscription_delete">删除订阅</string>
+    <string name="subscription_delete_title">删除订阅</string>
+    <string name="subscription_delete_confirm">确定删除「%1$s」的订阅吗？</string>
+    <string name="subscription_last_sync">上次同步：%1$s</string>
+    <string name="subscription_next_sync">下次同步：%1$s</string>
+    <string name="subscription_next_none">未安排</string>
+    <string name="subscription_never">尚未同步</string>
+    <string name="subscription_error">同步失败：%1$s</string>
+    <string name="subscription_saved">订阅已保存</string>
+    <string name="subscription_saved_disabled">订阅已保存，自动同步已关闭</string>
+    <string name="subscription_deleted">订阅已删除</string>
+    <string name="subscription_sync_success">同步完成</string>
+    <string name="subscription_sync_failed">同步失败</string>
+    <string name="script_saved">已保存</string>
 
     <!-- 权限与能力 -->
     <string name="perm_tip">提示：脚本运行时可以收回非必要权限，以降低被风控识别的风险。按标注的优缺点选择当前脚本真正需要的权限即可。</string>
@@ -262,6 +318,14 @@
     <string name="settings_storage">存储与日志</string>
     <string name="settings_backup">备份与恢复</string>
     <string name="settings_about">关于</string>
+    <string name="settings_env">环境变量</string>
+    <string name="settings_env_summary">已定义 %1$d 个变量</string>
+    <string name="settings_env_desc">所有脚本默认共享这些变量；脚本内同名变量优先。</string>
+    <string name="settings_env_placeholder">全局变量</string>
+    <string name="settings_env_saved">全局变量已保存</string>
+    <string name="env_example">KEY=VALUE</string>
+    <string name="env_hint">每行一条，空行与 # 开头的注释会被忽略。</string>
+    <string name="env_invalid_line">第 %1$d 行格式无效，应为 KEY=VALUE</string>
     <string name="settings_unknown_category">未知的设置分组。</string>
     <string name="settings_control_summary">读取 %1$s · 操作 %2$s · 录屏%3$s · OCR %4$s</string>
     <string name="settings_ai_configured">已配置</string>
@@ -462,19 +526,6 @@
     <string name="hid_state_error">连接错误</string>
     <string name="hid_need_bt_permission">需要蓝牙权限才能扫描设备</string>
     <string name="hid_enable_bt">请先开启蓝牙</string>
-
-    <!-- 布局分析 -->
-    <string name="inspector_title">布局分析</string>
-    <string name="inspector_no_tree">无法读取控件树，请先开启无障碍服务</string>
-    <string name="inspector_no_nodes">当前界面没有可分析的节点</string>
-    <string name="inspector_tap_hint">点击屏幕截图中的控件查看选择器</string>
-    <string name="inspector_select_hint">选择节点查看选择器</string>
-    <string name="inspector_copy_selector">复制选择器</string>
-    <string name="inspector_copied">已复制选择器</string>
-    <string name="inspector_field_id">id</string>
-    <string name="inspector_field_text">文本</string>
-    <string name="inspector_field_desc">描述</string>
-    <string name="inspector_field_bounds">范围</string>
 
     <!-- 定时任务 -->
     <string name="schedule_title">定时任务</string>

@@ -15,6 +15,7 @@ import com.benton.izukijs.controller.shizuku.ShizukuManager
 import com.benton.izukijs.data.AppearanceRepository
 import com.benton.izukijs.data.ConfigBackupManager
 import com.benton.izukijs.data.EditorSettingsRepository
+import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptImporter
@@ -42,6 +43,8 @@ import com.benton.izukijs.schedule.ScheduleRunner
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.WakeLockController
+import com.benton.izukijs.subscription.SubscriptionManager
+import com.benton.izukijs.subscription.SubscriptionRepository
 import com.benton.izukijs.update.UpdateManager
 import com.benton.izukijs.update.UpdateSettingsRepository
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +78,8 @@ class AppContainer(private val application: Application) {
     val scriptListPreferences = ScriptListPreferences(application)
 
     val scriptEnvRepository = ScriptEnvRepository(application)
+
+    val globalEnvRepository = GlobalEnvRepository(application)
 
     val runHistoryRepository = RunHistoryRepository(application)
 
@@ -114,6 +119,7 @@ class AppContainer(private val application: Application) {
         editorSettingsRepository = editorSettingsRepository,
         appearanceRepository = appearanceRepository,
         updateSettingsRepository = updateSettingsRepository,
+        globalEnvRepository = globalEnvRepository,
     )
 
     val scriptExecutionManager = ScriptExecutionManager(
@@ -125,6 +131,7 @@ class AppContainer(private val application: Application) {
         aiConfigRepository,
         captureSettingsRepository,
         scriptEnvRepository,
+        globalEnvRepository,
         runHistoryRepository,
         runtimeSettingsRepository,
         httpSettingsRepository,
@@ -194,6 +201,15 @@ class AppContainer(private val application: Application) {
 
     val scheduleManager = ScheduleManager(application, scheduleRepository, logBus)
 
+    val subscriptionRepository = SubscriptionRepository(application)
+
+    val subscriptionManager = SubscriptionManager(
+        application,
+        subscriptionRepository,
+        scriptRepository,
+        logBus,
+    )
+
     val scheduleRunner = ScheduleRunner(
         context = application,
         repository = scheduleRepository,
@@ -227,6 +243,7 @@ class AppContainer(private val application: Application) {
         appScope.launch {
             logFileStore.trim()
             scheduleManager.rescheduleAll()
+            subscriptionManager.rescheduleAll()
         }
         appScope.launch { updateManager.startIfAutoCheckEnabled() }
     }

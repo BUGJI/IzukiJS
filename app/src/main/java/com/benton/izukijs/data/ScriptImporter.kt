@@ -3,6 +3,7 @@ package com.benton.izukijs.data
 import android.content.Context
 import android.net.Uri
 import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.subscription.SubscriptionSync
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -40,7 +41,7 @@ class ScriptImporter(
     suspend fun importFromImage(uri: Uri): Result {
         val raw = decodeQrCode(uri)?.trim().orEmpty()
         if (raw.isEmpty()) return Result.NoQrCode
-        if (!isSupportedUrl(raw)) return Result.InvalidLink
+        if (!SubscriptionSync.isHttpUrl(raw)) return Result.InvalidLink
         val content = download(raw) ?: return Result.DownloadFailed
         val created = repository.createAsync(nameFromUrl(raw), content)
         return Result.Success(created.name)
@@ -87,7 +88,7 @@ class ScriptImporter(
                     null
                 } else {
                     connection.inputStream.bufferedReader().use { it.readText() }
-                        ?.takeIf { it.isNotBlank() }
+                        .takeIf { it.isNotBlank() }
                 }
             } finally {
                 connection.disconnect()
@@ -98,16 +99,10 @@ class ScriptImporter(
         }
     }
 
-    private fun isSupportedUrl(raw: String): Boolean = runCatching {
-        val parsed = URL(raw)
-        val scheme = parsed.protocol.lowercase()
-        (scheme == "http" || scheme == "https") && !parsed.host.isNullOrBlank()
-    }.getOrDefault(false)
-
-    /** 从链接末尾推断脚本名，去掉扩展名与查询串；无法解析时退回 imported。 */
+    /** 从链接末尾推断脚本名，去掉扩展名；无法解析时退回 imported。 */
     private fun nameFromUrl(url: String): String {
         val path = runCatching { URL(url).path }.getOrDefault("")
-        val fileName = path.substringAfterLast('/').substringBefore('?')
+        val fileName = path.substringAfterLast('/')
         return fileName.substringBeforeLast('.').ifBlank { fileName }.ifBlank { "imported" }
     }
 }

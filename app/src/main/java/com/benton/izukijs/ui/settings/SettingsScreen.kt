@@ -94,6 +94,7 @@ import kotlinx.coroutines.withContext
 enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
     GENERAL("general", R.string.settings_general),
     CONTROL("control", R.string.settings_control),
+    ENV("env", R.string.settings_env),
     STORAGE("storage", R.string.settings_storage),
     BACKUP("backup", R.string.settings_backup),
     ABOUT("about", R.string.settings_about),
@@ -121,6 +122,7 @@ fun SettingsScreen(
     val language by container.languageRepository.language.collectAsStateWithLifecycle()
     val appearance by container.appearanceRepository.settings.collectAsStateWithLifecycle()
     val updateState by container.updateManager.state.collectAsStateWithLifecycle()
+    val globalEnv by container.globalEnvRepository.values.collectAsStateWithLifecycle()
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -175,6 +177,10 @@ fun SettingsScreen(
                         stringResource(R.string.settings_mcp_summary_stopped)
                     },
                 ) { onOpenMcp() }
+                CategoryRow(
+                    title = stringResource(SettingsCategory.ENV.titleRes),
+                    summary = stringResource(R.string.settings_env_summary, globalEnv.size),
+                ) { onOpenCategory(SettingsCategory.ENV) }
             }
             Spacer(Modifier.height(16.dp))
             CategoryGroup(stringResource(R.string.settings_group_data)) {
@@ -349,6 +355,7 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
         when (category) {
             SettingsCategory.GENERAL -> GeneralSettings()
             SettingsCategory.CONTROL -> ControlVisionSettings()
+            SettingsCategory.ENV -> GlobalEnvSettings()
             SettingsCategory.STORAGE -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()
             SettingsCategory.ABOUT -> AboutSettings()

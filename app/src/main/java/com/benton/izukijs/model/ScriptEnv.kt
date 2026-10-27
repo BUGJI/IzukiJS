@@ -22,6 +22,12 @@ data class ScriptEnvData(
     val values: Map<String, String> = emptyMap(),
     /** 脚本通过 `state.set()` 写回的状态。 */
     val state: Map<String, String> = emptyMap(),
+    /** 是否在运行时合并全局环境变量。 */
+    val useGlobalEnv: Boolean = true,
+    /** 仅适用于此脚本的环境变量。 */
+    val env: Map<String, String> = emptyMap(),
+    /** 环境变量编辑器的原始文本，保留注释与顺序。 */
+    val envText: String = "",
 )
 
 /** 一个脚本声明的全部运行参数。 */
