@@ -9,6 +9,8 @@
 基于 Kotlin / Jetpack Compose 的 Android 自动化脚本运行环境。用 JavaScript（QuickJS）编写脚本，
 组合**无障碍 / Shizuku / Root / 蓝牙 HID** 多种控制后端驱动设备，内置找图找色、OCR 与 AI Agent 脱困能力。
 
+> 交流群 [1081037168](https://qm.qq.com/q/88YNoznH5m) 随时欢迎进来玩，反馈BUG 或者 新功能建议 也可以到这里提
+
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/BUGJI/IzukiJS?sort=semver&label=Release)](https://github.com/BUGJI/IzukiJS/releases)
 [![Platform](https://img.shields.io/badge/Platform-Android%2028%2B-green.svg)]()
