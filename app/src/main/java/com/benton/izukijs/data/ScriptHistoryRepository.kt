@@ -27,10 +27,10 @@ class ScriptHistoryRepository(private val context: Context) {
         val dir = dirFor(scriptId).apply { mkdirs() }
         val versions = listVersions(dir)
         val latest = versions.firstOrNull()
-        if (!force && latest != null) {
+        if (latest != null) {
             val latestText = runCatching { latest.file.readText() }.getOrNull()
             if (latestText == content) return
-            if (System.currentTimeMillis() - latest.timestamp < MIN_INTERVAL_MS) return
+            if (!force && System.currentTimeMillis() - latest.timestamp < MIN_INTERVAL_MS) return
         }
         var stamp = System.currentTimeMillis()
         while (File(dir, "$stamp.js").exists()) stamp++

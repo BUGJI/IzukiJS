@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,13 +61,14 @@ import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.subscription.ScriptSubscription
 import com.benton.izukijs.subscription.SubscriptionSync
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.PageMaxWidth
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.formatDateTime
-import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 
@@ -91,7 +93,6 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     val pagerState = rememberPagerState(pageCount = { ScriptEditTab.entries.size })
     val globalEnv by container.globalEnvRepository.values.collectAsStateWithLifecycle()
 
@@ -387,48 +388,34 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
 
     BackHandler(enabled = !showDelete && !showDiscard) { attemptBack() }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            script?.let { stringResource(R.string.script_edit_title, it.name) }
-                                ?: stringResource(R.string.script_edit_title_fallback),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (dirty) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(R.string.editor_unsaved),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = { attemptBack() }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                        )
-                    }
-                },
-                actions = {
-                    TextButton(
-                        onClick = { save() },
-                        enabled = loaded && script != null && !saving,
-                    ) {
-                        Text(stringResource(R.string.common_save))
-                    }
-                },
-            )
+    IzukiPageScaffold(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    script?.let { stringResource(R.string.script_edit_title, it.name) }
+                        ?: stringResource(R.string.script_edit_title_fallback),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (dirty) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(R.string.editor_unsaved),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        onBack = { attemptBack() },
+        actions = {
+            TextButton(
+                onClick = { save() },
+                enabled = loaded && script != null && !saving,
+            ) {
+                Text(stringResource(R.string.common_save))
+            }
         },
     ) { padding ->
         when {
@@ -454,19 +441,23 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
                         .fillMaxSize()
                         .padding(horizontal = 16.dp),
                 ) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text(stringResource(R.string.script_edit_name)) },
-                        singleLine = true,
-                        isError = name.isBlank(),
-                        supportingText = if (name.isBlank()) {
-                            { Text(stringResource(R.string.script_edit_name_required)) }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                    )
+                    Spacer(Modifier.height(12.dp))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text(stringResource(R.string.script_edit_name)) },
+                            singleLine = true,
+                            isError = name.isBlank(),
+                            supportingText = if (name.isBlank()) {
+                                { Text(stringResource(R.string.script_edit_name_required)) }
+                            } else {
+                                null
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
                     PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
                         ScriptEditTab.entries.forEachIndexed { index, tab ->
                             Tab(
@@ -479,6 +470,7 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
                     HorizontalPager(
                         state = pagerState,
                         modifier = Modifier.weight(1f),
+                        pageSpacing = 16.dp,
                     ) { page ->
                         when (ScriptEditTab.entries[page]) {
                             ScriptEditTab.ENVIRONMENT -> EnvironmentTab(
@@ -542,27 +534,18 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     if (showDelete) {
-        AlertDialog(
-            onDismissRequest = { showDelete = false },
-            title = { Text(stringResource(R.string.subscription_delete_title)) },
-            text = {
-                Text(
-                    stringResource(
-                        R.string.subscription_delete_confirm,
-                        script?.name ?: resources.getString(R.string.script_edit_title_fallback),
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDelete = false
-                    deleteSubscription()
-                }) { Text(stringResource(R.string.common_delete)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDelete = false }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+        ConfirmDialog(
+            title = stringResource(R.string.subscription_delete_title),
+            message = stringResource(
+                R.string.subscription_delete_confirm,
+                script?.name ?: resources.getString(R.string.script_edit_title_fallback),
+            ),
+            confirmLabel = stringResource(R.string.common_delete),
+            destructive = true,
+            onDismiss = { showDelete = false },
+            onConfirm = {
+                showDelete = false
+                deleteSubscription()
             },
         )
     }
@@ -580,10 +563,15 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
             },
             dismissButton = {
                 Row {
-                    TextButton(onClick = {
-                        showDiscard = false
-                        onBack()
-                    }) { Text(stringResource(R.string.script_edit_discard)) }
+                    TextButton(
+                        onClick = {
+                            showDiscard = false
+                            onBack()
+                        },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) { Text(stringResource(R.string.script_edit_discard)) }
                     TextButton(onClick = { showDiscard = false }) {
                         Text(stringResource(R.string.script_edit_continue))
                     }
@@ -602,34 +590,38 @@ private fun EnvironmentTab(
     globalCount: Int,
     errorLine: Int?,
 ) {
-    PageColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Spacer(Modifier.height(4.dp))
-        SwitchRow(
-            label = stringResource(R.string.script_edit_env_use_global),
-            checked = useGlobalEnv,
-            description = stringResource(R.string.script_edit_env_use_global_desc, globalCount),
-            onChange = onUseGlobalEnvChange,
-        )
-        OutlinedTextField(
-            value = envText,
-            onValueChange = onEnvTextChange,
-            label = { Text(stringResource(R.string.script_edit_env_variables)) },
-            placeholder = { Text(stringResource(R.string.env_example)) },
-            isError = errorLine != null,
-            supportingText = {
-                if (errorLine != null) {
-                    Text(stringResource(R.string.env_invalid_line, errorLine))
-                } else {
-                    Text(stringResource(R.string.env_hint))
-                }
-            },
-            minLines = 8,
-            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-            modifier = Modifier.fillMaxWidth(),
-        )
+    PageColumn(modifier = Modifier.fillMaxSize(), applyImePadding = false) {
+        Spacer(Modifier.height(12.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                SwitchRow(
+                    label = stringResource(R.string.script_edit_env_use_global),
+                    checked = useGlobalEnv,
+                    description = stringResource(R.string.script_edit_env_use_global_desc, globalCount),
+                    onChange = onUseGlobalEnvChange,
+                )
+                OutlinedTextField(
+                    value = envText,
+                    onValueChange = onEnvTextChange,
+                    label = { Text(stringResource(R.string.script_edit_env_variables)) },
+                    placeholder = { Text(stringResource(R.string.env_example)) },
+                    isError = errorLine != null,
+                    supportingText = {
+                        if (errorLine != null) {
+                            Text(stringResource(R.string.env_invalid_line, errorLine))
+                        } else {
+                            Text(stringResource(R.string.env_hint))
+                        }
+                    },
+                    minLines = 8,
+                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -652,134 +644,138 @@ private fun SubscriptionTab(
     onSyncNow: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    PageColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Spacer(Modifier.height(4.dp))
-        OutlinedTextField(
-            value = url,
-            onValueChange = onUrlChange,
-            label = { Text(stringResource(R.string.subscription_url)) },
-            placeholder = { Text(stringResource(R.string.subscription_url_hint)) },
-            singleLine = true,
-            isError = urlInvalid,
-            supportingText = {
-                if (urlInvalid) {
-                    Text(stringResource(R.string.subscription_url_invalid))
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+    PageColumn(modifier = Modifier.fillMaxSize(), applyImePadding = false) {
+        Spacer(Modifier.height(12.dp))
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = onUrlChange,
+                    label = { Text(stringResource(R.string.subscription_url)) },
+                    placeholder = { Text(stringResource(R.string.subscription_url_hint)) },
+                    singleLine = true,
+                    isError = urlInvalid,
+                    supportingText = {
+                        if (urlInvalid) {
+                            Text(stringResource(R.string.subscription_url_invalid))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
 
-        val currentInterval = intervalText.toLongOrNull()
-        val switchEnabled = !intervalDisabled && (currentInterval ?: 0L) > 0L
-        OutlinedTextField(
-            value = intervalText,
-            onValueChange = { onIntervalChange(it.filter(Char::isDigit).take(6)) },
-            label = { Text(stringResource(R.string.subscription_interval)) },
-            singleLine = true,
-            enabled = !intervalDisabled,
-            isError = intervalInvalid,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            supportingText = {
-                Text(
-                    when {
-                        intervalDisabled -> stringResource(R.string.subscription_interval_needs_url)
-                        intervalInvalid -> stringResource(
-                            R.string.subscription_interval_invalid,
-                            SubscriptionSync.MIN_INTERVAL_MINUTES.toInt(),
-                        )
+                val currentInterval = intervalText.toLongOrNull()
+                val switchEnabled = !intervalDisabled && (currentInterval ?: 0L) > 0L
+                OutlinedTextField(
+                    value = intervalText,
+                    onValueChange = { onIntervalChange(it.filter(Char::isDigit).take(6)) },
+                    label = { Text(stringResource(R.string.subscription_interval)) },
+                    singleLine = true,
+                    enabled = !intervalDisabled,
+                    isError = intervalInvalid,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = {
+                        Text(
+                            when {
+                                intervalDisabled -> stringResource(R.string.subscription_interval_needs_url)
+                                intervalInvalid -> stringResource(
+                                    R.string.subscription_interval_invalid,
+                                    SubscriptionSync.MIN_INTERVAL_MINUTES.toInt(),
+                                )
 
-                        (currentInterval ?: 0L) <= 0L -> stringResource(
-                            R.string.subscription_interval_zero_hint,
-                        )
+                                (currentInterval ?: 0L) <= 0L -> stringResource(
+                                    R.string.subscription_interval_zero_hint,
+                                )
 
-                        else -> stringResource(
-                            R.string.subscription_min_interval,
-                            SubscriptionSync.MIN_INTERVAL_MINUTES.toInt(),
+                                else -> stringResource(
+                                    R.string.subscription_min_interval,
+                                    SubscriptionSync.MIN_INTERVAL_MINUTES.toInt(),
+                                )
+                            },
                         )
                     },
+                    modifier = Modifier.fillMaxWidth(),
                 )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
 
-        SwitchRow(
-            label = stringResource(R.string.subscription_enabled),
-            checked = enabled && (currentInterval ?: 0L) > 0L,
-            description = stringResource(R.string.subscription_disabled_hint),
-            enabled = switchEnabled,
-            onChange = onEnabledChange,
-        )
+                SwitchRow(
+                    label = stringResource(R.string.subscription_enabled),
+                    checked = enabled && (currentInterval ?: 0L) > 0L,
+                    description = stringResource(R.string.subscription_disabled_hint),
+                    enabled = switchEnabled,
+                    onChange = onEnabledChange,
+                )
 
-        if (subscription == null) {
-            Text(
-                stringResource(R.string.subscription_not_configured),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    if (subscription.lastSyncAtMillis > 0L) {
-                        stringResource(
-                            R.string.subscription_last_sync,
-                            formatDateTime(subscription.lastSyncAtMillis),
-                        )
-                    } else {
-                        stringResource(R.string.subscription_never)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    stringResource(
-                        R.string.subscription_next_sync,
-                        if (subscription.enabled &&
-                            subscription.intervalMinutes > 0L &&
-                            subscription.nextSyncAtMillis > 0L
-                        ) {
-                            formatDateTime(subscription.nextSyncAtMillis)
-                        } else {
-                            stringResource(R.string.subscription_next_none)
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                if (subscription.lastError.isNotBlank()) {
+                if (subscription == null) {
                     Text(
-                        stringResource(R.string.subscription_error, subscription.lastError),
+                        stringResource(R.string.subscription_not_configured),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            if (subscription.lastSyncAtMillis > 0L) {
+                                stringResource(
+                                    R.string.subscription_last_sync,
+                                    formatDateTime(subscription.lastSyncAtMillis),
+                                )
+                            } else {
+                                stringResource(R.string.subscription_never)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            stringResource(
+                                R.string.subscription_next_sync,
+                                if (subscription.enabled &&
+                                    subscription.intervalMinutes > 0L &&
+                                    subscription.nextSyncAtMillis > 0L
+                                ) {
+                                    formatDateTime(subscription.nextSyncAtMillis)
+                                } else {
+                                    stringResource(R.string.subscription_next_none)
+                                },
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (subscription.lastError.isNotBlank()) {
+                            Text(
+                                stringResource(R.string.subscription_error, subscription.lastError),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    }
                 }
-            }
-        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            OutlinedButton(
-                onClick = onSyncNow,
-                enabled = syncReady,
-            ) {
-                if (syncing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                    )
-                    Spacer(Modifier.width(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedButton(
+                        onClick = onSyncNow,
+                        enabled = syncReady,
+                    ) {
+                        if (syncing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(stringResource(R.string.subscription_sync_now))
+                    }
+                    OutlinedButton(
+                        onClick = onDelete,
+                        enabled = subscription != null && !deleting,
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.subscription_delete))
+                    }
                 }
-                Text(stringResource(R.string.subscription_sync_now))
-            }
-            OutlinedButton(
-                onClick = onDelete,
-                enabled = subscription != null && !deleting,
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error,
-                ),
-            ) {
-                Text(stringResource(R.string.subscription_delete))
             }
         }
         Spacer(Modifier.height(16.dp))

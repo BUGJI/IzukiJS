@@ -2,12 +2,14 @@ package com.benton.izukijs.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -29,6 +31,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
@@ -70,7 +75,8 @@ fun parseHexColor(input: String): Int? {
 /** ARGB -> `#RRGGBB`。 */
 fun Int.toHexString(): String = "#%06X".format(this and 0xFFFFFF)
 
-/** 一排圆形色板，选中项显示对勾。 */
+/** 自动换行的圆形色板，选中项显示对勾；外圈提供 48dp 触控热区。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ColorSwatchRow(
     selectedArgb: Int?,
@@ -78,36 +84,48 @@ fun ColorSwatchRow(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    FlowRow(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         ThemeSeedPresets.forEach { preset ->
             val selected = selectedArgb == preset
             val swatch = Color(preset)
             Box(
                 modifier = Modifier
-                    .size(36.dp)
-                    .background(swatch, CircleShape)
-                    .border(
-                        width = if (selected) 3.dp else 1.dp,
-                        color = if (selected) {
-                            MaterialTheme.colorScheme.onSurface
-                        } else {
-                            MaterialTheme.colorScheme.outlineVariant
-                        },
-                        shape = CircleShape,
+                    .size(48.dp)
+                    .selectable(
+                        selected = selected,
+                        enabled = enabled,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(preset) },
                     )
-                    .clickable(enabled = enabled) { onSelect(preset) },
+                    .semantics { contentDescription = preset.toHexString() },
                 contentAlignment = Alignment.Center,
             ) {
-                if (selected) {
-                    Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null,
-                        tint = if (swatch.luminance() > 0.5f) Color.Black else Color.White,
-                    )
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(swatch, CircleShape)
+                        .border(
+                            width = if (selected) 3.dp else 1.dp,
+                            color = if (selected) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            },
+                            shape = CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = null,
+                            tint = if (swatch.luminance() > 0.5f) Color.Black else Color.White,
+                        )
+                    }
                 }
             }
         }

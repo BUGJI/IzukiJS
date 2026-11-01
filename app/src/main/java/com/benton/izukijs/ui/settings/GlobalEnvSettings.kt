@@ -11,8 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
@@ -38,8 +38,8 @@ fun GlobalEnvSettings() {
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val stored by container.globalEnvRepository.values.collectAsStateWithLifecycle()
-    var text by remember { mutableStateOf(EnvText.format(stored)) }
-    var errorLine by remember { mutableStateOf<Int?>(null) }
+    var text by rememberSaveable { mutableStateOf(EnvText.format(stored)) }
+    var errorLine by rememberSaveable { mutableStateOf<Int?>(null) }
 
     SectionCard(stringResource(R.string.settings_env)) {
         Text(

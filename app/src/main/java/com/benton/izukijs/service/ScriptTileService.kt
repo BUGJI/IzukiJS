@@ -49,7 +49,11 @@ class ScriptTileService : TileService() {
             val id = container.tileSettingsRepository.current()
             val script = id?.let { container.scriptRepository.find(it) }
             if (script != null) {
-                container.scriptExecutionManager.run(script.name, container.scriptRepository.read(script))
+                container.scriptExecutionManager.run(
+                    script.id,
+                    script.name,
+                    container.scriptRepository.read(script),
+                )
             }
         }
         updateTile()

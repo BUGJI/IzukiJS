@@ -8,7 +8,11 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
+
+/** 当前实际生效的暗色状态（优先于系统夜间模式），供语法高亮等非 Material 配色使用。 */
+val LocalIzukiDarkTheme = staticCompositionLocalOf { false }
 
 @Composable
 fun IzukiJSTheme(
@@ -39,7 +43,10 @@ fun IzukiJSTheme(
     }
     val extraColors = if (darkTheme) IzukiExtraColors.dark() else IzukiExtraColors.light()
 
-    CompositionLocalProvider(LocalIzukiExtraColors provides extraColors) {
+    CompositionLocalProvider(
+        LocalIzukiExtraColors provides extraColors,
+        LocalIzukiDarkTheme provides darkTheme,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

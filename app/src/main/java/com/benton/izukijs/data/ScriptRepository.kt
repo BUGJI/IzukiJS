@@ -70,13 +70,13 @@ class ScriptRepository(
     fun read(script: ScriptInfo): String =
         if (script.file.exists()) script.file.readText() else ""
 
-    fun write(script: ScriptInfo, content: String) {
+    fun write(script: ScriptInfo, content: String, forceHistory: Boolean = false) {
         if (!script.file.exists()) return
         val previous = runCatching {
             if (script.file.exists()) script.file.readText() else null
         }.getOrNull()
         if (!previous.isNullOrEmpty() && previous != content) {
-            history.record(script.id, previous)
+            history.record(script.id, previous, force = forceHistory)
         }
         script.file.writeText(content)
         bumpRevision()
@@ -107,8 +107,8 @@ class ScriptRepository(
     suspend fun createAsync(name: String, content: String = DEFAULT_SCRIPT): ScriptInfo =
         withContext(Dispatchers.IO) { create(name, content) }
 
-    suspend fun writeAsync(script: ScriptInfo, content: String) =
-        withContext(Dispatchers.IO) { write(script, content) }
+    suspend fun writeAsync(script: ScriptInfo, content: String, forceHistory: Boolean = false) =
+        withContext(Dispatchers.IO) { write(script, content, forceHistory) }
 
     suspend fun deleteAsync(script: ScriptInfo) = withContext(Dispatchers.IO) { delete(script) }
 

@@ -19,12 +19,17 @@ class RunHistoryRepository(context: Context) {
     private val _recent = MutableStateFlow(load())
     val recent: StateFlow<List<RunRecord>> = _recent.asStateFlow()
 
-    /** 记录一次运行，把脚本移到最前，最多保留 [MAX] 条。 */
-    fun record(name: String) {
-        if (name.isBlank()) return
+    /** 记录一次运行，把脚本移到最前，最多保留 [MAX] 条。以 id 去重，重命名后仍能命中。 */
+    fun record(id: String, name: String) {
+        if (id.isBlank() || name.isBlank()) return
         val next = buildList {
-            add(RunRecord(name = name, at = System.currentTimeMillis()))
-            addAll(_recent.value.filter { it.name != name }.take(MAX - 1))
+            add(RunRecord(id = id, name = name, at = System.currentTimeMillis()))
+            // 同时清掉旧版本遗留的「只有名称」记录，避免同名脚本出现两条快捷入口。
+            addAll(
+                _recent.value
+                    .filter { it.id != id && !(it.id.isBlank() && it.name == name) }
+                    .take(MAX - 1),
+            )
         }
         _recent.value = next
         persist(next)
@@ -44,7 +49,10 @@ class RunHistoryRepository(context: Context) {
                 for (i in 0 until array.length()) {
                     val obj = array.optJSONObject(i) ?: continue
                     val name = obj.optString("name")
-                    if (name.isNotBlank()) add(RunRecord(name, obj.optLong("at")))
+                    // 旧版本只存名称；id 留空，由运行页回退到按名称匹配。
+                    if (name.isNotBlank()) {
+                        add(RunRecord(obj.optString("id"), name, obj.optLong("at")))
+                    }
                 }
             }
         }.getOrDefault(emptyList())
@@ -53,7 +61,13 @@ class RunHistoryRepository(context: Context) {
     private fun persist(list: List<RunRecord>) {
         val array = JSONArray()
         list.forEach { record ->
-            array.put(JSONObject().apply { put("name", record.name); put("at", record.at) })
+            array.put(
+                JSONObject().apply {
+                    put("id", record.id)
+                    put("name", record.name)
+                    put("at", record.at)
+                },
+            )
         }
         prefs.edit().putString(KEY, array.toString()).apply()
     }

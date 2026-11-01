@@ -1,15 +1,19 @@
 package com.benton.izukijs.ui.schedule
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -43,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
@@ -56,9 +61,12 @@ import com.benton.izukijs.schedule.ScheduleConditions
 import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
 import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.IzukiPageScaffold
+import com.benton.izukijs.ui.common.PageMaxWidth
 import com.benton.izukijs.ui.common.formatMonthDayTime
-import com.benton.izukijs.ui.common.stableTopAppBarColors
+import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -69,12 +77,13 @@ import java.util.UUID
 fun ScheduleScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
     val scope = rememberCoroutineScope()
+    val haptics = rememberAppHaptics()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var schedules by remember { mutableStateOf<List<Schedule>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<Schedule?>(null) }
     var deleteTarget by remember { mutableStateOf<Schedule?>(null) }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     LaunchedEffect(Unit) {
         scripts = container.scriptRepository.listAsync()
@@ -86,46 +95,54 @@ fun ScheduleScreen(onBack: () -> Unit) {
         scope.launch { schedules = container.scheduleRepository.listAsync() }
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.schedule_title)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-            )
-        },
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.schedule_title)) },
+        onBack = onBack,
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.schedule_new))
             }
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            when {
-                // 首次进入仍在异步加载，先留空避免闪一下空状态。
-                !loaded -> Unit
-                schedules.isEmpty() -> EmptyState(stringResource(R.string.schedule_empty))
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    // 底部预留 FAB 高度，避免最后一条的删除按钮被遮挡。
-                    contentPadding = PaddingValues(bottom = 88.dp),
-                ) {
-                    items(schedules, key = { it.id }) { schedule ->
-                        ListItem(
-                            headlineContent = { Text(schedule.scriptName) },
-                            supportingContent = { Text(describe(schedule)) },
-                            trailingContent = {
-                                IconButton(onClick = { deleteTarget = schedule }) {
-                                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete))
-                                }
-                            },
-                        )
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+            Box(
+                modifier = Modifier.widthIn(max = PageMaxWidth).fillMaxWidth().fillMaxHeight(),
+            ) {
+                when {
+                    // 首次进入仍在异步加载，先留空避免闪一下空状态。
+                    !loaded -> Unit
+                    schedules.isEmpty() -> EmptyState(
+                        text = stringResource(R.string.schedule_empty),
+                        icon = Icons.Filled.Add,
+                        actionLabel = stringResource(R.string.schedule_new),
+                        onAction = { showAdd = true },
+                    )
+
+                    else -> LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        // 底部预留 FAB 高度，避免最后一条的删除按钮被遮挡。
+                        contentPadding = PaddingValues(bottom = 88.dp),
+                    ) {
+                        items(schedules, key = { it.id }) { schedule ->
+                            ListItem(
+                                headlineContent = { Text(schedule.scriptName) },
+                                supportingContent = { Text(describe(schedule)) },
+                                trailingContent = {
+                                    IconButton(onClick = { deleteTarget = schedule }) {
+                                        Icon(
+                                            Icons.Filled.Delete,
+                                            contentDescription = stringResource(R.string.common_delete),
+                                        )
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { editTarget = schedule },
+                            )
+                        }
                     }
                 }
             }
@@ -133,40 +150,56 @@ fun ScheduleScreen(onBack: () -> Unit) {
     }
 
     deleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.schedule_delete_title)) },
-            text = { Text(stringResource(R.string.schedule_delete_confirm, target.scriptName)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    val id = target.id
-                    deleteTarget = null
-                    scope.launch {
-                        container.scheduleManager.cancelAsync(id)
-                        refresh()
-                    }
-                }) { Text(stringResource(R.string.common_delete)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) }
+        ConfirmDialog(
+            title = stringResource(R.string.schedule_delete_title),
+            message = stringResource(R.string.schedule_delete_confirm, target.scriptName),
+            confirmLabel = stringResource(R.string.common_delete),
+            destructive = true,
+            onDismiss = { deleteTarget = null },
+            onConfirm = {
+                val id = target.id
+                haptics.reject()
+                deleteTarget = null
+                scope.launch {
+                    container.scheduleManager.cancelAsync(id)
+                    refresh()
+                }
             },
         )
     }
 
-    if (showAdd) {
+    if (showAdd || editTarget != null) {
+        val initial = editTarget
         AddScheduleDialog(
             scripts = scripts,
-            onDismiss = { showAdd = false },
+            initial = initial,
+            onDismiss = {
+                showAdd = false
+                editTarget = null
+            },
             onConfirm = { draft ->
-                val schedule = Schedule(
+                val triggerAt = if (draft.kind == ScheduleKind.EVENT) {
+                    0L
+                } else {
+                    computeNextTrigger(draft.hour, draft.minute)
+                }
+                val schedule = initial?.copy(
+                    scriptId = draft.script.id,
+                    scriptName = draft.script.name,
+                    triggerAtMillis = triggerAt,
+                    intervalMinutes = if (draft.kind == ScheduleKind.INTERVAL) draft.interval else 0L,
+                    kind = draft.kind,
+                    cron = draft.cron,
+                    event = draft.event,
+                    conditions = draft.conditions,
+                    retryCount = draft.retryCount,
+                    retryDelayMinutes = draft.retryDelay,
+                    retryAttempt = 0,
+                ) ?: Schedule(
                     id = UUID.randomUUID().toString(),
                     scriptId = draft.script.id,
                     scriptName = draft.script.name,
-                    triggerAtMillis = if (draft.kind == ScheduleKind.EVENT) {
-                        0L
-                    } else {
-                        computeNextTrigger(draft.hour, draft.minute)
-                    },
+                    triggerAtMillis = triggerAt,
                     intervalMinutes = if (draft.kind == ScheduleKind.INTERVAL) draft.interval else 0L,
                     kind = draft.kind,
                     cron = draft.cron,
@@ -176,9 +209,11 @@ fun ScheduleScreen(onBack: () -> Unit) {
                     retryDelayMinutes = draft.retryDelay,
                 )
                 scope.launch {
+                    initial?.let { container.scheduleManager.cancelAsync(it.id) }
                     container.scheduleManager.scheduleAsync(schedule)
                     refresh()
                     showAdd = false
+                    editTarget = null
                 }
             },
         )
@@ -188,23 +223,51 @@ fun ScheduleScreen(onBack: () -> Unit) {
 @Composable
 private fun AddScheduleDialog(
     scripts: List<ScriptInfo>,
+    initial: Schedule?,
     onDismiss: () -> Unit,
     onConfirm: (ScheduleDraft) -> Unit,
 ) {
-    var selected by remember { mutableStateOf(scripts.firstOrNull()) }
+    val initialCalendar = remember(initial) {
+        initial?.triggerAtMillis
+            ?.takeIf { it > 0L }
+            ?.let { Calendar.getInstance().apply { timeInMillis = it } }
+    }
+    var selected by remember(initial) {
+        mutableStateOf(scripts.firstOrNull { it.id == initial?.scriptId } ?: scripts.firstOrNull())
+    }
     var scriptExpanded by remember { mutableStateOf(false) }
-    var kind by remember { mutableStateOf(ScheduleKind.TIME) }
-    var hour by remember { mutableStateOf("8") }
-    var minute by remember { mutableStateOf("0") }
-    var interval by remember { mutableStateOf("60") }
-    var cron by remember { mutableStateOf("0 8 * * *") }
-    var event by remember { mutableStateOf(ScheduleEvent.CHARGING) }
-    var conditionCharging by remember { mutableStateOf(false) }
-    var conditionWifi by remember { mutableStateOf(false) }
-    var conditionUnlocked by remember { mutableStateOf(false) }
-    var foregroundPackage by remember { mutableStateOf("") }
-    var retryCount by remember { mutableStateOf("0") }
-    var retryDelay by remember { mutableStateOf("10") }
+    var kind by remember(initial) { mutableStateOf(initial?.kind ?: ScheduleKind.TIME) }
+    var hour by remember(initial) {
+        mutableStateOf(initialCalendar?.get(Calendar.HOUR_OF_DAY)?.toString() ?: "8")
+    }
+    var minute by remember(initial) {
+        mutableStateOf(initialCalendar?.get(Calendar.MINUTE)?.toString() ?: "0")
+    }
+    var interval by remember(initial) {
+        mutableStateOf(initial?.intervalMinutes?.takeIf { it > 0L }?.toString() ?: "60")
+    }
+    var cron by remember(initial) {
+        mutableStateOf(initial?.cron?.ifBlank { "0 8 * * *" } ?: "0 8 * * *")
+    }
+    var event by remember(initial) {
+        mutableStateOf(initial?.event ?: ScheduleEvent.CHARGING)
+    }
+    var conditionCharging by remember(initial) {
+        mutableStateOf(initial?.conditions?.charging ?: false)
+    }
+    var conditionWifi by remember(initial) {
+        mutableStateOf(initial?.conditions?.wifi ?: false)
+    }
+    var conditionUnlocked by remember(initial) {
+        mutableStateOf(initial?.conditions?.unlocked ?: false)
+    }
+    var foregroundPackage by remember(initial) {
+        mutableStateOf(initial?.conditions?.foregroundPackage.orEmpty())
+    }
+    var retryCount by remember(initial) { mutableStateOf((initial?.retryCount ?: 0).toString()) }
+    var retryDelay by remember(initial) {
+        mutableStateOf((initial?.retryDelayMinutes ?: 10L).coerceAtLeast(1L).toString())
+    }
     var saving by remember { mutableStateOf(false) }
 
     // 脚本可能异步加载完成，到位后补上默认选中。
@@ -216,10 +279,16 @@ private fun AddScheduleDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.schedule_new)) },
+        title = {
+            Text(
+                stringResource(
+                    if (initial != null) R.string.schedule_edit_title else R.string.schedule_new,
+                ),
+            )
+        },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
+                modifier = Modifier.verticalScroll(rememberScrollState()).imePadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Box {
@@ -448,7 +517,12 @@ private fun describe(schedule: Schedule): String {
         if (schedule.conditions.wifi) add(stringResource(R.string.schedule_condition_wifi))
         if (schedule.conditions.unlocked) add(stringResource(R.string.schedule_condition_unlocked))
         if (schedule.conditions.foregroundPackage.isNotBlank()) {
-            add("前台=${schedule.conditions.foregroundPackage}")
+            add(
+                stringResource(
+                    R.string.schedule_foreground_condition,
+                    schedule.conditions.foregroundPackage,
+                ),
+            )
         }
     }
     val conditions = if (conditionParts.isEmpty()) {

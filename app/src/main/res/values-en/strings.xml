@@ -9,9 +9,9 @@
     <string name="common_more">More</string>
     <string name="common_confirm">OK</string>
     <string name="common_cancel">Cancel</string>
+    <string name="common_close">Close</string>
     <string name="common_delete">Delete</string>
     <string name="common_save">Save</string>
-    <string name="common_edit">Edit</string>
     <string name="common_undo">Undo</string>
     <string name="common_run">Run</string>
     <string name="common_stop">Stop</string>
@@ -95,19 +95,15 @@
     <string name="run_recent">Run latest script</string>
     <string name="run_no_scripts">No scripts yet, create one in Scripts</string>
     <string name="run_permissions_title">Permissions &amp; capabilities</string>
-    <string name="run_configure">Configure</string>
     <string name="run_capture_label">Screen recording</string>
-    <string name="run_capture_recording">Recording</string>
-    <string name="run_capture_off">Off</string>
-    <string name="run_mode_disabled">Disabled</string>
     <string name="run_quick_title">Quick launch</string>
     <string name="run_quick_empty">Scripts you have run will appear here; tap to run again.</string>
     <string name="run_quick_clear">Clear history</string>
     <string name="run_quick_clear_confirm">Clear run history? This cannot be undone.</string>
     <string name="run_last_at">Last run %1$s</string>
     <string name="run_status_card_complete">Complete</string>
-    <string name="run_status_card_missing_read">Missing read</string>
-    <string name="run_status_card_missing_operate">Missing operate</string>
+    <string name="run_status_card_missing_read">Missing \"Read\" permission</string>
+    <string name="run_status_card_missing_operate">Missing \"Operate\" permission</string>
     <string name="run_status_card_unauthorized">Unauthorized</string>
     <string name="run_status_card_configure_hint">Tap this card to configure</string>
     <string name="run_status_card_version">Version %1$s</string>
@@ -207,7 +203,6 @@
     <string name="script_saved">Saved</string>
 
     <!-- Permissions -->
-    <string name="perm_tip">Tip: you can revoke unnecessary permissions while a script runs to lower the risk of detection. Pick the permissions your current script actually needs based on the pros and cons below.</string>
     <string name="perm_screen_capture">Screen capture</string>
     <string name="perm_status_recording">Recording</string>
     <string name="perm_status_off">Off</string>
@@ -260,7 +255,6 @@
     <string name="perm_status_unauthorized">Not authorized</string>
     <string name="perm_detail_open">Details</string>
     <string name="perm_detail_close">Got it</string>
-    <string name="perm_switch_grant">Permission granted</string>
     <string name="perm_usage_title">Usage access</string>
     <string name="perm_usage_desc">Read app usage records to determine the foreground app and usage time.</string>
     <string name="perm_notify_title">Notification access</string>
@@ -292,10 +286,15 @@
     <string name="perm_tile_title">Quick Settings tile</string>
     <string name="perm_tile_desc">Show a tile in Quick Settings to run / stop a fixed script with one tap.</string>
     <string name="perm_tile_enable">Enable Quick Settings tile</string>
+    <string name="perm_tile_enabled_unbound">On · no script pinned</string>
     <string name="perm_tile_pinned">Pinned script: %1$s</string>
     <string name="perm_tile_pick_hint">No script pinned yet. Pin one from the Scripts screen.</string>
     <string name="perm_tile_add">Add to Quick Settings</string>
+    <string name="perm_tile_added">Tile added</string>
+    <string name="perm_tile_add_failed">Couldn\'t add the tile; add it manually in Quick Settings.</string>
     <string name="perm_tile_manual_hint">Add the \"Izuki script\" tile manually by editing Quick Settings.</string>
+    <string name="perm_action_open_settings">Open settings</string>
+    <string name="perm_action_manage_settings">Manage</string>
 
     <string name="tile_script">Izuki script</string>
     <string name="tile_script_named">Izuki · %1$s</string>
@@ -417,6 +416,7 @@
     <string name="backup_desc">Export / import covers AI, OCR, control, capture, log and editor preferences. The exported file contains plaintext keys, keep it safe; scripts are not included.</string>
     <string name="backup_export">Export config</string>
     <string name="backup_import">Import config</string>
+    <string name="backup_import_confirm">Importing will overwrite the current AI, OCR, control and appearance settings. Continue?</string>
     <string name="backup_read_failed">Failed to read file</string>
     <string name="backup_import_success">Imported</string>
     <string name="backup_import_failed">Import failed: %1$s</string>
@@ -449,13 +449,9 @@
     <string name="ai_tools_title">Agent tools</string>
     <string name="ai_tools_enable">Enable tool calls</string>
     <string name="ai_tools_enable_desc">Let the model tap / swipe / OCR / launch apps on its own. When off, it only holds a plain conversation.</string>
-    <string name="ai_allow_shell">Allow Shell</string>
-    <string name="ai_allow_shell_desc">Let the model run Shell commands; requires Shizuku or Root, high privilege, off by default.</string>
-    <string name="ai_max_steps">Max steps</string>
-    <string name="ai_max_steps_desc">A single script can override this with options.maxSteps at call time.</string>
     <string name="ai_prompt_title">System prompt</string>
-    <string name="ai_prompt_desc">Sent to the model as the framework base prompt describing the environment, available tools and decision rules.</string>
     <string name="ai_prompt_reset">Restore default prompt</string>
+    <string name="ai_prompt_reset_confirm">Replace your custom prompt with the default one?</string>
     <string name="ai_test_title">Connection test</string>
     <string name="ai_test_desc">Send a very short chat request to verify the address / key / model.</string>
     <string name="ai_testing">Testing…</string>
@@ -464,6 +460,7 @@
     <string name="ai_test_failure">✘ Failed: %1$s</string>
 
     <!-- Editor -->
+    <string name="editor_title">Script editor</string>
     <string name="editor_loading">Loading…</string>
     <string name="editor_not_found">Script not found: %1$s</string>
     <string name="editor_save_failed">Save failed</string>
@@ -530,6 +527,7 @@
     <!-- Scheduled tasks -->
     <string name="schedule_title">Scheduled tasks</string>
     <string name="schedule_new">New scheduled task</string>
+    <string name="schedule_edit_title">Edit scheduled task</string>
     <string name="schedule_empty">No scheduled tasks yet. Tap + in the corner to run a script daily at a fixed time or on a repeating interval.</string>
     <string name="schedule_select_script">Select script</string>
     <string name="schedule_hour">Hour</string>
@@ -555,6 +553,7 @@
     <string name="schedule_condition_unlocked">Unlocked</string>
     <string name="schedule_conditions_suffix"> · conditions: %1$s</string>
     <string name="schedule_foreground_label">Foreground package (optional)</string>
+    <string name="schedule_foreground_condition">Foreground=%1$s</string>
     <string name="schedule_retry_count">Retry attempts</string>
     <string name="schedule_retry_delay">Retry delay (minutes)</string>
     <string name="schedule_retry_suffix"> · retry %1$d× / %2$d min</string>
@@ -563,6 +562,7 @@
 
     <!-- Console -->
     <string name="console_empty">No output</string>
+    <string name="logs_export">Export logs</string>
     <string name="console_clear_confirm">Clear the current logs?</string>
     <string name="console_reset_filter">Reset filters</string>
     <string name="console_filtered_empty">No logs for the current filter</string>
@@ -652,8 +652,6 @@
     <string name="mcp_blocked_packages_desc">Refuse to launch these apps; trailing * acts as a prefix wildcard (e.g. com.bank.*). Comma or newline separated.</string>
     <string name="mcp_blocked_save">Save list</string>
     <string name="mcp_blocked_saved">Blocklist saved</string>
-    <string name="mcp_client_title">Client config example</string>
-    <string name="mcp_client_desc">stdio clients (e.g. Claude Desktop) can bridge to this server via mcp-remote.</string>
     <string name="mcp_copy_endpoint">Copy endpoint</string>
     <string name="mcp_copy_config">Copy config JSON</string>
     <string name="mcp_copied">Copied</string>

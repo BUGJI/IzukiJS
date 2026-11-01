@@ -6,7 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
-import androidx.compose.foundation.isSystemInDarkTheme
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,7 +68,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -79,7 +79,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -96,12 +95,15 @@ import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.runtime.LogEntry
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.common.formatDateTime
+import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
+import com.benton.izukijs.ui.theme.LocalIzukiDarkTheme
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -170,7 +172,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     // 保留 State 而非解包：日志在子组件内读取，避免每次日志刷新都重组整个编辑器（含文本框排版）。
     val logsState = container.logBus.entries.collectAsStateWithLifecycle()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIzukiDarkTheme.current
     val highlighter = remember(isDark) {
         JsSyntaxHighlighter(
             if (isDark) JsSyntaxHighlighter.Palette.dark() else JsSyntaxHighlighter.Palette.light(),
@@ -200,13 +202,41 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     val current = script
     if (current == null || !loaded) {
-        if (notFound) {
-            Column(modifier = Modifier.fillMaxSize().padding(24.dp)) {
-                Text(stringResource(R.string.editor_not_found, scriptId), color = MaterialTheme.colorScheme.error)
-            }
-        } else {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.editor_loading), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(stringResource(R.string.editor_title)) },
+                    colors = stableTopAppBarColors(),
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.common_back),
+                            )
+                        }
+                    },
+                )
+            },
+        ) { padding ->
+            Box(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (notFound) {
+                    Text(
+                        stringResource(R.string.editor_not_found, scriptId),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.editor_loading),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
         return
@@ -423,6 +453,10 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     // 保存后再执行后续动作（返回 / 运行）。写盘失败也继续动作，但给出提示。
     fun saveAndThen(action: () -> Unit) {
         val content = editorValue.text
+        if (content == savedCode) {
+            action()
+            return
+        }
         scope.launch {
             if (!persist(content)) {
                 snackbar.show(resources.getString(R.string.editor_save_failed))
@@ -442,7 +476,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             val spec = ScriptEnvSpec.parse(runText)
             val stored = container.scriptEnvRepository.values(current.id)
             if (spec.isEmpty && stored.isEmpty()) {
-                container.scriptExecutionManager.run(current.name, runText)
+                container.scriptExecutionManager.run(current.id, current.name, runText)
             } else {
                 envFields = spec.fields
                 envInitial = EnvText.resolve(
@@ -470,45 +504,27 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     BackHandler { saveAndThen(onBack) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            current.name,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        if (dirty) {
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                stringResource(R.string.editor_unsaved),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = { saveAndThen(onBack) }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { undo() }, enabled = canUndo) {
-                        Icon(
-                            ImageVector.vectorResource(R.drawable.ic_undo),
-                            contentDescription = stringResource(R.string.editor_undo),
-                        )
-                    }
-                    IconButton(onClick = { redo() }, enabled = canRedo) {
-                        Icon(
-                            ImageVector.vectorResource(R.drawable.ic_redo),
-                            contentDescription = stringResource(R.string.editor_redo),
-                        )
-                    }
+    IzukiPageScaffold(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    current.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (dirty) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(R.string.editor_unsaved),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        onBack = { saveAndThen(onBack) },
+        actions = {
                     IconButton(onClick = { findVisible = !findVisible }) {
                         Icon(
                             Icons.Filled.Search,
@@ -523,6 +539,23 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                             expanded = historyMenuOpen,
                             onDismissRequest = { historyMenuOpen = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_undo)) },
+                                enabled = canUndo,
+                                onClick = {
+                                    historyMenuOpen = false
+                                    undo()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_redo)) },
+                                enabled = canRedo,
+                                onClick = {
+                                    historyMenuOpen = false
+                                    redo()
+                                },
+                            )
+                            HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.editor_history)) },
                                 onClick = {
@@ -570,8 +603,6 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.common_run))
                         }
                     }
-                },
-            )
         },
     ) { padding ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(padding).imePadding()) {
@@ -777,7 +808,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             },
             confirmButton = {
                 TextButton(onClick = { variablesOpen = false }) {
-                    Text(stringResource(R.string.common_cancel))
+                    Text(stringResource(R.string.common_close))
                 }
             },
         )
@@ -821,7 +852,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             },
             confirmButton = {
                 TextButton(onClick = { historyOpen = false }) {
-                    Text(stringResource(R.string.common_cancel))
+                    Text(stringResource(R.string.common_close))
                 }
             },
         )
@@ -835,7 +866,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             onDismiss = { envSource = null },
             onConfirm = { values ->
                 container.scriptEnvRepository.saveValues(current.id, values)
-                container.scriptExecutionManager.run(current.name, source, values)
+                container.scriptExecutionManager.run(current.id, current.name, source, values)
                 envSource = null
             },
         )

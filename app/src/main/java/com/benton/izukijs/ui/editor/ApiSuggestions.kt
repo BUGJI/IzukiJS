@@ -1,7 +1,7 @@
 package com.benton.izukijs.ui.editor
 
 /** 一条 API 补全建议；[text] 是实际插入编辑器的文本。 */
-data class ApiSuggestion(val text: String, val hint: String = "")
+data class ApiSuggestion(val text: String)
 
 /**
  * 编辑器里的轻量 API 补全。不做 JavaScript 语法分析，只根据光标前的标识符 / 命名空间
@@ -12,37 +12,37 @@ object ApiSuggestions {
     private val TOKEN = Regex("""[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]*)?$""")
 
     private val TOP_LEVEL: List<ApiSuggestion> = listOf(
-        ApiSuggestion("app.", "应用"),
-        ApiSuggestion("selector.", "控件选择"),
-        ApiSuggestion("images.", "找图找色"),
-        ApiSuggestion("ocr.", "文字识别"),
-        ApiSuggestion("http.", "网络请求"),
-        ApiSuggestion("clipboard.", "剪贴板"),
-        ApiSuggestion("notify.", "通知"),
-        ApiSuggestion("fs.", "文件"),
-        ApiSuggestion("shell.", "Shell"),
-        ApiSuggestion("ai.", "AI Agent"),
-        ApiSuggestion("env.", "运行参数"),
-        ApiSuggestion("state.", "运行状态"),
-        ApiSuggestion("permissions.", "权限查询"),
-        ApiSuggestion("device.", "设备信息"),
-        ApiSuggestion("click(", "点击"),
-        ApiSuggestion("longClick(", "长按"),
-        ApiSuggestion("swipe(", "滑动"),
-        ApiSuggestion("gesture(", "复杂手势"),
-        ApiSuggestion("press(", "按键"),
-        ApiSuggestion("input(", "输入文本"),
-        ApiSuggestion("back(", "返回"),
-        ApiSuggestion("home(", "主页"),
-        ApiSuggestion("recents(", "最近任务"),
-        ApiSuggestion("sleep(", "休眠"),
-        ApiSuggestion("waitUntil(", "等待条件"),
-        ApiSuggestion("waitUntilGone(", "等待条件消失"),
-        ApiSuggestion("toast(", "Toast"),
-        ApiSuggestion("log(", "日志"),
-        ApiSuggestion("captureScreen(", "保存截图"),
-        ApiSuggestion("require(", "引入脚本模块"),
-        ApiSuggestion("exit(", "结束脚本"),
+        ApiSuggestion("app."),
+        ApiSuggestion("selector."),
+        ApiSuggestion("images."),
+        ApiSuggestion("ocr."),
+        ApiSuggestion("http."),
+        ApiSuggestion("clipboard."),
+        ApiSuggestion("notify."),
+        ApiSuggestion("fs."),
+        ApiSuggestion("shell."),
+        ApiSuggestion("ai."),
+        ApiSuggestion("env."),
+        ApiSuggestion("state."),
+        ApiSuggestion("permissions."),
+        ApiSuggestion("device."),
+        ApiSuggestion("click("),
+        ApiSuggestion("longClick("),
+        ApiSuggestion("swipe("),
+        ApiSuggestion("gesture("),
+        ApiSuggestion("press("),
+        ApiSuggestion("input("),
+        ApiSuggestion("back("),
+        ApiSuggestion("home("),
+        ApiSuggestion("recents("),
+        ApiSuggestion("sleep("),
+        ApiSuggestion("waitUntil("),
+        ApiSuggestion("waitUntilGone("),
+        ApiSuggestion("toast("),
+        ApiSuggestion("log("),
+        ApiSuggestion("captureScreen("),
+        ApiSuggestion("require("),
+        ApiSuggestion("exit("),
     )
 
     private val MEMBERS: Map<String, List<String>> = mapOf(

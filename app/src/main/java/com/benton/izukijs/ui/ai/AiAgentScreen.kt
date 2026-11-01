@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -15,6 +16,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
@@ -39,6 +42,7 @@ import com.benton.izukijs.ai.AiConfig
 import com.benton.izukijs.ai.AiPrompts
 import com.benton.izukijs.ai.ChatMessage
 import com.benton.izukijs.ui.common.DecimalField
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LabeledField
 import com.benton.izukijs.ui.common.NumberField
 import com.benton.izukijs.ui.common.PageColumn
@@ -61,13 +65,14 @@ fun AiAgentScreen(onBack: () -> Unit) {
 
     var testResult by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    var confirmResetPrompt by remember { mutableStateOf(false) }
 
     fun update(new: AiConfig) = container.aiConfigRepository.save(new)
 
     // 系统提示词本地编辑态：非编辑（dirty=false）时才跟随外部值，兼容「重置 / 导入」。
-    var promptText by remember { mutableStateOf(config.systemPrompt) }
-    var promptDirty by remember { mutableStateOf(false) }
+    // 用 rememberSaveable 保留旋转前的未提交草稿。
+    var promptText by rememberSaveable { mutableStateOf(config.systemPrompt) }
+    var promptDirty by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(config.systemPrompt) {
         if (!promptDirty) promptText = config.systemPrompt
     }
@@ -78,20 +83,9 @@ fun AiAgentScreen(onBack: () -> Unit) {
         onDispose { if (latestPromptDirty) update(config.copy(systemPrompt = latestPrompt)) }
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.ai_title)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-            )
-        },
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.ai_title)) },
+        onBack = onBack,
     ) { padding ->
         PageColumn(
             modifier = Modifier.padding(padding).padding(16.dp),
@@ -193,11 +187,9 @@ fun AiAgentScreen(onBack: () -> Unit) {
                     minLines = 6,
                 )
                 Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = {
-                    promptDirty = false
-                    promptText = AiPrompts.DEFAULT_AGENT_PROMPT
-                    update(config.copy(systemPrompt = AiPrompts.DEFAULT_AGENT_PROMPT))
-                }) { Text(stringResource(R.string.ai_prompt_reset)) }
+                OutlinedButton(onClick = { confirmResetPrompt = true }) {
+                    Text(stringResource(R.string.ai_prompt_reset))
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -240,5 +232,26 @@ fun AiAgentScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    if (confirmResetPrompt) {
+        AlertDialog(
+            onDismissRequest = { confirmResetPrompt = false },
+            title = { Text(stringResource(R.string.ai_prompt_reset)) },
+            text = { Text(stringResource(R.string.ai_prompt_reset_confirm)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmResetPrompt = false
+                    promptDirty = false
+                    promptText = AiPrompts.DEFAULT_AGENT_PROMPT
+                    update(config.copy(systemPrompt = AiPrompts.DEFAULT_AGENT_PROMPT))
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmResetPrompt = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }

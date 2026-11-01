@@ -19,9 +19,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -31,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -75,12 +78,14 @@ import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptSort
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.subscription.ScriptSubscription
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
+import com.benton.izukijs.ui.common.PageMaxWidth
 import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.intervalLabel
 import com.benton.izukijs.ui.common.rememberAppHaptics
-import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -124,7 +129,6 @@ fun ScriptsScreen(
     var pendingScanFile by remember { mutableStateOf<File?>(null) }
     var query by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     // 置顶优先，其次按所选排序方式；搜索只在已排序结果上过滤。
     val ordered = remember(scripts, pinned, sort) {
@@ -270,14 +274,9 @@ fun ScriptsScreen(
         )
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.scripts_title)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                actions = {
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.scripts_title)) },
+        actions = {
                     IconButton(onClick = { startScanImport() }) {
                         Icon(
                             painterResource(R.drawable.ic_qr_code_scanner),
@@ -336,8 +335,6 @@ fun ScriptsScreen(
                             )
                         }
                     }
-                },
-            )
         },
         floatingActionButton = {
             FloatingActionButton(onClick = { newName = defaultName; showNewDialog = true }) {
@@ -345,7 +342,13 @@ fun ScriptsScreen(
             }
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding).imePadding(),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+        Column(
+            modifier = Modifier.widthIn(max = PageMaxWidth).fillMaxWidth().fillMaxSize(),
+        ) {
             if (scripts.isNotEmpty()) {
                 OutlinedTextField(
                     value = query,
@@ -361,9 +364,21 @@ fun ScriptsScreen(
                     // 首次进入时用骨架屏占位，避免闪一下空状态。
                     !loaded -> ScriptsSkeleton()
 
-                    scripts.isEmpty() -> EmptyState(stringResource(R.string.scripts_empty))
+                    scripts.isEmpty() -> EmptyState(
+                        text = stringResource(R.string.scripts_empty),
+                        icon = Icons.Filled.Add,
+                        actionLabel = stringResource(R.string.scripts_new),
+                        onAction = {
+                            newName = defaultName
+                            showNewDialog = true
+                        },
+                    )
 
-                    filtered.isEmpty() -> EmptyState(stringResource(R.string.scripts_no_match, query.trim()))
+                    filtered.isEmpty() -> EmptyState(
+                        text = stringResource(R.string.scripts_no_match, query.trim()),
+                        actionLabel = stringResource(R.string.common_clear),
+                        onAction = { query = "" },
+                    )
 
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
@@ -388,6 +403,7 @@ fun ScriptsScreen(
                     }
                 }
             }
+        }
         }
     }
 
@@ -517,7 +533,9 @@ fun ScriptsScreen(
                             }
                         }
                     }
-                }) { Text(stringResource(R.string.common_delete)) }
+                }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                    Text(stringResource(R.string.common_delete))
+                }
             },
             dismissButton = {
                 TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) }

@@ -30,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -44,6 +45,8 @@ import com.benton.izukijs.mcp.McpConfig
 import com.benton.izukijs.mcp.McpHttpHandler
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.ConfirmDialog
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LabeledField
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.NumberField
@@ -51,7 +54,6 @@ import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SwitchRow
-import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -68,10 +70,9 @@ fun McpServerScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var confirmingRegenerate by remember { mutableStateOf(false) }
-    var blockedText by remember(config.blockedPackages) {
+    var blockedText by rememberSaveable(config.blockedPackages) {
         mutableStateOf(config.blockedPackages.joinToString(", "))
     }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     fun current() = container.mcpConfigRepository.current()
 
@@ -99,23 +100,9 @@ fun McpServerScreen(onBack: () -> Unit) {
     val isRunning = status.running
     val blockedSavedText = stringResource(R.string.mcp_blocked_saved)
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.mcp_title)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.common_back),
-                        )
-                    }
-                },
-            )
-        },
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.mcp_title)) },
+        onBack = onBack,
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(16.dp)) {
 
@@ -320,21 +307,14 @@ fun McpServerScreen(onBack: () -> Unit) {
     }
 
     if (confirmingRegenerate) {
-        AlertDialog(
-            onDismissRequest = { confirmingRegenerate = false },
-            title = { Text(stringResource(R.string.mcp_token_regenerate)) },
-            text = { Text(stringResource(R.string.mcp_token_regenerate_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmingRegenerate = false
-                    apply(config.copy(token = McpConfig.newToken()))
-                    scope.launch { snackbar.show(resources.getString(R.string.mcp_token_regenerated)) }
-                }) { Text(stringResource(R.string.common_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmingRegenerate = false }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
+        ConfirmDialog(
+            title = stringResource(R.string.mcp_token_regenerate),
+            message = stringResource(R.string.mcp_token_regenerate_confirm),
+            onDismiss = { confirmingRegenerate = false },
+            onConfirm = {
+                confirmingRegenerate = false
+                apply(config.copy(token = McpConfig.newToken()))
+                scope.launch { snackbar.show(resources.getString(R.string.mcp_token_regenerated)) }
             },
         )
     }

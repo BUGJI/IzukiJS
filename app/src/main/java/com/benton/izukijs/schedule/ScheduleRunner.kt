@@ -78,6 +78,7 @@ class ScheduleRunner(
         repository.upsert(updated)
         logBus.info("⏰ 定时触发: ${script.name}")
         val started = executionManager.run(
+            scriptId = script.id,
             scriptName = script.name,
             source = scriptRepository.read(script),
             onFinished = { success -> scheduleManager.onFinished(updated, success) },

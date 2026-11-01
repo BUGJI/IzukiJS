@@ -9,8 +9,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.LanguagePreferences
@@ -48,6 +50,13 @@ class MainActivity : ComponentActivity() {
                 seedColor = appearance.seedArgb,
                 amoled = appearance.amoledBackground,
             ) {
+                // 强制亮 / 暗主题时，系统栏图标也要跟随应用主题，而不是系统夜间模式。
+                SideEffect {
+                    WindowCompat.getInsetsController(window, window.decorView).apply {
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,

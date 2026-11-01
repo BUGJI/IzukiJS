@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -74,6 +75,8 @@ import com.benton.izukijs.update.UpdateMethod
 import com.benton.izukijs.update.UpdateSettings
 import com.benton.izukijs.update.UpdateState
 import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.ConfirmDialog
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LabeledField
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
@@ -124,17 +127,8 @@ fun SettingsScreen(
     val updateState by container.updateManager.state.collectAsStateWithLifecycle()
     val globalEnv by container.globalEnvRepository.values.collectAsStateWithLifecycle()
 
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-            )
-        },
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.settings_title)) },
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(12.dp))
@@ -239,30 +233,19 @@ private fun GeneralSettings() {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.settings_dynamic_color))
-                Text(
-                    stringResource(
-                        if (dynamicColorSupported) {
-                            R.string.settings_dynamic_color_desc
-                        } else {
-                            R.string.settings_dynamic_color_unsupported
-                        },
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = dynamicColorSupported && appearance.dynamicColor,
-                enabled = dynamicColorSupported,
-                onCheckedChange = { update(appearance.copy(dynamicColor = it)) },
-            )
-        }
+        SwitchRow(
+            label = stringResource(R.string.settings_dynamic_color),
+            description = stringResource(
+                if (dynamicColorSupported) {
+                    R.string.settings_dynamic_color_desc
+                } else {
+                    R.string.settings_dynamic_color_unsupported
+                },
+            ),
+            checked = dynamicColorSupported && appearance.dynamicColor,
+            enabled = dynamicColorSupported,
+            onChange = { update(appearance.copy(dynamicColor = it)) },
+        )
         Spacer(Modifier.height(12.dp))
         SwitchRow(
             label = stringResource(R.string.settings_amoled_title),
@@ -703,20 +686,16 @@ private fun StorageSettings() {
     }
 
     if (confirmClearLog) {
-        AlertDialog(
-            onDismissRequest = { confirmClearLog = false },
-            title = { Text(stringResource(R.string.storage_clear_now)) },
-            text = { Text(stringResource(R.string.storage_clear_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    container.logBus.clear()
-                    container.logFileStore.clear()
-                    refreshLogSize()
-                    confirmClearLog = false
-                }) { Text(stringResource(R.string.common_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClearLog = false }) { Text(stringResource(R.string.common_cancel)) }
+        ConfirmDialog(
+            title = stringResource(R.string.storage_clear_now),
+            message = stringResource(R.string.storage_clear_confirm),
+            destructive = true,
+            onDismiss = { confirmClearLog = false },
+            onConfirm = {
+                container.logBus.clear()
+                container.logFileStore.clear()
+                refreshLogSize()
+                confirmClearLog = false
             },
         )
     }
@@ -944,23 +923,12 @@ private fun EditorSettingsSection() {
             }
         }
         Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.editor_auto_save))
-                Text(
-                    stringResource(R.string.editor_auto_save_desc),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Switch(
-                checked = editorSettings.autoSave,
-                onCheckedChange = { update(editorSettings.copy(autoSave = it)) },
-            )
-        }
+        SwitchRow(
+            label = stringResource(R.string.editor_auto_save),
+            description = stringResource(R.string.editor_auto_save_desc),
+            checked = editorSettings.autoSave,
+            onChange = { update(editorSettings.copy(autoSave = it)) },
+        )
     }
 }
 
@@ -973,6 +941,7 @@ private fun BackupSettingsScreen() {
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     var confirmReset by remember { mutableStateOf(false) }
+    var pendingImportText by rememberSaveable { mutableStateOf<String?>(null) }
 
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
@@ -984,18 +953,11 @@ private fun BackupSettingsScreen() {
                     context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
                 }.getOrNull()
             }
-            val msg = if (text.isNullOrBlank()) {
-                resources.getString(R.string.backup_read_failed)
+            if (text.isNullOrBlank()) {
+                snackbar.show(resources.getString(R.string.backup_read_failed))
             } else {
-                runCatching { container.configBackupManager.importJson(text) }
-                    .fold(
-                        onSuccess = { resources.getString(R.string.backup_import_success) },
-                        onFailure = {
-                            resources.getString(R.string.backup_import_failed, it.message.orEmpty())
-                        },
-                    )
+                pendingImportText = text
             }
-            snackbar.show(msg)
         }
     }
 
@@ -1044,21 +1006,45 @@ private fun BackupSettingsScreen() {
         OutlinedButton(onClick = { confirmReset = true }) { Text(stringResource(R.string.backup_reset_button)) }
     }
 
-    if (confirmReset) {
+    pendingImportText?.let { text ->
         AlertDialog(
-            onDismissRequest = { confirmReset = false },
-            title = { Text(stringResource(R.string.backup_reset_button)) },
-            text = { Text(stringResource(R.string.backup_reset_confirm)) },
+            onDismissRequest = { pendingImportText = null },
+            title = { Text(stringResource(R.string.backup_import)) },
+            text = { Text(stringResource(R.string.backup_import_confirm)) },
             confirmButton = {
                 TextButton(onClick = {
-                    runCatching { container.configBackupManager.resetAll() }
-                        .onSuccess { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_done)) } }
-                        .onFailure { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_failed)) } }
-                    confirmReset = false
+                    pendingImportText = null
+                    scope.launch {
+                        val msg = runCatching { container.configBackupManager.importJson(text) }
+                            .fold(
+                                onSuccess = { resources.getString(R.string.backup_import_success) },
+                                onFailure = {
+                                    resources.getString(R.string.backup_import_failed, it.message.orEmpty())
+                                },
+                            )
+                        snackbar.show(msg)
+                    }
                 }) { Text(stringResource(R.string.common_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmReset = false }) { Text(stringResource(R.string.common_cancel)) }
+                TextButton(onClick = { pendingImportText = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    if (confirmReset) {
+        ConfirmDialog(
+            title = stringResource(R.string.backup_reset_button),
+            message = stringResource(R.string.backup_reset_confirm),
+            destructive = true,
+            onDismiss = { confirmReset = false },
+            onConfirm = {
+                runCatching { container.configBackupManager.resetAll() }
+                    .onSuccess { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_done)) } }
+                    .onFailure { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_failed)) } }
+                confirmReset = false
             },
         )
     }
@@ -1121,21 +1107,9 @@ private fun SettingsDetailScaffold(
     onBack: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-            )
-        },
+    IzukiPageScaffold(
+        title = { Text(title) },
+        onBack = onBack,
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             content()

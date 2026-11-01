@@ -2,8 +2,11 @@ package com.benton.izukijs.ui.permission
 
 import android.app.Activity
 import android.app.AppOpsManager
+import android.app.StatusBarManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -68,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -87,11 +91,13 @@ import com.benton.izukijs.service.DebugOverlayService
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.IzukiAccessibilityService
 import com.benton.izukijs.service.ScreenCaptureService
+import com.benton.izukijs.service.ScriptTileService
 import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SwitchRow
-import com.benton.izukijs.ui.common.stableTopAppBarColors
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
 import kotlinx.coroutines.Dispatchers
@@ -199,10 +205,9 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     fun saveRuntimeSettings(new: RuntimeSettings) = container.runtimeSettingsRepository.save(new)
     fun saveHttpSettings(new: HttpSettings) = container.httpSettingsRepository.save(new)
 
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
-
     val pagerState = rememberPagerState(pageCount = { PermissionGroup.entries.size })
     val scope = rememberCoroutineScope()
+    val snackbar = LocalSnackbarController.current
     var infoSheet by remember { mutableStateOf<PermissionInfo?>(null) }
 
     // 任一读取 / 操作后端就绪即视为该维度已授权。
@@ -513,10 +518,9 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             ready = usageAccessGranted,
             onShowInfo = { infoSheet = info },
             action = {
-                SwitchRow(
-                    label = stringResource(R.string.perm_switch_grant),
-                    checked = usageAccessGranted,
-                ) { openSystemSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) }
+                SystemPermissionAction(granted = usageAccessGranted) {
+                    openSystemSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                }
             },
         )
     }
@@ -540,10 +544,9 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             ready = notificationListenerGranted,
             onShowInfo = { infoSheet = info },
             action = {
-                SwitchRow(
-                    label = stringResource(R.string.perm_switch_grant),
-                    checked = notificationListenerGranted,
-                ) { openSystemSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+                SystemPermissionAction(granted = notificationListenerGranted) {
+                    openSystemSettings(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
             },
         )
     }
@@ -591,10 +594,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
             ready = allFilesGranted,
             onShowInfo = { infoSheet = info },
             action = {
-                SwitchRow(
-                    label = stringResource(R.string.perm_switch_grant),
-                    checked = allFilesGranted,
-                ) {
+                SystemPermissionAction(granted = allFilesGranted) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                         openSystemSettings(
                             Intent(
@@ -704,7 +704,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
         PermissionCard(
             info = info,
             status = status,
-            ready = runtimeSettings.scriptTimeoutMinutes > 0,
+            ready = true,
             onShowInfo = { infoSheet = info },
             action = {
                 Column {
@@ -791,6 +791,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
 
     @Composable
     fun TileCard() {
+        val resources = LocalResources.current
         val pinnedId by container.tileSettingsRepository.scriptId.collectAsStateWithLifecycle()
         var pinnedName by remember(pinnedId) { mutableStateOf<String?>(null) }
         LaunchedEffect(pinnedId) {
@@ -805,12 +806,17 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                 Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
             ),
         )
+        val tileReady = runtimeSettings.tileEnabled && pinnedName != null
         PermissionCard(
             info = info,
             status = stringResource(
-                if (runtimeSettings.tileEnabled) R.string.perm_status_on else R.string.perm_status_off,
+                when {
+                    !runtimeSettings.tileEnabled -> R.string.perm_status_off
+                    pinnedName == null -> R.string.perm_tile_enabled_unbound
+                    else -> R.string.perm_status_on
+                },
             ),
-            ready = runtimeSettings.tileEnabled && pinnedName != null,
+            ready = tileReady,
             onShowInfo = { infoSheet = info },
             action = {
                 Column {
@@ -825,35 +831,67 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        stringResource(R.string.perm_tile_manual_hint),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        runtimeSettings.tileEnabled &&
+                        pinnedName != null
+                    ) {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(onClick = {
+                            val manager = context.getSystemService(StatusBarManager::class.java)
+                            if (manager == null) {
+                                scope.launch {
+                                    snackbar.show(resources.getString(R.string.perm_tile_add_failed))
+                                }
+                                return@OutlinedButton
+                            }
+                            runCatching {
+                                manager.requestAddTileService(
+                                    ComponentName(context, ScriptTileService::class.java),
+                                    resources.getString(R.string.app_name),
+                                    Icon.createWithResource(context, R.drawable.ic_stat_script),
+                                    context.mainExecutor,
+                                ) { result ->
+                                    val added =
+                                        result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED ||
+                                            result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED
+                                    scope.launch {
+                                        snackbar.show(
+                                            resources.getString(
+                                                if (added) {
+                                                    R.string.perm_tile_added
+                                                } else {
+                                                    R.string.perm_tile_add_failed
+                                                },
+                                            ),
+                                        )
+                                    }
+                                }
+                            }.onFailure {
+                                scope.launch {
+                                    snackbar.show(resources.getString(R.string.perm_tile_add_failed))
+                                }
+                            }
+                        }) { Text(stringResource(R.string.perm_tile_add)) }
+                    } else {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.perm_tile_manual_hint),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             },
         )
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.run_permissions_title)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { shizukuManager.refresh(); permissionRefresh++ }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
-                    }
-                },
-            )
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.run_permissions_title)) },
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = { shizukuManager.refresh(); permissionRefresh++ }) {
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
+            }
         },
     ) { padding ->
         Column(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -925,6 +963,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             TileCard()
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
                 }
             }
         }
@@ -1144,6 +1183,18 @@ private fun ProsCons(pros: List<String>, cons: List<String>) {
         cons.forEach { text ->
             Text("✕ $text", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
+    }
+}
+
+/** 系统授予项没有应用内开关，提供「前往设置 / 管理」入口，避免开关被点击后回弹的误导。 */
+@Composable
+private fun SystemPermissionAction(granted: Boolean, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick) {
+        Text(
+            stringResource(
+                if (granted) R.string.perm_action_manage_settings else R.string.perm_action_open_settings,
+            ),
+        )
     }
 }
 

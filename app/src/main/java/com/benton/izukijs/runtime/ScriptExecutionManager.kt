@@ -55,12 +55,16 @@ class ScriptExecutionManager(
     private val _runningScript = MutableStateFlow<String?>(null)
     val runningScript: StateFlow<String?> = _runningScript.asStateFlow()
 
+    private val _runningScriptId = MutableStateFlow<String?>(null)
+    val runningScriptId: StateFlow<String?> = _runningScriptId.asStateFlow()
+
     private var job: Job? = null
 
     @Volatile
     private var engine: JsEngine? = null
 
     fun run(
+        scriptId: String,
         scriptName: String,
         source: String,
         values: Map<String, String> = emptyMap(),
@@ -80,29 +84,30 @@ class ScriptExecutionManager(
         }
         // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
         val spec = ScriptEnvSpec.parse(source)
-        val useGlobal = scriptEnvRepository.useGlobalEnv(scriptName)
+        val useGlobal = scriptEnvRepository.useGlobalEnv(scriptId)
         val resolved = EnvText.resolve(
             defaults = spec.defaults(),
             global = globalEnvRepository.current(),
-            script = scriptEnvRepository.env(scriptName),
-            runtime = scriptEnvRepository.values(scriptName) + values,
+            script = scriptEnvRepository.env(scriptId),
+            runtime = scriptEnvRepository.values(scriptId) + values,
             useGlobal = useGlobal,
         )
         if (values.isNotEmpty()) {
             // 只持久化本次表单输入与已有脚本参数，避免把全局变量快照写进脚本参数。
             scriptEnvRepository.saveValues(
-                scriptName,
-                spec.defaults() + scriptEnvRepository.values(scriptName) + values,
+                scriptId,
+                spec.defaults() + scriptEnvRepository.values(scriptId) + values,
             )
         }
-        val scriptEnv = ScriptEnv(scriptName, resolved, scriptEnvRepository)
+        val scriptEnv = ScriptEnv(scriptId, resolved, scriptEnvRepository)
         if (resolved.isNotEmpty()) {
             // 只记录键名，避免把可能含密钥的变量值写入日志。
             logBus.info("⚙ 运行参数: " + resolved.keys.sorted().joinToString(", "))
         }
 
         _runningScript.value = scriptName
-        runHistoryRepository.record(scriptName)
+        _runningScriptId.value = scriptId
+        runHistoryRepository.record(scriptId, scriptName)
         logBus.info("▶ 开始运行: $scriptName")
         if (needs != null) {
             logBus.info("🔒 声明能力: " + needs.sorted().joinToString(", "))
@@ -158,6 +163,7 @@ class ScriptExecutionManager(
                 }
                 _running.value = false
                 _runningScript.value = null
+                _runningScriptId.value = null
                 ScriptForegroundService.stop(appContext)
                 val success = !timedOut && (failure == null || exited)
                 runCatching { onFinished?.invoke(success) }

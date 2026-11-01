@@ -26,12 +26,16 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -60,11 +64,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.hid.HidConnectionState
 import com.benton.izukijs.ui.common.EmptyState
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
-import com.benton.izukijs.ui.common.stableTopAppBarColors
+import com.benton.izukijs.ui.common.PageMaxWidth
 import com.benton.izukijs.ui.rememberAppContainer
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun HidSetupScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
@@ -85,7 +90,6 @@ fun HidSetupScreen(onBack: () -> Unit) {
     var targetCenter by remember { mutableStateOf<IntOffset?>(null) }
     var hit by remember { mutableStateOf(false) }
     var verifyState by remember { mutableStateOf(VerifyState.IDLE) }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -111,27 +115,25 @@ fun HidSetupScreen(onBack: () -> Unit) {
         if (client.hasPermissions()) manager.startScan() else permissionLauncher.launch(requiredPermissions)
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.control_hid)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { if (state == HidConnectionState.SCANNING) manager.stopScan() else startScan() }) {
-                        Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.hid_scan))
-                    }
-                },
-            )
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.control_hid)) },
+        onBack = onBack,
+        actions = {
+            IconButton(onClick = { if (state == HidConnectionState.SCANNING) manager.stopScan() else startScan() }) {
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.hid_scan))
+            }
         },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.TopCenter,
+        ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = PageMaxWidth)
+                .fillMaxWidth()
+                .fillMaxHeight(),
+        ) {
             Card(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(stringResource(R.string.hid_connection_status), style = MaterialTheme.typography.titleMedium)
@@ -200,7 +202,10 @@ fun HidSetupScreen(onBack: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                         Button(onClick = { startScan() }) { Text(stringResource(R.string.hid_scan_devices)) }
                         // 已连接或正在自动重连时都提供「断开」：点它彻底断开并忘记设备，后续不再重试。
                         // 扫描中优先服务用户选设备，不显示该按钮。
@@ -232,8 +237,11 @@ fun HidSetupScreen(onBack: () -> Unit) {
 
             if (devices.isEmpty()) {
                 EmptyState(
-                    stringResource(R.string.hid_empty),
+                    text = stringResource(R.string.hid_empty),
                     modifier = Modifier.fillMaxWidth().weight(1f),
+                    icon = Icons.Filled.Refresh,
+                    actionLabel = stringResource(R.string.hid_scan_devices),
+                    onAction = { startScan() },
                 )
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -248,6 +256,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
         }
     }
 }

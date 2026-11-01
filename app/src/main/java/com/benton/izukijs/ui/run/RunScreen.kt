@@ -57,6 +57,8 @@ import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.common.ConfirmDialog
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.common.SectionCard
@@ -82,13 +84,13 @@ fun RunScreen(
     val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
     val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
     val runningScript by container.scriptExecutionManager.runningScript.collectAsStateWithLifecycle()
+    val runningScriptId by container.scriptExecutionManager.runningScriptId.collectAsStateWithLifecycle()
     val envData by container.scriptEnvRepository.data.collectAsStateWithLifecycle()
     val recent by container.runHistoryRepository.recent.collectAsStateWithLifecycle()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var scriptsLoaded by remember { mutableStateOf(false) }
     var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
-    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
     fun requestRun(script: ScriptInfo) {
         haptics.tap()
@@ -98,7 +100,7 @@ fun RunScreen(
             val stored = container.scriptEnvRepository.values(script.id)
             val useGlobalEnv = container.scriptEnvRepository.useGlobalEnv(script.id)
             if (spec.isEmpty && stored.isEmpty()) {
-                container.scriptExecutionManager.run(script.name, source)
+                container.scriptExecutionManager.run(script.id, script.name, source)
             } else {
                 envDialog = EnvDialogState(
                     script = script,
@@ -124,9 +126,15 @@ fun RunScreen(
     }
 
     // 运行历史里脚本可能已被删除 / 重命名，只保留仍然存在的。
+    // 新记录以 id 关联；旧版本没有 id，回退到按名称匹配。
     val recentItems = remember(recent, scripts) {
         val byId = scripts.associateBy { it.id }
-        recent.mapNotNull { record -> byId[record.name]?.let { RunItem(it, record.at) } }
+        val byName = scripts.associateBy { it.name }
+        recent.mapNotNull { record ->
+            val script = record.id.takeIf { it.isNotBlank() }?.let(byId::get)
+                ?: if (record.id.isBlank()) byName[record.name] else null
+            script?.let { RunItem(it, record.at) }
+        }
     }
     val primary = recentItems.firstOrNull()
 
@@ -157,15 +165,8 @@ fun RunScreen(
         else -> PermissionStatus.NONE
     }
 
-    Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.app_name)) },
-                scrollBehavior = scrollBehavior,
-                colors = stableTopAppBarColors(),
-            )
-        },
+    IzukiPageScaffold(
+        title = { Text(stringResource(R.string.app_name)) },
     ) { padding ->
         PageColumn(
             modifier = Modifier
@@ -230,7 +231,7 @@ fun RunScreen(
                         enabled = running,
                     ) { Text(stringResource(R.string.common_stop)) }
                 }
-                val runState = runningScript?.let { envData[it]?.state }.orEmpty()
+                val runState = runningScriptId?.let { envData[it]?.state }.orEmpty()
                 if (running && runState.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     Text(stringResource(R.string.run_vars_title), style = MaterialTheme.typography.labelLarge)
@@ -278,6 +279,7 @@ fun RunScreen(
                     }
                 }
             }
+            Spacer(Modifier.height(16.dp))
         }
     }
 
@@ -289,26 +291,27 @@ fun RunScreen(
             onDismiss = { envDialog = null },
             onConfirm = { values ->
                 container.scriptEnvRepository.saveValues(state.script.id, values)
-                container.scriptExecutionManager.run(state.script.name, state.source, values)
+                container.scriptExecutionManager.run(
+                    state.script.id,
+                    state.script.name,
+                    state.source,
+                    values,
+                )
                 envDialog = null
             },
         )
     }
 
     if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text(stringResource(R.string.run_quick_clear)) },
-            text = { Text(stringResource(R.string.run_quick_clear_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    haptics.reject()
-                    container.runHistoryRepository.clear()
-                    confirmClear = false
-                }) { Text(stringResource(R.string.common_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.common_cancel)) }
+        ConfirmDialog(
+            title = stringResource(R.string.run_quick_clear),
+            message = stringResource(R.string.run_quick_clear_confirm),
+            destructive = true,
+            onDismiss = { confirmClear = false },
+            onConfirm = {
+                haptics.reject()
+                container.runHistoryRepository.clear()
+                confirmClear = false
             },
         )
     }
@@ -360,7 +363,8 @@ private enum class PermissionStatus { COMPLETE, PARTIAL, NONE }
 /**
  * 首页顶部权限概览卡片：内容居左，中部展示软件版本，底部以一行文字列出已授权的权限；
  * 右侧在未配置时提示进入配置、已配置时显示状态图标。整卡可点击进入「权限与能力」页。
- * 授权状态驱动背景色：未配置为卡片默认底色、缺少能力为黄色、读取与操作均就绪为绿色；文字始终为白色。
+ * 授权状态驱动背景色与文字色：未配置为卡片默认底色与默认文字色、缺少能力为黄色、读取与操作均就绪为绿色，
+ * 文字使用对应容器的前景色以适配亮 / 暗主题。
  */
 @Composable
 private fun RunPermissionCard(
@@ -375,6 +379,11 @@ private fun RunPermissionCard(
         PermissionStatus.PARTIAL -> extra.warningContainer
         PermissionStatus.NONE -> CardDefaults.cardColors().containerColor
     }
+    val content = when (status) {
+        PermissionStatus.COMPLETE -> extra.onSuccessContainer
+        PermissionStatus.PARTIAL -> extra.onWarningContainer
+        PermissionStatus.NONE -> MaterialTheme.colorScheme.onSurface
+    }
     val title = stringResource(
         when {
             status == PermissionStatus.NONE -> R.string.run_status_card_unauthorized
@@ -386,7 +395,7 @@ private fun RunPermissionCard(
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = container, contentColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = container, contentColor = content),
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

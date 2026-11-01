@@ -102,6 +102,7 @@ adb forward tcp:8765 tcp:8765
 |---|---|---|
 | `shell` | 允许 Shell | 执行 Shell 命令（需 Shizuku / Root）；高危命令默认拦截 |
 | `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理 |
+| `script_write` | 允许运行脚本 | 新建或覆盖脚本源码（上限 1 MiB）；覆盖前旧内容进入历史，返回真实脚本 id |
 
 ## 坐标与截图
 

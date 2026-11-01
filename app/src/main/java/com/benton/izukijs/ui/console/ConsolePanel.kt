@@ -57,6 +57,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.runtime.LogEntry
 import com.benton.izukijs.runtime.LogLevel
 import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.displayColor
@@ -145,7 +146,10 @@ fun ConsolePanel(
             TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) {
                 Text(stringResource(R.string.common_copy))
             }
-            TextButton(onClick = { confirmClear = true }) { Text(stringResource(R.string.common_clear)) }
+            TextButton(
+                onClick = { confirmClear = true },
+                enabled = entries.isNotEmpty(),
+            ) { Text(stringResource(R.string.common_clear)) }
             if (onCollapse != null) {
                 IconButton(onClick = onCollapse) {
                     Icon(
@@ -296,18 +300,15 @@ fun ConsolePanel(
     }
 
     if (confirmClear) {
-        AlertDialog(
-            onDismissRequest = { confirmClear = false },
-            title = { Text(stringResource(R.string.common_clear)) },
-            text = { Text(stringResource(R.string.console_clear_confirm)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClear()
-                    confirmClear = false
-                }) { Text(stringResource(R.string.common_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.common_cancel)) }
+        ConfirmDialog(
+            title = stringResource(R.string.common_clear),
+            message = stringResource(R.string.console_clear_confirm),
+            destructive = true,
+            onDismiss = { confirmClear = false },
+            onConfirm = {
+                haptics.reject()
+                onClear()
+                confirmClear = false
             },
         )
     }
