@@ -5,7 +5,7 @@ import com.benton.izukijs.mcp.protocol.McpProtocolHandler
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.mcp.tools.OperationRegistry
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

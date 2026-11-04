@@ -46,6 +46,10 @@
 -keep class com.benton.izukijs.service.** { *; }
 -keep class com.benton.izukijs.schedule.** { *; }
 
+# ===== 锁屏解锁特权服务 =====
+# Shizuku UserService 通过类名反射实例化，AIDL Stub 和构造函数都不能被 R8 删除/改名。
+-keep class com.benton.izukijs.privileged.** { *; }
+
 # ===== Kotlin / 协程 =====
 -dontwarn kotlinx.coroutines.**
 -keepclassmembers class kotlinx.coroutines.** { volatile <fields>; }

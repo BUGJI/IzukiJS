@@ -6,7 +6,7 @@ import com.benton.izukijs.mcp.tools.McpContent
 import com.benton.izukijs.mcp.tools.McpToolResult
 import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.mcp.tools.OperationRegistry
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener

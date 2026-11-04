@@ -11,7 +11,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.core.content.ContextCompat
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat

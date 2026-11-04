@@ -25,6 +25,7 @@ object ApiSuggestions {
         ApiSuggestion("env."),
         ApiSuggestion("state."),
         ApiSuggestion("permissions."),
+        ApiSuggestion("virtualScreen."),
         ApiSuggestion("device."),
         ApiSuggestion("click("),
         ApiSuggestion("longClick("),
@@ -66,7 +67,10 @@ object ApiSuggestions {
         "ocr" to listOf("recognize(", "recognizePath(", "find("),
         "http" to listOf("request(", "get(", "post(", "postJson(", "available(", "isAllowed("),
         "clipboard" to listOf("get(", "set(", "clear("),
-        "notify" to listOf("available(", "list(", "latest(", "clear("),
+        "notify" to listOf(
+            "available(", "list(", "latest(", "clear(",
+            "progress(", "update(", "reset(", "progressEnabled(",
+        ),
         "fs" to listOf(
             "readText(", "writeText(", "exists(", "isDirectory(", "list(", "size(",
             "mkdirs(", "delete(", "copy(", "move(", "readBase64(", "writeBase64(",
@@ -79,10 +83,15 @@ object ApiSuggestions {
             "accessibility(", "shizuku(", "root(", "hid(", "overlay(", "screenCapture(",
             "notifications(", "bluetooth(", "usageAccess(", "notificationListener(",
             "manageStorage(", "appList(", "http(", "granted(", "all(", "has(",
-            "canControl(", "canScreenshot(",
+            "canControl(", "canScreenshot(", "virtualScreen(", "runMode(",
+        ),
+        "virtualScreen" to listOf(
+            "available(", "active(", "mode(", "allowed(", "start(", "stop(",
+            "launch(", "displayId(", "size(", "info(", "target(", "awaitFrame(", "capture(",
         ),
         "device" to listOf(
-            "width(", "height(", "model(", "brand(", "androidVersion(", "batteryLevel(",
+            "width(", "height(", "screenWidth(", "screenHeight(", "model(", "brand(",
+            "androidVersion(", "batteryLevel(",
         ),
     )
 

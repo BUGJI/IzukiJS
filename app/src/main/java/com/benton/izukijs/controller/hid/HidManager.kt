@@ -3,7 +3,7 @@ package com.benton.izukijs.controller.hid
 import android.content.Context
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

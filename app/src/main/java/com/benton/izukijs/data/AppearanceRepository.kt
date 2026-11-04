@@ -1,9 +1,9 @@
 package com.benton.izukijs.data
 
 import android.content.Context
-import kotlinx.coroutines.flow.MutableStateFlow
+import android.content.SharedPreferences
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /** 主题模式。 */
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
@@ -19,26 +19,15 @@ data class AppearanceSettings(
 )
 
 /** SharedPreferences 持久化 + 内存缓存。 */
-class AppearanceRepository(context: Context) {
+class AppearanceRepository(context: Context) : PrefsStateStore<AppearanceSettings>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = AppearanceSettings(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val settings: StateFlow<AppearanceSettings> get() = state
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<AppearanceSettings> = _settings.asStateFlow()
-
-    fun current(): AppearanceSettings = _settings.value
-
-    fun save(value: AppearanceSettings) {
-        _settings.value = value
-        prefs.edit()
-            .putString(KEY_THEME, value.themeMode.name)
-            .putBoolean(KEY_DYNAMIC, value.dynamicColor)
-            .putBoolean(KEY_AMOLED, value.amoledBackground)
-            .putInt(KEY_SEED, value.seedArgb ?: NO_SEED)
-            .apply()
-    }
-
-    private fun load(): AppearanceSettings {
+    override fun read(): AppearanceSettings {
         val seed = prefs.getInt(KEY_SEED, NO_SEED)
         return AppearanceSettings(
             themeMode = runCatching { ThemeMode.valueOf(prefs.getString(KEY_THEME, null).orEmpty()) }
@@ -47,6 +36,14 @@ class AppearanceRepository(context: Context) {
             amoledBackground = prefs.getBoolean(KEY_AMOLED, false),
             seedArgb = seed.takeIf { it != NO_SEED },
         )
+    }
+
+    override fun write(editor: SharedPreferences.Editor, value: AppearanceSettings) {
+        editor
+            .putString(KEY_THEME, value.themeMode.name)
+            .putBoolean(KEY_DYNAMIC, value.dynamicColor)
+            .putBoolean(KEY_AMOLED, value.amoledBackground)
+            .putInt(KEY_SEED, value.seedArgb ?: NO_SEED)
     }
 
     private companion object {

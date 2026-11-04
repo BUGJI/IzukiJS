@@ -6,18 +6,26 @@ import android.os.Environment
 import androidx.core.app.NotificationManagerCompat
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.EnvText
+import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.ocr.OcrProcessor
+import com.benton.izukijs.runtime.notification.ScriptNotificationCenter
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.ScreenCapture
+import com.benton.izukijs.service.ScreenUnlockController
 import com.benton.izukijs.service.ScriptForegroundService
+import com.benton.izukijs.service.UnlockResult
 import com.benton.izukijs.service.WakeLockController
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
+import com.benton.izukijs.virtualscreen.VirtualScreenOptions
+import com.benton.izukijs.virtualscreen.VirtualScreenSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,6 +52,9 @@ class ScriptExecutionManager(
     private val runtimeSettings: RuntimeSettingsRepository,
     private val httpSettingsRepository: HttpSettingsRepository,
     private val wakeLock: WakeLockController,
+    private val screenUnlock: ScreenUnlockController,
+    private val virtualScreen: VirtualScreenManager,
+    private val virtualScreenSettings: VirtualScreenSettingsRepository,
     private val moduleSourceProvider: (String) -> String?,
 ) {
 
@@ -104,6 +115,15 @@ class ScriptExecutionManager(
             // 只记录键名，避免把可能含密钥的变量值写入日志。
             logBus.info("⚙ 运行参数: " + resolved.keys.sorted().joinToString(", "))
         }
+        val requestedRunMode = RunMode.from(resolved[RUN_MODE_KEY])
+        val virtualSettings = virtualScreenSettings.current()
+        var effectiveRunMode = requestedRunMode ?: virtualSettings.defaultMode
+        if (effectiveRunMode == RunMode.BACKGROUND &&
+            (!virtualSettings.backgroundAllowed || !virtualScreen.available())
+        ) {
+            logBus.warn("后台虚拟屏不可用或未允许，本次回退前台模式")
+            effectiveRunMode = RunMode.FOREGROUND
+        }
 
         _runningScript.value = scriptName
         _runningScriptId.value = scriptId
@@ -113,6 +133,7 @@ class ScriptExecutionManager(
             logBus.info("🔒 声明能力: " + needs.sorted().joinToString(", "))
             warnMissingNeeds(needs)
         }
+        ScriptNotificationCenter.begin(scriptName)
         ScriptForegroundService.start(appContext, scriptName)
         FloatingWindowService.showForRun(appContext)
 
@@ -120,9 +141,40 @@ class ScriptExecutionManager(
             var jsEngine: JsEngine? = null
             var failure: Throwable? = null
             val settings = runtimeSettings.current()
+            if (screenUnlock.isEnabled()) {
+                val result = screenUnlock.ensureUnlocked()
+                if (result != UnlockResult.OK &&
+                    result != UnlockResult.ALREADY_UNLOCKED &&
+                    result != UnlockResult.DISABLED
+                ) {
+                    logBus.warn("自动解锁未完成: $result")
+                }
+            }
             if (settings.keepAwake) wakeLock.acquire()
             if (settings.wakeScreen) {
                 runCatching { controllers.controllerFor(Capability.KEY)?.pressKey(KEYCODE_WAKEUP) }
+            }
+            val startGenerationBefore = virtualScreen.startGeneration()
+            if (effectiveRunMode == RunMode.BACKGROUND) {
+                val started = virtualScreen.start(
+                    VirtualScreenOptions(virtualSettings.resolution),
+                )
+                if (!started) {
+                    logBus.warn("后台虚拟屏启动失败，本次回退前台模式")
+                    effectiveRunMode = RunMode.FOREGROUND
+                }
+            }
+            virtualScreen.resetTarget(effectiveRunMode)
+            logBus.info(
+                "运行模式: " +
+                    if (effectiveRunMode == RunMode.BACKGROUND) {
+                        "后台虚拟屏（display=${virtualScreen.displayId()}）"
+                    } else {
+                        "前台"
+                    },
+            )
+            if (effectiveRunMode == RunMode.BACKGROUND && needs?.contains("selector") == true) {
+                logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 images / ocr / 坐标输入")
             }
             try {
                 jsEngine = JsEngine(
@@ -137,6 +189,8 @@ class ScriptExecutionManager(
                     runtimeSettings,
                     httpSettingsRepository,
                     moduleSourceProvider,
+                    virtualScreen,
+                    effectiveRunMode,
                 ).also { engine = it }
                 jsEngine.execute(
                     source = source,
@@ -152,6 +206,14 @@ class ScriptExecutionManager(
                 val exited = jsEngine?.exitRequested == true || isExitThrowable(failure)
                 jsEngine?.let { runCatching { it.close() } }
                 engine = null
+                val startedThisRun = virtualScreen.startGeneration() > startGenerationBefore
+                if (virtualScreen.isActive()) {
+                    if (virtualScreenSettings.current().autoStopAfterRun && startedThisRun) {
+                        runCatching { virtualScreen.stop() }
+                    } else {
+                        logBus.info("后台虚拟屏保持运行，可在运行状态页手动停止或由脚本销毁")
+                    }
+                }
                 when {
                     timedOut -> logBus.error(
                         "⏱ 脚本运行超时（${settings.scriptTimeoutMinutes} 分钟），已中断",
@@ -165,6 +227,7 @@ class ScriptExecutionManager(
                 _runningScript.value = null
                 _runningScriptId.value = null
                 ScriptForegroundService.stop(appContext)
+                ScriptNotificationCenter.clear()
                 val success = !timedOut && (failure == null || exited)
                 runCatching { onFinished?.invoke(success) }
             }
@@ -199,6 +262,12 @@ class ScriptExecutionManager(
         ) {
             logBus.warn("@need fs 已声明，但未授予「全部文件访问」；仅应用私有目录可用")
         }
+        if ("virtualscreen" in needs && !virtualScreen.available()) {
+            logBus.warn("@need virtualscreen 已声明，但 Shizuku 未授权或系统版本低于 Android 10")
+        }
+        if ("selector" in needs && virtualScreen.isActive()) {
+            logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 images / ocr / 坐标输入")
+        }
     }
 
     /** 请求停止当前脚本；通过 QuickJS 中断回调，纯计算死循环也能被打断。 */
@@ -227,5 +296,8 @@ class ScriptExecutionManager(
     private companion object {
         /** KEYCODE_WAKEUP：点亮屏幕。 */
         const val KEYCODE_WAKEUP = 224
+
+        /** 脚本头部 `@env RUN_MODE=background` 使用的键名。 */
+        const val RUN_MODE_KEY = "RUN_MODE"
     }
 }

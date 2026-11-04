@@ -1,7 +1,7 @@
 package com.benton.izukijs.update
 
 import android.content.Context
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

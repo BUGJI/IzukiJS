@@ -1,11 +1,11 @@
 package com.benton.izukijs.controller
 
 import android.content.Context
+import android.content.SharedPreferences
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 控制后端偏好。按「读取 / 操作」两档分别设置全局优先模式，并可为单项能力单独指定，
@@ -20,32 +20,15 @@ data class ControllerSettings(
 )
 
 /** SharedPreferences 持久化 + 内存缓存，作为控制偏好的唯一数据源。 */
-class ControllerSettingsRepository(context: Context) {
+class ControllerSettingsRepository(context: Context) : PrefsStateStore<ControllerSettings>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = ControllerSettings(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val settings: StateFlow<ControllerSettings> get() = state
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<ControllerSettings> = _settings.asStateFlow()
-
-    fun current(): ControllerSettings = _settings.value
-
-    fun save(value: ControllerSettings) {
-        _settings.value = value
-        prefs.edit().apply {
-            if (value.readMode == null) remove(KEY_READ) else putString(KEY_READ, value.readMode.name)
-            if (value.operateMode == null) remove(KEY_OPERATE) else putString(KEY_OPERATE, value.operateMode.name)
-            // 旧的单一全局优先模式已被读取 / 操作两档取代，保存时清理。
-            remove(KEY_LEGACY_PREFERRED)
-            Capability.entries.forEach { capability ->
-                val key = capabilityKey(capability)
-                val mode = value.capabilityPreferences[capability]
-                if (mode == null) remove(key) else putString(key, mode.name)
-            }
-            putStringSet(KEY_DISABLED, value.disabledModes.map { it.name }.toSet())
-        }.apply()
-    }
-
-    private fun load(): ControllerSettings {
+    override fun read(): ControllerSettings {
         // 兼容旧版本：旧的单一 preferred_mode 同时用作读取 / 操作两档的初始值。
         val legacy = prefs.getString(KEY_LEGACY_PREFERRED, null)?.toControlMode()
         val read = prefs.getString(KEY_READ, null)?.toControlMode() ?: legacy
@@ -67,6 +50,27 @@ class ControllerSettingsRepository(context: Context) {
             capabilityPreferences = preferences,
             disabledModes = disabled,
         )
+    }
+
+    override fun write(editor: SharedPreferences.Editor, value: ControllerSettings) {
+        if (value.readMode == null) {
+            editor.remove(KEY_READ)
+        } else {
+            editor.putString(KEY_READ, value.readMode.name)
+        }
+        if (value.operateMode == null) {
+            editor.remove(KEY_OPERATE)
+        } else {
+            editor.putString(KEY_OPERATE, value.operateMode.name)
+        }
+        // 旧的单一全局优先模式已被读取 / 操作两档取代，保存时清理。
+        editor.remove(KEY_LEGACY_PREFERRED)
+        Capability.entries.forEach { capability ->
+            val key = capabilityKey(capability)
+            val mode = value.capabilityPreferences[capability]
+            if (mode == null) editor.remove(key) else editor.putString(key, mode.name)
+        }
+        editor.putStringSet(KEY_DISABLED, value.disabledModes.map { it.name }.toSet())
     }
 
     private fun String.toControlMode(): ControlMode? =

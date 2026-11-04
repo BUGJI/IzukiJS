@@ -4,7 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import com.benton.izukijs.R
-import com.benton.izukijs.runtime.LogLevel
+import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
 import java.time.Instant
 import java.time.ZoneId

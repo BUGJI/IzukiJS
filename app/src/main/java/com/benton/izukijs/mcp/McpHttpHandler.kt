@@ -3,7 +3,7 @@ package com.benton.izukijs.mcp
 import com.benton.izukijs.mcp.net.HttpRequest
 import com.benton.izukijs.mcp.net.HttpResponse
 import com.benton.izukijs.mcp.protocol.McpProtocolHandler
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID

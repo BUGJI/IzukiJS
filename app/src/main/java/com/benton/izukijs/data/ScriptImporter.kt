@@ -2,7 +2,7 @@ package com.benton.izukijs.data
 
 import android.content.Context
 import android.net.Uri
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.subscription.SubscriptionSync
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning

@@ -1,9 +1,9 @@
 package com.benton.izukijs.data
 
 import android.content.Context
-import kotlinx.coroutines.flow.MutableStateFlow
+import android.content.SharedPreferences
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /** 脚本编辑器偏好。 */
 data class EditorSettings(
@@ -16,29 +16,26 @@ data class EditorSettings(
 )
 
 /** SharedPreferences 持久化 + 内存缓存。 */
-class EditorSettingsRepository(context: Context) {
+class EditorSettingsRepository(context: Context) : PrefsStateStore<EditorSettings>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = EditorSettings(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val settings: StateFlow<EditorSettings> get() = state
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<EditorSettings> = _settings.asStateFlow()
-
-    fun current(): EditorSettings = _settings.value
-
-    fun save(value: EditorSettings) {
-        _settings.value = value
-        prefs.edit()
-            .putInt(KEY_FONT_SIZE, value.fontSizeSp)
-            .putBoolean(KEY_AUTO_SAVE, value.autoSave)
-            .putInt(KEY_CONSOLE_HEIGHT, value.consoleHeightDp)
-            .apply()
-    }
-
-    private fun load(): EditorSettings = EditorSettings(
+    override fun read(): EditorSettings = EditorSettings(
         fontSizeSp = prefs.getInt(KEY_FONT_SIZE, 13),
         autoSave = prefs.getBoolean(KEY_AUTO_SAVE, true),
         consoleHeightDp = prefs.getInt(KEY_CONSOLE_HEIGHT, 240),
     )
+
+    override fun write(editor: SharedPreferences.Editor, value: EditorSettings) {
+        editor
+            .putInt(KEY_FONT_SIZE, value.fontSizeSp)
+            .putBoolean(KEY_AUTO_SAVE, value.autoSave)
+            .putInt(KEY_CONSOLE_HEIGHT, value.consoleHeightDp)
+    }
 
     private companion object {
         const val PREFS = "izukijs_editor"

@@ -1,19 +1,31 @@
 package com.benton.izukijs.runtime.api
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.webkit.JavascriptInterface
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.runtime.notification.ScriptNotificationCenter
 import com.benton.izukijs.service.NotificationItem
 import com.benton.izukijs.service.NotificationListener
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * 通知监听 API。挂在全局 `notify` 命名空间，只读 + 清除。
+ * 通知 API。挂在全局 `notify` 命名空间：
  *
- * 需用户在「通知使用权」中授予本应用。仅读取通知标题 / 内容 / 包名 / 时间，不点击、不回复。
+ * - 读取 / 等待 / 清除通知，需「通知使用权」；
+ * - `notify.progress` / `notify.update` / `notify.reset` 更新脚本运行通知，
+ *   需 `POST_NOTIFICATIONS`，并受「设置 → 通用 → 启用进度通知」控制。
  */
-class NotificationApi(private val context: Context) {
+class NotificationApi(
+    private val context: Context,
+    private val logBus: LogBus? = null,
+    private val progressSettingEnabled: () -> Boolean = { true },
+) {
 
     @JavascriptInterface
     fun available(): Boolean =
@@ -48,6 +60,68 @@ class NotificationApi(private val context: Context) {
     /** 按 key 清除一条通知。 */
     @JavascriptInterface
     fun clear(key: String): Boolean = NotificationListener.cancelByKey(key)
+
+    // ---- 脚本运行通知 ----
+
+    /** 通知权限 + 进度通知开关是否都就绪。 */
+    @JavascriptInterface
+    fun progressEnabled(): Boolean = canPostNotifications() && progressSettingEnabled()
+
+    /** 完整更新进度通知，JSON 对象；关闭进度通知或缺少权限时返回 false。 */
+    @JavascriptInterface
+    fun progressRaw(optionsJson: String): Boolean {
+        if (!canPostNotifications()) {
+            logBus?.debug("notify.progress 已忽略：未授予通知权限")
+            return false
+        }
+        if (!progressSettingEnabled()) {
+            logBus?.debug("notify.progress 已忽略：进度通知未启用")
+            return false
+        }
+        if (!ScriptNotificationCenter.isActive) {
+            logBus?.warn("notify.progress 已忽略：脚本运行通知未启动")
+            return false
+        }
+        return ScriptNotificationCenter.update(optionsJson, allowProgress = true)
+    }
+
+    /** 局部更新标题 / 文本 / 阶段；进度开关关闭时忽略进度相关字段。 */
+    @JavascriptInterface
+    fun updateRaw(optionsJson: String): Boolean {
+        if (!canPostNotifications()) {
+            logBus?.debug("notify.update 已忽略：未授予通知权限")
+            return false
+        }
+        if (!ScriptNotificationCenter.isActive) {
+            logBus?.warn("notify.update 已忽略：脚本运行通知未启动")
+            return false
+        }
+        return ScriptNotificationCenter.update(
+            optionsJson,
+            allowProgress = progressSettingEnabled(),
+        )
+    }
+
+    /** 清除进度样式，保留标题 / 文本 / 停止按钮。 */
+    @JavascriptInterface
+    fun reset(): Boolean {
+        if (!ScriptNotificationCenter.isActive) {
+            logBus?.debug("notify.reset 已忽略：脚本运行通知未启动")
+            return false
+        }
+        ScriptNotificationCenter.reset()
+        return true
+    }
+
+    private fun canPostNotifications(): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS,
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
 
     private fun NotificationItem.toJson(): JSONObject = JSONObject().apply {
         put("key", key)

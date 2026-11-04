@@ -4,7 +4,7 @@ import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 
 /**
  * Shell API。挂在全局 `shell` 命名空间，仅在 Shizuku 或 Root 就绪时可用。

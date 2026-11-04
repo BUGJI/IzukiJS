@@ -6,11 +6,8 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.widget.Toast
-import com.benton.izukijs.runtime.LogBus
-import com.benton.izukijs.service.CaptureSettings
-import com.benton.izukijs.service.scaledByPercent
-import java.io.File
-import java.io.FileOutputStream
+import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.virtualscreen.ScreenTarget
 
 /**
  * 全局 API：toast / log / sleep / exit / captureScreen。
@@ -19,8 +16,8 @@ import java.io.FileOutputStream
 class GlobalApi(
     private val context: Context,
     private val logBus: LogBus,
-    private val screenshotProvider: () -> Bitmap?,
-    private val captureSettingsProvider: () -> CaptureSettings,
+    private val captureProvider: (ScreenTarget, Long) -> Bitmap?,
+    private val screenshotStore: ScreenshotStore,
     private val onExit: () -> Unit,
     private val isExitRequested: () -> Boolean,
 ) {
@@ -71,40 +68,22 @@ class GlobalApi(
     }
 
     @JavascriptInterface
-    fun captureScreen(path: String): String? {
-        val source = screenshotProvider() ?: run {
-            logBus.warn("保存截图失败：无法获取屏幕截图")
+    fun captureScreen(path: String): String? =
+        captureScreenSource(path, ScreenTarget.AUTO.displayName())
+
+    /** 指定捕获来源：auto / virtual / main。 */
+    @JavascriptInterface
+    fun captureScreenSource(path: String, source: String): String? {
+        val target = ScreenTarget.from(source) ?: ScreenTarget.AUTO
+        val bitmap = captureProvider(target, CAPTURE_WAIT_MS) ?: run {
+            logBus.warn("保存截图失败：无法获取 ${target.displayName()} 屏幕截图")
             return null
         }
-        val settings = captureSettingsProvider()
-        val bitmap = source.scaledByPercent(settings.scalePercent)
-        return try {
-            val file = if (path.isBlank()) {
-                File(context.cacheDir, "screenshot_${System.currentTimeMillis()}.png")
-            } else {
-                File(path)
-            }
-            file.parentFile?.mkdirs()
-            val format = if (file.name.endsWith(".jpg", true) || file.name.endsWith(".jpeg", true)) {
-                Bitmap.CompressFormat.JPEG
-            } else {
-                Bitmap.CompressFormat.PNG
-            }
-            FileOutputStream(file).use { out ->
-                bitmap.compress(format, settings.jpegQuality, out)
-            }
-            logBus.debug("保存截图 → ${file.absolutePath} (${bitmap.width}×${bitmap.height})")
-            file.absolutePath
-        } catch (t: Throwable) {
-            logBus.warn("保存截图失败：${t.message}")
-            null
-        } finally {
-            if (bitmap !== source) bitmap.recycle()
-            source.recycle()
-        }
+        return screenshotStore.save(bitmap, path)
     }
 
     private companion object {
         const val SLEEP_SLICE_MS = 40L
+        const val CAPTURE_WAIT_MS = 1_000L
     }
 }

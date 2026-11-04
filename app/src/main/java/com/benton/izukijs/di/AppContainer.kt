@@ -13,7 +13,8 @@ import com.benton.izukijs.controller.hid.HidManager
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
 import com.benton.izukijs.data.AppearanceRepository
-import com.benton.izukijs.data.ConfigBackupManager
+import com.benton.izukijs.backup.ConfigBackupManager
+import com.benton.izukijs.backup.ConfigSections
 import com.benton.izukijs.data.EditorSettingsRepository
 import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
@@ -22,6 +23,7 @@ import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.TileSettingsRepository
+import com.benton.izukijs.data.UnlockSettingsRepository
 import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.mcp.McpAuditLog
 import com.benton.izukijs.mcp.McpConfigRepository
@@ -31,7 +33,7 @@ import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.HttpSettingsRepository
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.runtime.RuntimeSettingsRepository
@@ -40,13 +42,18 @@ import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.schedule.ScheduleManager
 import com.benton.izukijs.schedule.ScheduleRepository
 import com.benton.izukijs.schedule.ScheduleRunner
+import com.benton.izukijs.privileged.PrivilegedUnlockClient
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
+import com.benton.izukijs.service.ScreenUnlockController
+import com.benton.izukijs.service.UnlockGestureRecorder
 import com.benton.izukijs.service.WakeLockController
 import com.benton.izukijs.subscription.SubscriptionManager
 import com.benton.izukijs.subscription.SubscriptionRepository
 import com.benton.izukijs.update.UpdateManager
 import com.benton.izukijs.update.UpdateSettingsRepository
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
+import com.benton.izukijs.virtualscreen.VirtualScreenSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -87,9 +94,40 @@ class AppContainer(private val application: Application) {
 
     val runtimeSettingsRepository = RuntimeSettingsRepository(application)
 
+    val virtualScreenSettingsRepository = VirtualScreenSettingsRepository(application)
+
+    val virtualScreenManager = VirtualScreenManager(
+        context = application,
+        controllers = controllerManager,
+        settingsRepository = virtualScreenSettingsRepository,
+        logBus = logBus,
+    )
+
     val httpSettingsRepository = HttpSettingsRepository(application)
 
     val wakeLockController = WakeLockController(application)
+
+    val unlockSettingsRepository = UnlockSettingsRepository(application)
+
+    val privilegedUnlockClient = PrivilegedUnlockClient(application, logBus)
+
+    val screenUnlockController = ScreenUnlockController(
+        context = application,
+        controllers = controllerManager,
+        settingsRepository = unlockSettingsRepository,
+        wakeLock = wakeLockController,
+        privileged = privilegedUnlockClient,
+        logBus = logBus,
+    )
+
+    val unlockGestureRecorder = UnlockGestureRecorder(
+        context = application,
+        controllers = controllerManager,
+        settingsRepository = unlockSettingsRepository,
+        wakeLock = wakeLockController,
+        privileged = privilegedUnlockClient,
+        logBus = logBus,
+    )
 
     val screenCapture = ScreenCapture(logBus)
 
@@ -110,16 +148,21 @@ class AppContainer(private val application: Application) {
     val updateManager = UpdateManager(application, updateSettingsRepository, logBus)
 
     val configBackupManager = ConfigBackupManager(
-        aiConfigRepository = aiConfigRepository,
-        ocrConfigRepository = ocrConfigRepository,
-        controllerSettingsRepository = controllerSettingsRepository,
-        captureSettingsRepository = captureSettingsRepository,
-        logSettingsRepository = logSettingsRepository,
-        httpSettingsRepository = httpSettingsRepository,
-        editorSettingsRepository = editorSettingsRepository,
-        appearanceRepository = appearanceRepository,
-        updateSettingsRepository = updateSettingsRepository,
-        globalEnvRepository = globalEnvRepository,
+        sections = ConfigSections.all(
+            ai = aiConfigRepository,
+            ocr = ocrConfigRepository,
+            controller = controllerSettingsRepository,
+            capture = captureSettingsRepository,
+            log = logSettingsRepository,
+            http = httpSettingsRepository,
+            editor = editorSettingsRepository,
+            appearance = appearanceRepository,
+            update = updateSettingsRepository,
+            globalEnv = globalEnvRepository,
+            virtualScreen = virtualScreenSettingsRepository,
+        ),
+        // 锁屏 PIN / 图案使用设备绑定密钥加密，不参与导出 / 导入，仅在重置时清理。
+        resetOnly = listOf(unlockSettingsRepository::clear),
     )
 
     val scriptExecutionManager = ScriptExecutionManager(
@@ -136,6 +179,9 @@ class AppContainer(private val application: Application) {
         runtimeSettingsRepository,
         httpSettingsRepository,
         wakeLockController,
+        screenUnlockController,
+        virtualScreenManager,
+        virtualScreenSettingsRepository,
         moduleSourceProvider = { raw ->
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
             scriptRepository.find(id)?.let { scriptRepository.read(it) }
@@ -155,6 +201,10 @@ class AppContainer(private val application: Application) {
             ocrProcessor,
             logBus,
             appListEnabled = { runtimeSettingsRepository.current().appList },
+            progressNotificationEnabled = {
+                runtimeSettingsRepository.current().progressNotification
+            },
+            virtualScreen = virtualScreenManager,
         )
     }
 
@@ -216,6 +266,7 @@ class AppContainer(private val application: Application) {
         scriptRepository = scriptRepository,
         scheduleManager = scheduleManager,
         executionManager = scriptExecutionManager,
+        screenUnlock = screenUnlockController,
         foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
         logBus = logBus,
     )

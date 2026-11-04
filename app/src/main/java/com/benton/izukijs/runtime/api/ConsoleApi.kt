@@ -1,7 +1,7 @@
 package com.benton.izukijs.runtime.api
 
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 
 /**
  * 控制台 API。挂在全局 `console` 命名空间。

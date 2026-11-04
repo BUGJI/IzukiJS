@@ -7,6 +7,48 @@
 
 ## [未发布]
 
+## [1.1.8] - 2026-11-04
+
+### 新增
+
+- 「设置 → 运行与虚拟屏 → 通知」新增「启用进度通知」开关；脚本可通过 `notify.progress` 更新运行通知的
+  标题、文本、阶段、进度、分段、节点、颜色与内置图标。Android 16+ 使用完整
+  `Notification.ProgressStyle`（含 `shortCriticalText` / promoted ongoing），低版本自动降级为
+  普通进度条。
+- 新增 `notify.update` / `notify.reset` / `notify.progressEnabled` 脚本 API。
+- 「设置 → 安全解锁」新增「允许设备在锁定时自主解锁」开关（权限与能力页提供状态入口）；在 Shizuku / Root
+  下支持滑动、PIN 与锁屏真实触摸录制（图案 / 连续手势 / 多次点击），手动运行与定时任务触发
+  前自动尝试解锁。测试解锁会先主动锁屏再走完整链路。PIN 与录制结果均使用 Android Keystore
+  加密，并排除系统自动备份。
+- 新增「设置 → 运行与虚拟屏 → 后台虚拟屏」：可允许后台虚拟屏、设置默认运行模式与后台分辨率
+  （720P / 1080P / 自定义宽高 dpi），后台运行中停在运行页按 Home 可进入系统画中画预览。
+  虚拟屏由 Shizuku 特权服务创建，目标应用已在主屏运行时先强停再迁移；脚本可通过
+  `// @need virtualscreen`、全局 `virtualScreen.*` 或 `require("virtualScreen")` 使用，
+  `@env RUN_MODE=background` 可指定后台运行。虚拟屏上的输入 / 截图会自动定向到对应 display。
+- 虚拟屏新增显式目标与捕获 API：`virtualScreen.target('auto'|'virtual'|'main')`、
+  `virtualScreen.awaitFrame()`、`virtualScreen.capture(path, source)`，并支持
+  `captureScreen(path, 'virtual'|'main')` 一次性指定来源。虚拟屏截图会等待首帧，
+  避免刚启动时返回空图；`device.width/height` 与 `app.currentPackage` / `app.openUrl`
+  也会跟随虚拟屏目标。
+- 原「日志」页升级为「运行状态」页，新增虚拟屏二级页：可查看状态、当前前台应用、实时预览，
+  并支持启动 / 停止虚拟屏、停止当前脚本，以及在预览上点击 / 长按 / 滑动操作虚拟屏。
+- 后台虚拟屏新增「脚本运行结束后自动销毁」设置（默认开启）。关闭后脚本结束会保留虚拟屏，
+  由脚本调用 `virtualScreen.stop()` 或运行状态页手动停止；自动销毁只作用于本次脚本启动 /
+  重建的虚拟屏，不会误杀之前保留的实例。
+- 脚本默认操作目标按运行模式重置：后台脚本指向虚拟屏，前台脚本指向主屏，避免保留下来的
+  虚拟屏把下一次前台脚本的输入带走；脚本显式调用 `virtualScreen.target()` 时不再自动覆盖。
+
+### 变更
+
+- 锁屏录制与自动解锁优先使用 Shizuku UserService 特权进程：直接读取 `/dev/input`
+  二进制触摸事件，并通过 `InputManager.injectInputEvent` 回放，避免 Shell `getevent`
+  文本格式、`sendevent` 逐事件慢和锁屏状态错位的问题。Shizuku 不可用时仍回退 Shell。
+  Android 14+ 建议以 root 启动 Shizuku，否则图形 / PIN 注入可能被系统拒绝。
+
+### 修复
+
+- 运行通知的「停止」按钮现在会同时请求停止脚本，而不只是移除前台服务通知。
+
 ## [1.1.7] - 2026-11-02
 
 ### 新增
@@ -239,7 +281,8 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.3...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.8...HEAD
+[1.1.8]: https://github.com/BUGJI/IzukiJS/compare/v1.1.7...v1.1.8
 [1.1.3]: https://github.com/BUGJI/IzukiJS/compare/v1.1.1...v1.1.3
 [1.1.1]: https://github.com/BUGJI/IzukiJS/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/BUGJI/IzukiJS/compare/v1.0.0...v1.1.0

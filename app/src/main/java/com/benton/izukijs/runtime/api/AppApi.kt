@@ -10,8 +10,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.service.IzukiAccessibilityService
+import com.benton.izukijs.virtualscreen.ScreenTarget
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,10 +29,16 @@ class AppApi(
     private val logBus: LogBus,
     private val shellExec: (String) -> String? = { null },
     private val appListEnabled: () -> Boolean = { true },
+    private val virtualScreen: VirtualScreenManager? = null,
 ) {
 
     @JavascriptInterface
     fun launch(packageName: String): Boolean {
+        if (usesVirtualScreen()) {
+            val ok = virtualScreen?.launchBlocking(packageName) == true
+            logBus.debug("启动应用 $packageName（虚拟屏）${if (ok) " ✓" else " ✗"}")
+            return ok
+        }
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
         val ok = if (intent == null) {
             false
@@ -49,13 +57,17 @@ class AppApi(
 
     @JavascriptInterface
     fun openUrl(url: String): Boolean {
-        val ok = try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-            true
-        } catch (t: Throwable) {
-            false
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val ok = if (usesVirtualScreen()) {
+            virtualScreen?.launchIntentBlocking(intent, forceStopIfElsewhere = false) == true
+        } else {
+            try {
+                context.startActivity(intent)
+                true
+            } catch (t: Throwable) {
+                false
+            }
         }
         logBus.debug("打开链接 $url${if (ok) " ✓" else " ✗"}")
         return ok
@@ -63,11 +75,19 @@ class AppApi(
 
     @JavascriptInterface
     fun currentPackage(): String? {
+        if (usesVirtualScreen()) {
+            virtualScreen?.currentPackageBlocking()?.let { return it }
+        }
         IzukiAccessibilityService.instance?.currentPackage()?.let { return it }
         val output = shellExec("dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp'")
         FOCUS_REGEX.find(output.orEmpty())?.groupValues?.get(1)?.let { return it }
         return foreground()
     }
+
+    private fun usesVirtualScreen(): Boolean =
+        virtualScreen?.let {
+            it.isActive() && it.resolvedTarget() == ScreenTarget.VIRTUAL
+        } == true
 
     // ---- 应用列表（QUERY_ALL_PACKAGES） ----
 
@@ -132,6 +152,9 @@ class AppApi(
     /** 当前前台包名（按最近的前台事件推断）。需使用情况访问。 */
     @JavascriptInterface
     fun foreground(): String? {
+        if (usesVirtualScreen()) {
+            virtualScreen?.currentPackageBlocking()?.let { return it }
+        }
         if (!hasUsageAccess()) return null
         return runCatching {
             val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null

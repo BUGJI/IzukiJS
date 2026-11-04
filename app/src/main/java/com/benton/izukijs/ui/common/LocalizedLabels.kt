@@ -7,8 +7,9 @@ import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.ocr.OcrProvider
-import com.benton.izukijs.runtime.LogLevel
+import com.benton.izukijs.core.log.LogLevel
 
 /** 控制模式的本地化名称（UI 层使用；模型内的 displayName 仍用于日志）。 */
 @Composable
@@ -18,6 +19,15 @@ fun ControlMode.localizedName(): String = stringResource(
         ControlMode.SHIZUKU -> R.string.control_shizuku
         ControlMode.HID -> R.string.control_hid
         ControlMode.ROOT -> R.string.control_root
+    },
+)
+
+/** 运行模式的本地化名称。 */
+@Composable
+fun RunMode.localizedName(): String = stringResource(
+    when (this) {
+        RunMode.FOREGROUND -> R.string.run_mode_foreground
+        RunMode.BACKGROUND -> R.string.run_mode_background
     },
 )
 

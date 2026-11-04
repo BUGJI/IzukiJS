@@ -8,8 +8,10 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import com.benton.izukijs.data.ScriptRepository
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.runtime.ScriptExecutionManager
+import com.benton.izukijs.service.ScreenUnlockController
+import com.benton.izukijs.service.UnlockResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +29,7 @@ class ScheduleRunner(
     private val scriptRepository: ScriptRepository,
     private val scheduleManager: ScheduleManager,
     private val executionManager: ScriptExecutionManager,
+    private val screenUnlock: ScreenUnlockController,
     private val foregroundProvider: () -> String?,
     private val logBus: LogBus,
 ) {
@@ -56,11 +59,20 @@ class ScheduleRunner(
         }
     }
 
-    private fun runInternal(schedule: Schedule) {
+    private suspend fun runInternal(schedule: Schedule) {
         if (executionManager.running.value) {
             logBus.warn("定时任务跳过：已有脚本正在运行（${schedule.scriptName}）")
             scheduleManager.onSkipped(schedule)
             return
+        }
+        if (screenUnlock.isEnabled()) {
+            val result = screenUnlock.ensureUnlocked()
+            if (result != UnlockResult.OK &&
+                result != UnlockResult.ALREADY_UNLOCKED &&
+                result != UnlockResult.DISABLED
+            ) {
+                logBus.warn("定时任务自动解锁未完成: $result")
+            }
         }
         if (!conditionsMet(schedule)) {
             logBus.info("定时条件未满足，跳过本次: ${schedule.scriptName}")

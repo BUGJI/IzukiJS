@@ -1,6 +1,6 @@
 package com.benton.izukijs.ai
 
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.json.JSONObject
 
 /**

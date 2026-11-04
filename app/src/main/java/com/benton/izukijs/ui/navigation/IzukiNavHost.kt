@@ -68,6 +68,7 @@ import com.benton.izukijs.ui.settings.SettingsCategory
 import com.benton.izukijs.ui.settings.SettingsDetailScreen
 import com.benton.izukijs.ui.settings.SettingsScreen
 import com.benton.izukijs.ui.update.UpdatePromptHost
+import com.benton.izukijs.ui.virtualscreen.VirtualScreenScreen
 import kotlinx.coroutines.launch
 
 object Routes {
@@ -85,6 +86,7 @@ object Routes {
     const val HID = "hid"
     const val AI = "ai"
     const val MCP = "mcp"
+    const val VIRTUAL_SCREEN = "virtual_screen"
 
     fun editor(scriptId: String) = "editor/$scriptId"
 
@@ -170,6 +172,7 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                             onSelectTab = ::selectTab,
                             // 有详情页覆盖时禁用 pager 滑动，避免横滑穿透到底层标签。
                             userScrollEnabled = showNavBar,
+                            isMainVisible = showNavBar,
                         )
                         // 详情页覆盖在主界面之上，主界面 pager 保持组合以保留各标签状态。
                         DetailNavHost(
@@ -220,6 +223,7 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                             onSelectTab = ::selectTab,
                             // 有详情页覆盖时禁用 pager 滑动，避免横滑穿透到底层标签。
                             userScrollEnabled = showNavBar,
+                            isMainVisible = showNavBar,
                         )
                         DetailNavHost(
                             navController = navController,
@@ -239,6 +243,7 @@ private fun MainTabsHost(
     navController: NavHostController,
     onSelectTab: (Int) -> Unit,
     userScrollEnabled: Boolean,
+    isMainVisible: Boolean,
 ) {
     // 统一用 launchSingleTop 打开详情页，避免快速连点把同一页压栈多次。
     fun open(route: String) = navController.navigate(route) { launchSingleTop = true }
@@ -252,7 +257,9 @@ private fun MainTabsHost(
         onOpenCategory = { category -> open(Routes.settingsDetail(category)) },
         onOpenAi = { open(Routes.AI) },
         onOpenMcp = { open(Routes.MCP) },
+        onOpenVirtualScreen = { open(Routes.VIRTUAL_SCREEN) },
         userScrollEnabled = userScrollEnabled,
+        isMainVisible = isMainVisible,
     )
 }
 
@@ -271,7 +278,9 @@ private fun MainTabs(
     onOpenCategory: (SettingsCategory) -> Unit,
     onOpenAi: () -> Unit,
     onOpenMcp: () -> Unit,
+    onOpenVirtualScreen: () -> Unit,
     userScrollEnabled: Boolean,
+    isMainVisible: Boolean,
 ) {
     HorizontalPager(
         state = pagerState,
@@ -283,6 +292,7 @@ private fun MainTabs(
             BottomItem.RUN -> RunScreen(
                 onOpenSetup = onOpenSetup,
                 onOpenScripts = onOpenScripts,
+                isActivePage = isMainVisible && pagerState.settledPage == page,
             )
 
             BottomItem.SCRIPTS -> ScriptsScreen(
@@ -291,7 +301,7 @@ private fun MainTabs(
                 onOpenSchedule = onOpenSchedule,
             )
 
-            BottomItem.LOGS -> LogsScreen()
+            BottomItem.LOGS -> LogsScreen(onOpenVirtualScreen = onOpenVirtualScreen)
 
             BottomItem.SETTINGS -> SettingsScreen(
                 onOpenCategory = onOpenCategory,
@@ -391,6 +401,11 @@ private fun DetailNavHost(
             PermissionScreen(
                 onBack = { navController.popBackStack() },
                 onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
+                onOpenUnlockSettings = {
+                    navController.navigate(Routes.settingsDetail(SettingsCategory.UNLOCK)) {
+                        launchSingleTop = true
+                    }
+                },
             )
         }
         composable(Routes.SCHEDULE) {
@@ -404,6 +419,19 @@ private fun DetailNavHost(
         }
         composable(Routes.MCP) {
             McpServerScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.VIRTUAL_SCREEN) {
+            VirtualScreenScreen(
+                onBack = { navController.popBackStack() },
+                onOpenSettings = {
+                    navController.navigate(Routes.settingsDetail(SettingsCategory.RUN)) {
+                        launchSingleTop = true
+                    }
+                },
+                onOpenSetup = {
+                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
+                },
+            )
         }
     }
 }

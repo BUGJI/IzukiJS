@@ -59,9 +59,11 @@
         android:theme="@style/Theme.IzukiJS">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout"
             android:exported="true"
             android:label="@string/app_name"
             android:launchMode="singleTask"
+            android:supportsPictureInPicture="true"
             android:theme="@style/Theme.IzukiJS"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -78,6 +80,15 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="script_automation_runtime" />
+        </service>
+
+        <service
+            android:name=".service.UnlockRecordingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="unlock_recording" />
         </service>
 
         <service

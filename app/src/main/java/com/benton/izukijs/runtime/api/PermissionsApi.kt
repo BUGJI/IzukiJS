@@ -12,8 +12,12 @@ import android.webkit.JavascriptInterface
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.service.ScreenCapture
+import com.benton.izukijs.virtualscreen.ScreenTarget
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
 
 /**
  * 权限查询 API。挂在全局 `permissions` 命名空间，供脚本判断用户已授予哪些能力。
@@ -24,6 +28,8 @@ class PermissionsApi(
     private val screenCapture: ScreenCapture,
     private val appListEnabled: () -> Boolean = { true },
     private val httpEnabled: () -> Boolean = { false },
+    private val virtualScreen: VirtualScreenManager? = null,
+    private val runModeProvider: () -> RunMode = { RunMode.FOREGROUND },
 ) {
 
     @JavascriptInterface
@@ -97,6 +103,16 @@ class PermissionsApi(
     @JavascriptInterface
     fun http(): Boolean = httpEnabled()
 
+    /** 后台虚拟屏的 Shizuku 特权后端是否可用。 */
+    @JavascriptInterface
+    fun virtualScreen(): Boolean = virtualScreen?.available() == true
+
+    /** 本次脚本实际生效的运行模式：foreground / background。 */
+    @JavascriptInterface
+    fun runMode(): String =
+        if (virtualScreen?.isActive() == true) RunMode.BACKGROUND.name.lowercase()
+        else runModeProvider().name.lowercase()
+
     /** 已授予的能力，逗号分隔（如 "accessibility,overlay,screenCapture"）。 */
     @JavascriptInterface
     fun granted(): String = statusMap().filterValues { it }.keys.joinToString(",")
@@ -109,17 +125,31 @@ class PermissionsApi(
     @JavascriptInterface
     fun has(name: String): Boolean = statusMap()[name.trim().lowercase()] ?: false
 
-    /** 是否有任意可用于注入输入的控制后端。 */
+    /** 是否有任意可用于注入输入的控制后端；目标为虚拟屏时只统计支持 display 定向的后端。 */
     @JavascriptInterface
     fun canControl(): Boolean =
-        ControlMode.ACCESSIBILITY in controllers.readyModes.value ||
-            ControlMode.SHIZUKU in controllers.readyModes.value ||
-            ControlMode.ROOT in controllers.readyModes.value ||
-            ControlMode.HID in controllers.readyModes.value
+        if (usesVirtualDisplay()) {
+            controllers.controllerFor(Capability.GESTURE) != null
+        } else {
+            ControlMode.ACCESSIBILITY in controllers.readyModes.value ||
+                ControlMode.SHIZUKU in controllers.readyModes.value ||
+                ControlMode.ROOT in controllers.readyModes.value ||
+                ControlMode.HID in controllers.readyModes.value
+        }
 
-    /** 是否有截图来源（无障碍/Shizuku/Root 或持续录屏）。 */
+    /** 是否有截图来源（无障碍/Shizuku/Root 或持续录屏；目标为虚拟屏时为虚拟屏帧源）。 */
     @JavascriptInterface
-    fun canScreenshot(): Boolean = screenCapture.isActive || canControl()
+    fun canScreenshot(): Boolean =
+        if (usesVirtualDisplay()) {
+            virtualScreen?.canCapture() == true
+        } else {
+            screenCapture.isActive || canControl()
+        }
+
+    private fun usesVirtualDisplay(): Boolean =
+        virtualScreen?.let {
+            it.isActive() && it.resolvedTarget() == ScreenTarget.VIRTUAL
+        } == true
 
     private fun statusMap(): Map<String, Boolean> = linkedMapOf(
         "accessibility" to accessibility(),
@@ -135,6 +165,7 @@ class PermissionsApi(
         "manageStorage" to manageStorage(),
         "appList" to appList(),
         "http" to http(),
+        "virtualScreen" to virtualScreen(),
     )
 
     private fun isGranted(permission: String): Boolean =

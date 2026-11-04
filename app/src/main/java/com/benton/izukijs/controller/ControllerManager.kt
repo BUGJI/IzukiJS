@@ -36,6 +36,17 @@ class ControllerManager {
     @Volatile
     private var disabledModes: Set<ControlMode> = emptySet()
 
+    /**
+     * 后台虚拟屏的 displayId。非空时只选择支持 display 定向的后端，
+     * 避免无障碍 / HID 把输入打到主屏。
+     */
+    @Volatile
+    var targetDisplayId: Int? = null
+        set(value) {
+            field = value
+            refresh()
+        }
+
     /** 用持久化的偏好覆盖当前内存状态（在 App 启动与设置变更时调用）。 */
     fun setCapabilityPreferences(preferences: Map<Capability, ControlMode>) {
         capabilityPreferences.clear()
@@ -86,8 +97,12 @@ class ControllerManager {
      */
     fun controllerFor(capability: Capability): DeviceController? {
         val ordered = order(capability)
+        val target = targetDisplayId
         return ordered.firstOrNull {
-            !isDisabled(it.mode) && it.isReady() && capability in it.capabilities()
+            !isDisabled(it.mode) &&
+                it.isReady() &&
+                capability in it.capabilities() &&
+                (target == null || it.supportsDisplayTarget())
         }
     }
 

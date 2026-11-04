@@ -5,7 +5,7 @@ import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import kotlin.math.roundToInt
 
 /**

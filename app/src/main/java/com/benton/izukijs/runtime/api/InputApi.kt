@@ -8,7 +8,7 @@ import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.TextInputMethod
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -110,10 +110,16 @@ class InputApi(
         return ok
     }
 
-    private fun gestureCapableController(exclude: DeviceController?): DeviceController? =
-        controllers.all().firstOrNull {
-            it !== exclude && !controllers.isDisabled(it.mode) && it.isReady() && it.supportsGesture()
+    private fun gestureCapableController(exclude: DeviceController?): DeviceController? {
+        val targetDisplay = controllers.targetDisplayId
+        return controllers.all().firstOrNull {
+            it !== exclude &&
+                !controllers.isDisabled(it.mode) &&
+                it.isReady() &&
+                it.supportsGesture() &&
+                (targetDisplay == null || it.supportsDisplayTarget())
         }
+    }
 
     // ---- 轨迹解析 ----
 

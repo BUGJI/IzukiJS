@@ -10,7 +10,7 @@ import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.ShellResult
 import com.benton.izukijs.controller.TextInputMethod
 import com.benton.izukijs.model.Capability
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 
 /**
  * 基于 Shell 命令的控制后端。通过 `input` / `screencap` 等命令实现手势、按键、文本与截图，
@@ -23,6 +23,8 @@ abstract class CommandDeviceController(
     protected val context: Context,
     protected val shell: ShellRunner,
     protected val logBus: LogBus,
+    /** 非空时所有输入 / 截图命令都会带上 `-d <displayId>`。 */
+    private val displayIdProvider: () -> Int? = { null },
 ) : DeviceController {
 
     /** ADBKeyboard 安装状态的缓存，null 表示尚未探测。 */
@@ -42,13 +44,18 @@ abstract class CommandDeviceController(
 
     override fun isReady(): Boolean = shell.isAvailable()
 
+    override fun supportsDisplayTarget(): Boolean =
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+
     override fun click(x: Float, y: Float): Boolean =
-        exec("input tap ${x.toInt()} ${y.toInt()}")
+        exec("input ${displayOption()}tap ${x.toInt()} ${y.toInt()}")
 
     override fun longClick(x: Float, y: Float, durationMs: Long): Boolean {
         val ix = x.toInt()
         val iy = y.toInt()
-        return exec("input swipe $ix $iy $ix $iy ${durationMs.coerceAtLeast(400L)}")
+        return exec(
+            "input ${displayOption()}swipe $ix $iy $ix $iy ${durationMs.coerceAtLeast(400L)}",
+        )
     }
 
     override fun swipe(
@@ -58,10 +65,12 @@ abstract class CommandDeviceController(
         y2: Float,
         durationMs: Long,
     ): Boolean = exec(
-        "input swipe ${x1.toInt()} ${y1.toInt()} ${x2.toInt()} ${y2.toInt()} ${durationMs.coerceAtLeast(1L)}",
+        "input ${displayOption()}swipe ${x1.toInt()} ${y1.toInt()} " +
+            "${x2.toInt()} ${y2.toInt()} ${durationMs.coerceAtLeast(1L)}",
     )
 
-    override fun pressKey(keyCode: Int): Boolean = exec("input keyevent $keyCode")
+    override fun pressKey(keyCode: Int): Boolean =
+        exec("input ${displayOption()}keyevent $keyCode")
 
     /**
      * 文本输入。Shizuku / Root 下 `input text` 只支持 ASCII，且对中文会静默失败；
@@ -87,7 +96,7 @@ abstract class CommandDeviceController(
     }
 
     private fun inputTextViaInput(text: String): Boolean =
-        exec("input text ${escapeForInputText(text)}")
+        exec("input ${displayOption()}text ${escapeForInputText(text)}")
 
     /** 写入系统剪贴板后发送粘贴键（KEYCODE_PASTE），依赖当前焦点在可编辑控件上。 */
     private fun pasteText(text: String): Boolean {
@@ -100,7 +109,7 @@ abstract class CommandDeviceController(
             logBus.warn("${mode.displayName} 写入剪贴板失败")
             return false
         }
-        return exec("input keyevent $KEYCODE_PASTE")
+        return exec("input ${displayOption()}keyevent $KEYCODE_PASTE")
     }
 
     /** 通过 ADBKeyboard 广播输入任意 Unicode 文本。 */
@@ -108,6 +117,9 @@ abstract class CommandDeviceController(
         if (!hasAdbKeyboard()) {
             logBus.warn("${mode.displayName} 未安装 ADBKeyboard，无法使用广播输入")
             return false
+        }
+        if (displayIdProvider() != null) {
+            logBus.warn("ADBKeyboard 广播无法定向到虚拟屏，可能输入到主屏；建议使用剪贴板输入")
         }
         val base64 = Base64.encodeToString(text.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         return exec("am broadcast -a ADB_INPUT_B64 --es msg $base64") ||
@@ -123,10 +135,17 @@ abstract class CommandDeviceController(
         return installed
     }
 
-    override fun globalAction(action: Int): Boolean = exec(globalActionCommand(action))
+    override fun globalAction(action: Int): Boolean {
+        if (action == GLOBAL_NOTIFICATIONS && displayIdProvider() != null) {
+            logBus.warn("展开通知栏不支持 display 定向，将在主屏执行")
+        }
+        return exec(globalActionCommand(action))
+    }
 
-    override fun screenshot(): Bitmap? {
-        val bytes = shell.screenshotPng() ?: return null
+    override fun screenshot(): Bitmap? = screenshotForDisplay(displayIdProvider())
+
+    override fun screenshotForDisplay(displayId: Int?): Bitmap? {
+        val bytes = shell.screenshotPng(displayId) ?: return null
         return runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
     }
 
@@ -143,12 +162,16 @@ abstract class CommandDeviceController(
     }
 
     private fun globalActionCommand(action: Int): String = when (action) {
-        GLOBAL_BACK -> "input keyevent 4"
-        GLOBAL_HOME -> "input keyevent 3"
-        GLOBAL_RECENTS -> "input keyevent 187"
+        GLOBAL_BACK -> "input ${displayOption()}keyevent 4"
+        GLOBAL_HOME -> "input ${displayOption()}keyevent 3"
+        GLOBAL_RECENTS -> "input ${displayOption()}keyevent 187"
         GLOBAL_NOTIFICATIONS -> "cmd statusbar expand-notifications"
-        else -> "input keyevent $action"
+        else -> "input ${displayOption()}keyevent $action"
     }
+
+    /** `input -d <id> ...` / `screencap -d <id>` 的 display 参数；无目标屏时为空串。 */
+    private fun displayOption(): String =
+        displayIdProvider()?.takeIf { it >= 0 }?.let { "-d $it " } ?: ""
 
     private fun escapeForInputText(text: String): String {
         val replaced = text.replace(" ", "%s")

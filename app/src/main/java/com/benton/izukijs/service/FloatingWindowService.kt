@@ -26,8 +26,8 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.R
-import com.benton.izukijs.runtime.LogEntry
-import com.benton.izukijs.runtime.LogLevel
+import com.benton.izukijs.core.log.LogEntry
+import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

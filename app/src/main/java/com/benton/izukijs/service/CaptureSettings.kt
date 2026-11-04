@@ -1,10 +1,10 @@
 package com.benton.izukijs.service
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 截图压缩设置。缩放仅作用于「保存到文件」与「在线 OCR 上传」，
@@ -18,27 +18,24 @@ data class CaptureSettings(
 )
 
 /** SharedPreferences 持久化 + 内存缓存。 */
-class CaptureSettingsRepository(context: Context) {
+class CaptureSettingsRepository(context: Context) : PrefsStateStore<CaptureSettings>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = CaptureSettings(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val settings: StateFlow<CaptureSettings> get() = state
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<CaptureSettings> = _settings.asStateFlow()
-
-    fun current(): CaptureSettings = _settings.value
-
-    fun save(value: CaptureSettings) {
-        _settings.value = value
-        prefs.edit()
-            .putInt(KEY_SCALE, value.scalePercent)
-            .putInt(KEY_QUALITY, value.jpegQuality)
-            .apply()
-    }
-
-    private fun load(): CaptureSettings = CaptureSettings(
+    override fun read(): CaptureSettings = CaptureSettings(
         scalePercent = prefs.getInt(KEY_SCALE, 100),
         jpegQuality = prefs.getInt(KEY_QUALITY, 90),
     )
+
+    override fun write(editor: SharedPreferences.Editor, value: CaptureSettings) {
+        editor
+            .putInt(KEY_SCALE, value.scalePercent)
+            .putInt(KEY_QUALITY, value.jpegQuality)
+    }
 
     private companion object {
         const val PREFS = "izukijs_capture"

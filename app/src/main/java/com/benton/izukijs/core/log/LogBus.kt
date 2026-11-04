@@ -1,4 +1,4 @@
-package com.benton.izukijs.runtime
+package com.benton.izukijs.core.log
 
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope

@@ -6,7 +6,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.controller.accessibility.releaseNode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.json.JSONArray
 import org.json.JSONObject
 

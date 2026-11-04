@@ -6,7 +6,7 @@ import com.benton.izukijs.ai.AiClient
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.controller.NodeTreeResult
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.runtime.ScriptExitException
 import com.quickjs.JSArray
 import com.quickjs.JSFunction

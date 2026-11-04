@@ -4,7 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 
 /**
  * 剪贴板 API。挂在全局 `clipboard` 命名空间。

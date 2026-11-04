@@ -1,6 +1,7 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
+import com.benton.izukijs.core.log.LogEntry
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File

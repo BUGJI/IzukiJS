@@ -1,44 +1,23 @@
 package com.benton.izukijs.ai
 
 import android.content.Context
+import android.content.SharedPreferences
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import com.benton.izukijs.security.SecretCipher
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * AI Agent 配置持久化。敏感字段（apiKey / extraHeaderValue）经 [SecretCipher] 加密。
  */
-class AiConfigRepository(context: Context) {
+class AiConfigRepository(context: Context) : PrefsStateStore<AiConfig>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = AiConfig(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val config: StateFlow<AiConfig> get() = state
 
-    private val _config = MutableStateFlow(load())
-    val config: StateFlow<AiConfig> = _config.asStateFlow()
-
-    fun current(): AiConfig = _config.value
-
-    fun save(value: AiConfig) {
-        _config.value = value
-        prefs.edit()
-            .putBoolean(KEY_ENABLED, value.enabled)
-            .putString(KEY_BASE_URL, value.baseUrl)
-            .putString(KEY_API_KEY, SecretCipher.encrypt(value.apiKey))
-            .putString(KEY_MODEL, value.model)
-            .putString(KEY_TEMPERATURE, value.temperature.toString())
-            .putInt(KEY_MAX_TOKENS, value.maxTokens)
-            .putInt(KEY_TIMEOUT, value.timeoutSec)
-            .putBoolean(KEY_STREAM, value.stream)
-            .putString(KEY_SYSTEM_PROMPT, value.systemPrompt)
-            .putInt(KEY_MAX_STEPS, value.maxSteps)
-            .putBoolean(KEY_TOOLS, value.toolsEnabled)
-            .putBoolean(KEY_ALLOW_SHELL, value.allowShell)
-            .putString(KEY_HEADER_NAME, value.extraHeaderName)
-            .putString(KEY_HEADER_VALUE, SecretCipher.encrypt(value.extraHeaderValue))
-            .apply()
-    }
-
-    private fun load(): AiConfig = AiConfig(
+    override fun read(): AiConfig = AiConfig(
         enabled = prefs.getBoolean(KEY_ENABLED, false),
         baseUrl = prefs.getString(KEY_BASE_URL, null) ?: AiConfig.DEFAULT_BASE_URL,
         apiKey = SecretCipher.decrypt(prefs.getString(KEY_API_KEY, "").orEmpty()),
@@ -54,6 +33,24 @@ class AiConfigRepository(context: Context) {
         extraHeaderName = prefs.getString(KEY_HEADER_NAME, "").orEmpty(),
         extraHeaderValue = SecretCipher.decrypt(prefs.getString(KEY_HEADER_VALUE, "").orEmpty()),
     )
+
+    override fun write(editor: SharedPreferences.Editor, value: AiConfig) {
+        editor
+            .putBoolean(KEY_ENABLED, value.enabled)
+            .putString(KEY_BASE_URL, value.baseUrl)
+            .putString(KEY_API_KEY, SecretCipher.encrypt(value.apiKey))
+            .putString(KEY_MODEL, value.model)
+            .putString(KEY_TEMPERATURE, value.temperature.toString())
+            .putInt(KEY_MAX_TOKENS, value.maxTokens)
+            .putInt(KEY_TIMEOUT, value.timeoutSec)
+            .putBoolean(KEY_STREAM, value.stream)
+            .putString(KEY_SYSTEM_PROMPT, value.systemPrompt)
+            .putInt(KEY_MAX_STEPS, value.maxSteps)
+            .putBoolean(KEY_TOOLS, value.toolsEnabled)
+            .putBoolean(KEY_ALLOW_SHELL, value.allowShell)
+            .putString(KEY_HEADER_NAME, value.extraHeaderName)
+            .putString(KEY_HEADER_VALUE, SecretCipher.encrypt(value.extraHeaderValue))
+    }
 
     private companion object {
         const val PREFS = "izukijs_ai"

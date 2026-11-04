@@ -43,6 +43,13 @@ OCR and AI-Agent recovery.
   Google Vision / custom), with automatic fallback to local when online fails.
 - **Continuous screen capture**: authorize once and keep it resident, providing unlimited screen
   frames for capture / image matching / OCR and bypassing the Accessibility screenshot limits.
+- **Background virtual display & PiP**: run the target app on a virtual display created by a Shizuku
+  privileged process while the main screen stays usable; the resolution is configurable and pressing
+  Home on the Run page shrinks the preview into system picture-in-picture. The Run status page shows
+  the live preview and supports tap / long-press / swipe input. Scripts use it via
+  `// @need virtualscreen` and `virtualScreen.*`, with `target` / `capture` to explicitly switch
+  capture and input between the virtual and main displays. A script destroys the virtual display it
+  started by default; disable "Destroy after the script finishes" to keep it across scripts.
 - **AI Agent recovery**: when a script gets stuck, hand the screen to an OpenAI-compatible model to
   observe and operate the device; native function calling is used when supported, otherwise it falls
   back to a prompt protocol.
@@ -54,10 +61,14 @@ OCR and AI-Agent recovery.
   device (e.g. an ESP32 digitizer dongle, firmware at
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)) for scenarios that need hardware-level input.
 - **System capability extensions**: opt-in notification listening (`notify.*` read / wait for new /
-  clear), usage access (`app.foreground()` and usage records), app list (`app.list()` to enumerate
+  clear) and script progress notifications (`notify.progress`; Android 16+ supports segments,
+  points, colors and live updates, with automatic fallback on older versions), usage access
+  (`app.foreground()` and usage records), app list (`app.list()` to enumerate
   installed apps), full file access (`fs.*` to read/write shared storage) and script network access
   (`http.*`, off by default with an optional domain allowlist); scripts can hold a wake lock while
-  running (optionally waking the screen), and a Quick Settings tile can run a pinned script with one tap.
+  running (optionally waking the screen), and with Shizuku / Root they can auto-unlock a locked
+  device using swipe, PIN or a lock-screen recorded pattern / gesture. A Quick Settings tile can run a pinned
+  script with one tap.
 - **Debugging & tools**: a layout inspector that generates selector code, a draggable debug overlay
   (layout / OCR coordinate overlay), a floating control bar, scheduled tasks (cron / charging /
   Wi-Fi / unlock triggers, condition filters, retries), the Quick Settings tile, per-file log
@@ -105,8 +116,8 @@ is welcome.
 
 Besides the control backends, the "Permissions & Capabilities" page offers switch-based read /
 operate helpers: notification listening (`notify.*`), usage access (`app.foreground()` and more),
-app list (`app.list()`) and full file access (`fs.*`), plus keep-awake / wake screen and the Quick
-Settings tile (see [`docs/TOOLS.md`](docs/TOOLS.md)).
+app list (`app.list()`) and full file access (`fs.*`), plus keep-awake / wake screen, automatic
+lock-screen unlock and the Quick Settings tile (see [`docs/TOOLS.md`](docs/TOOLS.md)).
 
 Scripts can query readiness with `permissions.*`; see [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md).
 
@@ -170,7 +181,7 @@ Artifacts are split per ABI: `arm64-v8a` / `armeabi-v7a` / `x86_64`.
    - **Root**: detect Root and authorize through `su`.
    - **Bluetooth HID**: scan for and connect an external HID dongle.
    - **Other capabilities** (switch-based): notification listening, usage access, app list, full
-     file access, keep-awake / wake screen, Quick Settings tile.
+     file access, keep-awake / wake screen, automatic lock-screen unlock, Quick Settings tile.
 
 2. For unlimited screenshots, authorize "Screen capture" once under "Permissions & Capabilities" and
    start it.
@@ -268,6 +279,9 @@ app/src/main/cpp/  # JNI shim for QuickJS interrupt callbacks
 - **Least privilege by default**: `shell` and script execution are off by default and must be
   explicitly enabled on the settings page; high-risk commands are blocked by default. See
   [`docs/MCP.md`](docs/MCP.md) for details.
+- **Lock-screen credentials**: automatic-unlock PINs and lock-screen recordings are encrypted with
+  Android Keystore, stored only on-device, never written to logs, and excluded from system backup
+  and config export.
 
 ## License
 

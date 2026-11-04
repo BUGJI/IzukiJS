@@ -2,7 +2,7 @@ package com.benton.izukijs.update
 
 import android.os.Build
 import com.benton.izukijs.BuildConfig
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONArray

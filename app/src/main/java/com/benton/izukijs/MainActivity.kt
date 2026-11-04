@@ -1,16 +1,21 @@
 package com.benton.izukijs
 
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -18,9 +23,20 @@ import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.LanguagePreferences
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.navigation.IzukiNavHost
+import com.benton.izukijs.ui.pip.LocalIsInPip
+import com.benton.izukijs.ui.pip.PipController
+import com.benton.izukijs.ui.pip.PipHost
+import com.benton.izukijs.ui.pip.PipRequest
+import com.benton.izukijs.ui.pip.VirtualScreenPreviewHost
 import com.benton.izukijs.ui.theme.IzukiJSTheme
+import com.benton.izukijs.virtualscreen.VirtualScreenState
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), PipHost {
+
+    @Volatile
+    override var pipRequest: PipRequest? = null
+
+    private var isInPip by mutableStateOf(false)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguagePreferences.wrap(newBase))
@@ -57,13 +73,35 @@ class MainActivity : ComponentActivity() {
                         isAppearanceLightNavigationBars = !darkTheme
                     }
                 }
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background,
-                ) {
-                    IzukiNavHost()
+                val virtualState by container.virtualScreenManager.state.collectAsStateWithLifecycle()
+                CompositionLocalProvider(LocalIsInPip provides isInPip) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.background,
+                        ) {
+                            IzukiNavHost()
+                        }
+                        if (virtualState is VirtualScreenState.Active || isInPip) {
+                            VirtualScreenPreviewHost(modifier = Modifier.fillMaxSize())
+                        }
+                    }
                 }
             }
         }
+    }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val request = pipRequest ?: return
+        PipController.enterNow(this, request)
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        isInPip = isInPictureInPictureMode
     }
 }

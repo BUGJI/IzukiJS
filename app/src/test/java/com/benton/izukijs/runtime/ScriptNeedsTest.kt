@@ -39,4 +39,10 @@ class ScriptNeedsTest {
         val needs = ScriptNeeds.parse("// @need shell, typo")!!
         assertEquals(setOf("typo"), needs - ScriptNeeds.KNOWN)
     }
+
+    @Test
+    fun acceptsVirtualScreenNeed() {
+        val needs = ScriptNeeds.parse("// @need virtualScreen")!!
+        assertEquals(emptySet<String>(), needs - ScriptNeeds.KNOWN)
+    }
 }

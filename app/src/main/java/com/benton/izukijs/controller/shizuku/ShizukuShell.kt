@@ -22,8 +22,13 @@ class ShizukuShell : ShellRunner {
         ShellResult(stdout, stderr, code)
     }.getOrNull()
 
-    override fun screenshotPng(): ByteArray? = runCatching {
-        val process = Shizuku.newProcess(arrayOf("screencap", "-p"), null, null)
+    override fun screenshotPng(displayId: Int?): ByteArray? = runCatching {
+        val command = if (displayId != null && displayId >= 0) {
+            arrayOf("screencap", "-p", "-d", displayId.toString())
+        } else {
+            arrayOf("screencap", "-p")
+        }
+        val process = Shizuku.newProcess(command, null, null)
         val bytes = process.inputStream.use { it.readBytes() }
         process.waitFor()
         bytes

@@ -10,6 +10,6 @@ interface ShellRunner {
 
     fun run(command: String): ShellResult?
 
-    /** 使用高级权限截图，返回 PNG 字节。 */
-    fun screenshotPng(): ByteArray?
+    /** 使用高级权限截图，返回 PNG 字节；[displayId] 非空时截取指定显示器。 */
+    fun screenshotPng(displayId: Int? = null): ByteArray?
 }

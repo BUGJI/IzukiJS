@@ -54,8 +54,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.benton.izukijs.R
-import com.benton.izukijs.runtime.LogEntry
-import com.benton.izukijs.runtime.LogLevel
+import com.benton.izukijs.core.log.LogEntry
+import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
@@ -122,14 +122,14 @@ fun ConsolePanel(
         if (visible.isEmpty()) return
         haptics.tap()
         val text = visible.joinToString("\n") { it.toLine(showTimestamp) }
-        clipboard()?.setPrimaryClip(ClipData.newPlainText(resources.getString(R.string.nav_logs), text))
+        clipboard()?.setPrimaryClip(ClipData.newPlainText(resources.getString(R.string.logs_name), text))
         scope.launch { snackbar.show(resources.getString(R.string.console_copied_all)) }
     }
 
     fun copyLine(entry: LogEntry) {
         haptics.tap()
         clipboard()?.setPrimaryClip(
-            ClipData.newPlainText(resources.getString(R.string.nav_logs), entry.toLine(showTimestamp)),
+            ClipData.newPlainText(resources.getString(R.string.logs_name), entry.toLine(showTimestamp)),
         )
         scope.launch { snackbar.show(resources.getString(R.string.console_copied)) }
     }

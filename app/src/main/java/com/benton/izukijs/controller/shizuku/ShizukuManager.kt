@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import rikka.shizuku.Shizuku
 
 /**
@@ -17,7 +17,9 @@ class ShizukuManager(
 ) {
 
     private val shell = ShizukuShell()
-    private val controller = ShizukuController(context, shell, logBus)
+    private val controller = ShizukuController(context, shell, logBus) {
+        controllers.targetDisplayId
+    }
 
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
         if (grantResult == PackageManager.PERMISSION_GRANTED) {

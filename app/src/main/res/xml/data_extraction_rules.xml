@@ -8,9 +8,11 @@
     <cloud-backup>
         <exclude domain="sharedpref" path="izukijs_ai.xml" />
         <exclude domain="sharedpref" path="izukijs_ocr.xml" />
+        <exclude domain="sharedpref" path="izukijs_unlock.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="izukijs_ai.xml" />
         <exclude domain="sharedpref" path="izukijs_ocr.xml" />
+        <exclude domain="sharedpref" path="izukijs_unlock.xml" />
     </device-transfer>
 </data-extraction-rules>

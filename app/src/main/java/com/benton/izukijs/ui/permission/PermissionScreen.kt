@@ -121,7 +121,11 @@ private enum class PermissionGroup(@StringRes val labelRes: Int) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
+fun PermissionScreen(
+    onBack: () -> Unit,
+    onOpenHid: () -> Unit,
+    onOpenUnlockSettings: () -> Unit,
+) {
     val container = rememberAppContainer()
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
     val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
@@ -193,6 +197,7 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     val ignoringBatteryOptimizations = remember(permissionRefresh) { isIgnoringBatteryOptimizations(context) }
     val runtimeSettings by container.runtimeSettingsRepository.settings.collectAsStateWithLifecycle()
     val httpSettings by container.httpSettingsRepository.settings.collectAsStateWithLifecycle()
+    val unlockSettings by container.unlockSettingsRepository.settings.collectAsStateWithLifecycle()
 
     val writeStorageLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -688,6 +693,35 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
     }
 
     @Composable
+    fun UnlockCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.perm_unlock_title),
+            description = stringResource(R.string.perm_unlock_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+            ),
+        )
+        val configured = unlockSettings.hasCredential
+        PermissionCard(
+            info = info,
+            status = stringResource(
+                when {
+                    !unlockSettings.enabled -> R.string.perm_status_off
+                    configured -> R.string.perm_status_on
+                    else -> R.string.perm_unlock_status_incomplete
+                },
+            ),
+            ready = unlockSettings.enabled && configured,
+            onShowInfo = { infoSheet = info },
+            action = {
+                OutlinedButton(onClick = onOpenUnlockSettings) {
+                    Text(stringResource(R.string.perm_unlock_open_settings))
+                }
+            },
+        )
+    }
+
+    @Composable
     fun TimeoutCard() {
         val info = PermissionInfo(
             title = stringResource(R.string.perm_timeout_title),
@@ -955,6 +989,8 @@ fun PermissionScreen(onBack: () -> Unit, onOpenHid: () -> Unit) {
                             HttpCard()
                             Spacer(Modifier.height(12.dp))
                             WakeCard()
+                            Spacer(Modifier.height(12.dp))
+                            UnlockCard()
                             Spacer(Modifier.height(12.dp))
                             TimeoutCard()
                             Spacer(Modifier.height(12.dp))

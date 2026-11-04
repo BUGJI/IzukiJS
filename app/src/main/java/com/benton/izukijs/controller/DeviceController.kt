@@ -77,6 +77,12 @@ interface DeviceController {
     /** 该模式当前是否已就绪（例如无障碍服务已连接、HID 已连接）。 */
     fun isReady(): Boolean
 
+    /**
+     * 是否支持把输入 / 截图定向到指定 display。
+     * 目前只有 Shizuku / Root 这类 Shell 后端支持；无障碍与 HID 固定操作主屏。
+     */
+    fun supportsDisplayTarget(): Boolean = false
+
     fun click(x: Float, y: Float): Boolean = false
 
     fun longClick(x: Float, y: Float, durationMs: Long = 600L): Boolean = false
@@ -108,6 +114,9 @@ interface DeviceController {
     fun globalAction(action: Int): Boolean = false
 
     fun screenshot(): Bitmap? = null
+
+    /** 截取指定 display；null 表示主屏。默认实现忽略参数。 */
+    fun screenshotForDisplay(displayId: Int?): Bitmap? = screenshot()
 
     fun nodeTree(): NodeSnapshot? = null
 

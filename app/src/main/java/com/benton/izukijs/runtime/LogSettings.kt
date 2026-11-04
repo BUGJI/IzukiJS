@@ -1,9 +1,10 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
-import kotlinx.coroutines.flow.MutableStateFlow
+import android.content.SharedPreferences
+import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 data class LogSettings(
     val autoClean: Boolean = true,
@@ -16,26 +17,15 @@ data class LogSettings(
 /**
  * 日志存储设置。SharedPreferences 持久化 + 内存缓存。
  */
-class LogSettingsRepository(context: Context) {
+class LogSettingsRepository(context: Context) : PrefsStateStore<LogSettings>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = LogSettings(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val settings: StateFlow<LogSettings> get() = state
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<LogSettings> = _settings.asStateFlow()
-
-    fun current(): LogSettings = _settings.value
-
-    fun save(value: LogSettings) {
-        _settings.value = value
-        prefs.edit()
-            .putBoolean(KEY_AUTO_CLEAN, value.autoClean)
-            .putInt(KEY_MAX_SIZE, value.maxSizeMb)
-            .putInt(KEY_RETENTION, value.retentionDays)
-            .putString(KEY_MIN_LEVEL, value.minLevel.name)
-            .apply()
-    }
-
-    private fun load(): LogSettings = LogSettings(
+    override fun read(): LogSettings = LogSettings(
         autoClean = prefs.getBoolean(KEY_AUTO_CLEAN, true),
         maxSizeMb = prefs.getInt(KEY_MAX_SIZE, 5),
         retentionDays = prefs.getInt(KEY_RETENTION, 7),
@@ -43,6 +33,14 @@ class LogSettingsRepository(context: Context) {
             ?.let { runCatching { LogLevel.valueOf(it) }.getOrNull() }
             ?: LogLevel.DEBUG,
     )
+
+    override fun write(editor: SharedPreferences.Editor, value: LogSettings) {
+        editor
+            .putBoolean(KEY_AUTO_CLEAN, value.autoClean)
+            .putInt(KEY_MAX_SIZE, value.maxSizeMb)
+            .putInt(KEY_RETENTION, value.retentionDays)
+            .putString(KEY_MIN_LEVEL, value.minLevel.name)
+    }
 
     private companion object {
         const val PREFS = "izukijs_log"

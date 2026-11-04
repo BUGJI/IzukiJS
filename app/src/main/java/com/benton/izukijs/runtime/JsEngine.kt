@@ -4,6 +4,7 @@ import android.content.Context
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.UiautomatorDumper
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.api.AiApi
 import com.benton.izukijs.runtime.api.ClipboardApi
@@ -16,7 +17,11 @@ import com.benton.izukijs.runtime.api.HttpApi
 import com.benton.izukijs.runtime.api.ImageApi
 import com.benton.izukijs.runtime.api.ModuleApi
 import com.benton.izukijs.runtime.api.PermissionsApi
+import com.benton.izukijs.runtime.api.ScreenshotStore
 import com.benton.izukijs.runtime.api.StateApi
+import com.benton.izukijs.runtime.api.VirtualScreenApi
+import com.benton.izukijs.model.RunMode
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
 import com.quickjs.JSContext
@@ -38,6 +43,8 @@ class JsEngine(
     private val runtimeSettings: RuntimeSettingsRepository,
     private val httpSettingsRepository: HttpSettingsRepository,
     private val moduleSourceProvider: (String) -> String?,
+    private val virtualScreen: VirtualScreenManager? = null,
+    private val runMode: RunMode = RunMode.FOREGROUND,
 ) : Closeable {
 
     private var runtime: QuickJS? = null
@@ -127,13 +134,20 @@ class JsEngine(
             ocrProcessor = ocrProcessor,
             logBus = logBus,
             appListEnabled = { runtimeSettings.current().appList },
+            progressNotificationEnabled = { runtimeSettings.current().progressNotification },
+            virtualScreen = virtualScreen,
             isExitRequested = { exitRequested },
+        )
+        val screenshotStore = ScreenshotStore(
+            context = context,
+            settingsProvider = { captureSettingsRepository.current() },
+            logBus = logBus,
         )
         val globalApi = GlobalApi(
             context = context,
             logBus = logBus,
-            screenshotProvider = bundle.screenshotProvider,
-            captureSettingsProvider = { captureSettingsRepository.current() },
+            captureProvider = bundle.captureProvider,
+            screenshotStore = screenshotStore,
             onExit = { requestExit() },
             isExitRequested = { exitRequested },
         )
@@ -156,6 +170,8 @@ class JsEngine(
                 screenCapture,
                 { runtimeSettings.current().appList },
                 { httpSettingsRepository.current().enabled },
+                virtualScreen,
+                { runMode },
             ),
             "permissions",
         )
@@ -163,6 +179,18 @@ class JsEngine(
         ctx.addJavascriptInterface(StateApi(scriptEnv), "state")
         ctx.addJavascriptInterface(ModuleApi(moduleSourceProvider), "modules")
 
+        if (allowed("virtualscreen") && virtualScreen != null) {
+            ctx.addJavascriptInterface(
+                VirtualScreenApi(
+                    manager = virtualScreen,
+                    runModeProvider = { runMode },
+                    captureProvider = bundle.captureProvider,
+                    screenshotStore = screenshotStore,
+                    logBus = logBus,
+                ),
+                "virtualScreen",
+            )
+        }
         if (allowed("app")) ctx.addJavascriptInterface(appApi, "app")
         if (allowed("shell")) ctx.addJavascriptInterface(shellApi, "shell")
         if (allowed("images")) {
@@ -220,8 +248,10 @@ class JsEngine(
             (function (global) {
               var __modules = {};
               var __loading = {};
+              var __builtins = {};
               global.require = function (name) {
                 var key = String(name);
+                if (Object.prototype.hasOwnProperty.call(__builtins, key)) return __builtins[key];
                 if (Object.prototype.hasOwnProperty.call(__modules, key)) return __modules[key].exports;
                 if (__loading[key]) throw new Error("检测到循环依赖: " + key);
                 var src = (typeof modules !== 'undefined' && modules.source) ? modules.source(key) : null;
@@ -242,6 +272,45 @@ class JsEngine(
                 }
                 return mod.exports;
               };
+              if (typeof virtualScreen !== 'undefined') {
+                __builtins['virtualScreen'] = virtualScreen;
+                __builtins['virtualscreen'] = virtualScreen;
+                virtualScreen.allowed = function () {
+                  var raw = virtualScreen.allowedRaw();
+                  if (!raw) return [];
+                  return raw.split(',');
+                };
+                virtualScreen.size = function () {
+                  try { return JSON.parse(virtualScreen.sizeRaw()); } catch (e) { return null; }
+                };
+                virtualScreen.info = function () {
+                  try { return JSON.parse(virtualScreen.infoRaw()); } catch (e) { return null; }
+                };
+                virtualScreen.start = function (options) {
+                  return virtualScreen.startRaw(JSON.stringify(options || {}));
+                };
+                virtualScreen.target = function (value) {
+                  if (value === undefined || value === null) return virtualScreen.targetRaw();
+                  return virtualScreen.setTargetRaw(String(value));
+                };
+                virtualScreen.awaitFrame = function (timeoutMs) {
+                  return virtualScreen.awaitFrame(timeoutMs == null ? 1000 : timeoutMs);
+                };
+                virtualScreen.capture = function (path, source) {
+                  return virtualScreen.captureRaw(
+                    path == null ? "" : String(path),
+                    source == null ? "virtual" : String(source)
+                  );
+                };
+              }
+              if (typeof captureScreenSource === 'function') {
+                var __izukiCaptureScreen = captureScreen;
+                global.captureScreen = function (path, source) {
+                  var target = (path == null ? "" : String(path));
+                  if (source == null) return __izukiCaptureScreen(target);
+                  return captureScreenSource(target, String(source));
+                };
+              }
               if (typeof images !== 'undefined') {
                 var __regionJson = function (region) {
                   return region == null ? "" : JSON.stringify(region);
@@ -489,6 +558,14 @@ class JsEngine(
                   if (!raw) return null;
                   try { return JSON.parse(raw); } catch (e) { return null; }
                 };
+                if (typeof notify.progressRaw === 'function') {
+                  notify.progress = function (options) {
+                    return notify.progressRaw(JSON.stringify(options || {}));
+                  };
+                  notify.update = function (options) {
+                    return notify.updateRaw(JSON.stringify(options || {}));
+                  };
+                }
               }
               if (typeof env !== 'undefined' && env.allRaw) {
                 env.get = function (key, fallback) {

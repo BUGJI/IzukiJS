@@ -20,6 +20,7 @@ object ScriptNeeds {
         "selector",
         "images",
         "ocr",
+        "virtualscreen",
     )
 
     private val NEED_LINE = Regex("""(?m)^\s*//\s*@need\s*:?\s*(.+?)\s*$""")

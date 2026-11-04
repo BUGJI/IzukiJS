@@ -94,7 +94,7 @@ import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
-import com.benton.izukijs.runtime.LogEntry
+import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.ScriptEnvDialog

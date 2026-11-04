@@ -3,7 +3,7 @@ package com.benton.izukijs.controller
 import android.os.Process
 import android.util.Xml
 import com.benton.izukijs.model.Capability
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.util.concurrent.atomic.AtomicBoolean
@@ -25,6 +25,9 @@ object UiautomatorDumper {
      * 返回 [NodeTreeResult] 以区分「无可用后端」与「后端存在但读取失败」，供上层生成准确提示。
      */
     fun read(controllers: ControllerManager, logBus: LogBus): NodeTreeResult {
+        if (controllers.targetDisplayId != null) {
+            return NodeTreeResult.Failure("后台虚拟屏不支持控件树，请改用 images / ocr / 坐标输入")
+        }
         val accessibility = controllers.controllerFor(Capability.NODE_TREE)
         if (accessibility != null) {
             accessibility.nodeTree()?.let { return NodeTreeResult.Success(it) }

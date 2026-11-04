@@ -29,9 +29,10 @@ class RootShell(private val context: Context) : ShellRunner {
 
     override fun run(command: String): ShellResult? = runSu(command)
 
-    override fun screenshotPng(): ByteArray? = runCatching {
+    override fun screenshotPng(displayId: Int?): ByteArray? = runCatching {
         val file = File(context.cacheDir, "izuki_shot.png")
-        runSu("screencap -p '${file.absolutePath}'") ?: return null
+        val display = if (displayId != null && displayId >= 0) "-d $displayId " else ""
+        runSu("screencap -p ${display}'${file.absolutePath}'") ?: return null
         if (!file.exists()) return null
         val bytes = file.readBytes()
         file.delete()

@@ -2,7 +2,7 @@ package com.benton.izukijs.runtime.api
 
 import android.util.Base64
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File

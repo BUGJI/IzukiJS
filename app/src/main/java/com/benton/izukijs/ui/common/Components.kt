@@ -118,6 +118,7 @@ fun SecretField(
     value: String,
     modifier: Modifier = Modifier,
     commitOnBlur: Boolean = true,
+    keyboardType: KeyboardType = KeyboardType.Text,
     onChange: (String) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -133,6 +134,7 @@ fun SecretField(
         },
         label = { Text(label) },
         singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         modifier = modifier
             .fillMaxWidth()
             .onFocusChanged { state ->

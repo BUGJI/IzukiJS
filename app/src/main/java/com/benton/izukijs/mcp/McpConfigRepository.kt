@@ -1,38 +1,23 @@
 package com.benton.izukijs.mcp
 
 import android.content.Context
+import android.content.SharedPreferences
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import com.benton.izukijs.security.SecretCipher
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * MCP 服务配置持久化。访问令牌经 [SecretCipher] 加密落盘。
  */
-class McpConfigRepository(context: Context) {
+class McpConfigRepository(context: Context) : PrefsStateStore<McpConfig>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = McpConfig(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val config: StateFlow<McpConfig> get() = state
 
-    private val _config = MutableStateFlow(load())
-    val config: StateFlow<McpConfig> = _config.asStateFlow()
-
-    fun current(): McpConfig = _config.value
-
-    fun save(value: McpConfig) {
-        _config.value = value
-        prefs.edit()
-            .putBoolean(KEY_ENABLED, value.enabled)
-            .putInt(KEY_PORT, value.port)
-            .putString(KEY_BIND_MODE, value.bindMode.name)
-            .putString(KEY_TOKEN, SecretCipher.encrypt(value.token))
-            .putBoolean(KEY_ALLOW_SHELL, value.allowShell)
-            .putBoolean(KEY_ALLOW_SCRIPTS, value.allowScripts)
-            .putBoolean(KEY_ALLOW_DANGEROUS_SHELL, value.allowDangerousShell)
-            .putString(KEY_BLOCKED_PACKAGES, value.blockedPackages.joinToString("\n"))
-            .apply()
-    }
-
-    private fun load(): McpConfig {
+    override fun read(): McpConfig {
         val mode = prefs.getString(KEY_BIND_MODE, null)
             ?.let { runCatching { McpBindMode.valueOf(it) }.getOrNull() }
             ?: McpBindMode.LOCALHOST
@@ -50,6 +35,18 @@ class McpConfigRepository(context: Context) {
                 .map { it.trim() }
                 .filter { it.isNotEmpty() },
         )
+    }
+
+    override fun write(editor: SharedPreferences.Editor, value: McpConfig) {
+        editor
+            .putBoolean(KEY_ENABLED, value.enabled)
+            .putInt(KEY_PORT, value.port)
+            .putString(KEY_BIND_MODE, value.bindMode.name)
+            .putString(KEY_TOKEN, SecretCipher.encrypt(value.token))
+            .putBoolean(KEY_ALLOW_SHELL, value.allowShell)
+            .putBoolean(KEY_ALLOW_SCRIPTS, value.allowScripts)
+            .putBoolean(KEY_ALLOW_DANGEROUS_SHELL, value.allowDangerousShell)
+            .putString(KEY_BLOCKED_PACKAGES, value.blockedPackages.joinToString("\n"))
     }
 
     private companion object {

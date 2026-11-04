@@ -12,7 +12,7 @@
 | `waitUntil(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回真值，并返回该值；超时返回 `null` |
 | `waitUntilGone(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回假值，返回是否在超时前消失 |
 | `exit()` | 立即结束脚本 |
-| `captureScreen(path)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`） |
+| `captureScreen(path, source?)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`）；`source` 可为 `auto` / `virtual` / `main` |
 
 ## 输入（全局）
 
@@ -68,7 +68,8 @@ gesture([
 
 | 方法 | 返回 |
 |---|---|
-| `device.width()` / `device.height()` | 屏幕像素宽高 |
+| `device.width()` / `device.height()` | 当前操作屏的像素宽高；虚拟屏激活且目标为虚拟屏时返回虚拟屏分辨率 |
+| `device.screenWidth()` / `device.screenHeight()` | 物理屏真实分辨率；虚拟屏激活且目标为虚拟屏时返回虚拟屏分辨率 |
 | `device.model()` / `device.brand()` | 机型 / 品牌 |
 | `device.androidVersion()` | SDK 版本号 |
 | `device.batteryLevel()` | 电量百分比 |
@@ -87,9 +88,14 @@ gesture([
 | `app.lastUsed(packageName)` | 最后使用时间（毫秒），从未使用返回 -1（需「使用情况访问」） |
 | `app.usageStats(sinceMs, limit)` | 使用统计数组 `[{package,totalTimeMs,lastTimeUsed}]`（需「使用情况访问」） |
 
-## `notify`（通知监听，只读 + 清除）
+## `notify`（通知监听 + 脚本进度通知）
 
-需在「权限与能力」页开启「通知监听（通知使用权）」。不点击、不回复。
+读取 / 等待 / 清除通知需在「权限与能力」页开启「通知监听（通知使用权）」。
+`notify.progress` / `notify.update` / `notify.reset` 更新的是脚本运行通知，需要
+`POST_NOTIFICATIONS`，并受「设置 → 运行与虚拟屏 → 通知」控制。
+使用 `// @need notify` 时才会暴露 `notify` 命名空间。
+
+### 监听与清除
 
 | 方法 | 说明 |
 |---|---|
@@ -98,9 +104,58 @@ gesture([
 | `notify.latest(pkg, timeoutMs=10000)` | 等待 `pkg` 在调用之后出现的新通知，返回该通知对象；超时返回 `null` |
 | `notify.clear(key)` | 清除指定通知 |
 
+### 进度通知
+
+| 方法 | 说明 |
+|---|---|
+| `notify.progress(options)` | 完整更新运行通知进度；开关关闭 / 未授权 / 服务未运行返回 `false` |
+| `notify.update(options)` | 局部更新；进度开关关闭时忽略进度字段，仍可更新标题 / 文本 / 阶段 |
+| `notify.reset()` | 清除进度、分段、颜色，回到普通运行通知 |
+| `notify.progressEnabled()` | 当前是否可显示进度通知（开关 + `POST_NOTIFICATIONS`） |
+
+**options 字段**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `title` / `text` | string | 通知标题 / 正文 |
+| `stage` | string \| null | 阶段文本，映射 `setSubText` |
+| `value` / `max` | number | 当前进度 / 最大值；`max <= 0` 按不确定进度处理 |
+| `indeterminate` | boolean | 不确定进度；提供 `value` 或 `max` 且未指定时自动为 `false` |
+| `color` | string | 通知主色，`#RGB` / `#ARGB` / `#RRGGBB` / `#AARRGGBB` |
+| `segments` | array | `[{length, color}]`，多段进度条；总长度即最大值 |
+| `points` | array | `[{position, color}]`，进度节点；位置裁剪到 `1..max` |
+| `shortCriticalText` | string | Android 16+ 状态栏 / 实时更新短文本 |
+| `trackerIcon` | string | 内置图标 key：`script` / `progress` / `none` |
+| `startIcon` / `endIcon` | string | 同上 |
+| `silent` | boolean | 是否静音，默认 `true` |
+| `colorized` | boolean | 是否使用着色通知 |
+| `visibility` | string | `public` / `private` / `secret` |
+| `timeoutMs` | number | 自动消失时间，`0` 表示不设置 |
+| `showStopAction` | boolean | 是否保留停止按钮，默认 `true` |
+| `promoted` | boolean | Android 16+ 是否请求 promoted ongoing / 实时更新 |
+
+Android 16+ 使用 `NotificationCompat.ProgressStyle`，支持分段、节点、追踪图标、
+`shortCriticalText` 与 promoted ongoing；低版本自动降级为普通进度条，忽略
+`segments` / `points` / 图标 / `shortCriticalText` / `promoted`。
+
 ```js
-var code = notify.latest("com.example.app", 15000);
-if (code) log("验证码通知: " + code.text);
+notify.progress({
+  title: "自动战斗",
+  text: "正在执行",
+  stage: "第 2/5 阶段",
+  value: 40,
+  max: 100,
+  color: "#2196F3",
+  segments: [
+    { length: 40, color: "#4CAF50" },
+    { length: 60, color: "#2196F3" }
+  ],
+  shortCriticalText: "40%",
+  trackerIcon: "progress"
+});
+
+notify.update({ text: "正在收尾", stage: "第 3/5 阶段" });
+notify.reset();
 ```
 
 ## `fs`（文件读写）
@@ -299,6 +354,8 @@ if (hit) click(hit.x, hit.y);
 | `permissions.has(name)` | 单项查询 |
 | `permissions.canControl()` | 是否有可注入输入的后端 |
 | `permissions.canScreenshot()` | 是否有截图来源 |
+| `permissions.virtualScreen()` | 后台虚拟屏的 Shizuku 特权后端是否可用 |
+| `permissions.runMode()` | 本次脚本实际运行模式：`foreground` / `background` |
 
 ```js
 if (!permissions.canScreenshot()) {
@@ -306,6 +363,86 @@ if (!permissions.canScreenshot()) {
   exit();
 }
 ```
+
+## `virtualScreen`（后台虚拟屏）
+
+需要 `// @need virtualscreen`。后台模式由 Shizuku 特权服务创建虚拟屏，目标应用运行在虚拟屏上，
+主屏可正常使用。虚拟屏激活后，`click` / `swipe` / `input` / `press` 与截图 / 找图 / OCR
+会自动定向到虚拟屏，脚本无需改坐标。
+
+```js
+// @need virtualscreen
+// @env RUN_MODE=background
+// @env TARGET=com.example.app
+
+if (!virtualScreen.available()) {
+  log("需要 Shizuku 授权（Android 10+）");
+  exit();
+}
+virtualScreen.start({ width: 1280, height: 720, dpi: 240 });
+virtualScreen.launch(env.get("TARGET"));
+// 之后的 click / images / ocr 都作用于虚拟屏
+virtualScreen.stop();
+```
+
+| 方法 | 说明 |
+|---|---|
+| `virtualScreen.available()` | Shizuku 特权后端是否可用 |
+| `virtualScreen.active()` | 虚拟屏是否已启动 |
+| `virtualScreen.mode()` | 当前模式 `foreground` / `background` |
+| `virtualScreen.allowed()` | 允许的模式数组 |
+| `virtualScreen.start(options)` | 启动虚拟屏；`options` 可含 `width` / `height` / `dpi`。已激活且分辨率不同会重建 |
+| `virtualScreen.stop()` | 停止虚拟屏 |
+| `virtualScreen.launch(pkg)` | 在虚拟屏上启动应用（已在主屏运行时先强停再迁移） |
+| `virtualScreen.displayId()` | 虚拟屏 displayId |
+| `virtualScreen.size()` | `{ width, height, dpi }` |
+| `virtualScreen.info()` | 状态、模式、目标、帧序号、分辨率与 displayId |
+| `virtualScreen.target(value?)` | 查询或切换操作目标：`auto` / `virtual` / `main` |
+| `virtualScreen.awaitFrame(timeoutMs)` | 等待虚拟屏首帧，默认 1000ms |
+| `virtualScreen.capture(path?, source?)` | 直接捕获并保存；`source` 缺省 `virtual` |
+
+显式捕获与目标切换：
+
+```js
+// 后台脚本默认 AUTO：虚拟屏激活时截图/找图/OCR/点击都自动指向虚拟屏
+virtualScreen.start({ width: 1280, height: 720, dpi: 240 });
+virtualScreen.launch("com.example.app");
+if (!virtualScreen.awaitFrame(2000)) log("虚拟屏还没有画面");
+
+// 直接保存虚拟屏截图
+var shot = virtualScreen.capture("/sdcard/virtual.png");
+
+// 临时捕获主屏（不改变后续点击目标）
+var mainShot = captureScreen("/sdcard/main.png", "main");
+
+// 切换后续点击/输入目标；captureScreen 仍可用 source 参数一次性覆盖
+virtualScreen.target("main");
+click(100, 200);
+virtualScreen.target("virtual");
+```
+
+说明：
+
+- 后台模式需要 Android 10+、Shizuku 授权，并在「设置 → 运行与虚拟屏 → 后台虚拟屏」中允许。
+- `@env RUN_MODE=background` 会在脚本启动时自动创建虚拟屏；未允许或不可用时回退前台并记录警告。
+- 脚本开始时目标按运行模式重置：后台脚本为 `auto`（跟随虚拟屏），前台脚本为主屏；脚本内仍可用
+  `virtualScreen.target("virtual")` 显式切换。未显式指定目标时，脚本自行调用
+  `virtualScreen.start()` 后会自动指向虚拟屏。
+- 虚拟屏激活后，`captureScreen` / `images` / `ocr` / `click` / `swipe` / `input` /
+  `press` 默认自动定向到虚拟屏；`virtualScreen.target("main")` 可临时切回主屏。
+- 「脚本运行结束后自动销毁」默认开启，且只销毁本次脚本启动/重建的虚拟屏；关闭后脚本结束时保留
+  虚拟屏，需脚本调用 `virtualScreen.stop()` 或在「运行状态 → 虚拟屏」页手动停止。App 进程被杀时
+  保留的虚拟屏也会随之销毁。
+- `virtualScreen.capture()` 与 `captureScreen(path, source)` 的 `source` 支持
+  `auto` / `virtual` / `main`；对不存在的虚拟屏做 `virtual` 捕获会返回 null 并记录警告。
+- `device.width()/height()/screenWidth()/screenHeight()` 在目标为虚拟屏时返回虚拟屏分辨率。
+- `app.launch()` 在虚拟屏激活时走虚拟屏；目标应用已在主屏运行时会先强停再迁移。
+  `app.openUrl()` 也会定向到虚拟屏，但不会强停。
+- `app.currentPackage()` 在虚拟屏激活时返回虚拟屏上的前台包名。
+- 虚拟屏上**不支持 `selector.*` / 无障碍控件树**，请改用 `images` / `ocr` / 坐标输入。
+- 脚本结束（正常、异常或超时）时会自动销毁本次创建的虚拟屏；`stop()` 用于脚本内提前释放。
+- 后台运行中停在「运行」页按 Home，可进入系统画中画预览；小窗只读。
+- 只有 `virtualscreen` 在 `@need` 中声明时，全局 `virtualScreen` 与 `require("virtualScreen")` 才存在。
 
 ## `env`（运行参数）
 
@@ -347,7 +484,8 @@ if (!permissions.canScreenshot()) {
 ```
 
 - 声明后，**只有列出的命名空间会被注册**；未声明的 `shell` / `fs` / `notify` /
-  `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` 在脚本里不存在。
+  `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` /
+  `virtualscreen` 在脚本里不存在。
 - 没有 `@need` 时保持旧行为：暴露所有已启用的命名空间。
 - 支持逗号、分号或空格分隔，大小写不敏感；多行会合并。
 - 未知能力名会直接拒绝运行；缺少前置条件（如 `http` 未启用、`shell` 后端未就绪）会记录警告。
@@ -397,6 +535,8 @@ lib.greet("izuki");
 - 模块与主脚本共享同一 QuickJS 环境，可直接使用 `log` / `click` / `env` / `state` 等全部 API。
 - 首次 `require` 执行一次并缓存，重复引入返回同一份 `exports`。
 - 找不到模块或存在循环依赖时抛出错误。
+- 内置模块 `virtualScreen` 可直接 `require("virtualScreen")`，返回与全局 `virtualScreen`
+  相同的对象；声明 `@need` 时仍需包含 `virtualscreen`。
 
 内置基础操作库 `basic_ops`，首次安装时自动写入脚本中心，其他脚本可直接复用：
 
@@ -464,8 +604,11 @@ if (ai.available()) {
 
 `captureScreen()` / `images.*` / `ocr.*` 的屏幕帧来源顺序：
 
-1. **持续录屏**（若已授权，见 `docs/TOOLS.md`）
-2. 控制后端的截图能力（无障碍 API30+ / Shizuku / Root）
+1. **虚拟屏帧源**（虚拟屏激活且当前目标为虚拟屏；会等待最多 1 秒首帧）
+2. **持续录屏**（若已授权，见 `docs/TOOLS.md`）
+3. 控制后端的截图能力（无障碍 API30+ / Shizuku / Root）
+
+`captureScreen(path, source)` 可忽略默认目标，用 `source="main"` / `"virtual"` 一次性指定来源。
 
 ## `press` 的按键限制
 

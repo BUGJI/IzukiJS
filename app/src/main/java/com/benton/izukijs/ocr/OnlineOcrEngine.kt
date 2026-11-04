@@ -2,7 +2,7 @@ package com.benton.izukijs.ocr
 
 import android.graphics.Bitmap
 import android.util.Base64
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.service.CaptureSettings
 import com.benton.izukijs.service.scaledByPercent
 import org.json.JSONArray

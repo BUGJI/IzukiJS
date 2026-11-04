@@ -1,9 +1,9 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
-import kotlinx.coroutines.flow.MutableStateFlow
+import android.content.SharedPreferences
+import com.benton.izukijs.core.prefs.PrefsStateStore
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 脚本网络（HTTP）开关与域名白名单。
@@ -16,27 +16,24 @@ data class HttpSettings(
     val allowlist: String = "",
 )
 
-class HttpSettingsRepository(context: Context) {
+class HttpSettingsRepository(context: Context) : PrefsStateStore<HttpSettings>(
+    context = context,
+    prefsName = PREFS,
+    defaultValue = HttpSettings(),
+) {
 
-    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val settings: StateFlow<HttpSettings> get() = state
 
-    private val _settings = MutableStateFlow(load())
-    val settings: StateFlow<HttpSettings> = _settings.asStateFlow()
-
-    fun current(): HttpSettings = _settings.value
-
-    fun save(value: HttpSettings) {
-        _settings.value = value
-        prefs.edit()
-            .putBoolean(KEY_ENABLED, value.enabled)
-            .putString(KEY_ALLOWLIST, value.allowlist)
-            .apply()
-    }
-
-    private fun load(): HttpSettings = HttpSettings(
+    override fun read(): HttpSettings = HttpSettings(
         enabled = prefs.getBoolean(KEY_ENABLED, false),
         allowlist = prefs.getString(KEY_ALLOWLIST, "").orEmpty(),
     )
+
+    override fun write(editor: SharedPreferences.Editor, value: HttpSettings) {
+        editor
+            .putBoolean(KEY_ENABLED, value.enabled)
+            .putString(KEY_ALLOWLIST, value.allowlist)
+    }
 
     private companion object {
         const val PREFS = "izukijs_http"

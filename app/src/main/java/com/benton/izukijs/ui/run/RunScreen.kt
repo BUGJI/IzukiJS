@@ -38,13 +38,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,21 +53,22 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.model.EnvField
-import com.benton.izukijs.model.EnvText
-import com.benton.izukijs.model.ScriptEnvSpec
-import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.common.SectionCard
+import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.common.stableTopAppBarColors
-import com.benton.izukijs.ui.rememberAppContainer
+import com.benton.izukijs.ui.pip.PipController
+import com.benton.izukijs.ui.pip.PipHost
+import com.benton.izukijs.ui.pip.PipRequest
 import com.benton.izukijs.ui.theme.LocalIzukiExtraColors
+import com.benton.izukijs.virtualscreen.VirtualScreenState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,80 +76,56 @@ import kotlinx.coroutines.launch
 fun RunScreen(
     onOpenSetup: () -> Unit,
     onOpenScripts: () -> Unit,
+    isActivePage: Boolean = true,
 ) {
-    val container = rememberAppContainer()
-    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val haptics = rememberAppHaptics()
     val extra = LocalIzukiExtraColors.current
-    val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
-    val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
-    val running by container.scriptExecutionManager.running.collectAsStateWithLifecycle()
-    val runningScript by container.scriptExecutionManager.runningScript.collectAsStateWithLifecycle()
-    val runningScriptId by container.scriptExecutionManager.runningScriptId.collectAsStateWithLifecycle()
-    val envData by container.scriptEnvRepository.data.collectAsStateWithLifecycle()
-    val recent by container.runHistoryRepository.recent.collectAsStateWithLifecycle()
-    var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
-    var scriptsLoaded by remember { mutableStateOf(false) }
-    var envDialog by remember { mutableStateOf<EnvDialogState?>(null) }
+    val viewModel: RunViewModel = appViewModel { RunViewModel(it) }
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+    val envDialog by viewModel.envDialog.collectAsStateWithLifecycle()
     var confirmClear by remember { mutableStateOf(false) }
 
-    fun requestRun(script: ScriptInfo) {
-        haptics.tap()
-        scope.launch {
-            val source = container.scriptRepository.readAsync(script)
-            val spec = ScriptEnvSpec.parse(source)
-            val stored = container.scriptEnvRepository.values(script.id)
-            val useGlobalEnv = container.scriptEnvRepository.useGlobalEnv(script.id)
-            if (spec.isEmpty && stored.isEmpty()) {
-                container.scriptExecutionManager.run(script.id, script.name, source)
-            } else {
-                envDialog = EnvDialogState(
-                    script = script,
-                    source = source,
-                    fields = spec.fields,
-                    initial = EnvText.resolve(
-                        defaults = spec.defaults(),
-                        global = container.globalEnvRepository.current(),
-                        script = container.scriptEnvRepository.env(script.id),
-                        runtime = stored,
-                        useGlobal = useGlobalEnv,
-                    ),
-                )
-            }
+    val primary = ui.recentItems.firstOrNull()
+
+    val pipHost = context.findActivity() as? PipHost
+    val activeVirtualScreen = ui.virtualScreenState as? VirtualScreenState.Active
+    val pipEligible = isActivePage &&
+        ui.running &&
+        activeVirtualScreen != null &&
+        ui.previewAttached &&
+        ui.virtualScreenSettings.pipOnHome &&
+        pipHost != null &&
+        PipController.isSupported(context)
+    LaunchedEffect(pipEligible, activeVirtualScreen?.resolution) {
+        val host = pipHost ?: return@LaunchedEffect
+        val target = host as? android.app.Activity ?: return@LaunchedEffect
+        val resolution = activeVirtualScreen?.resolution
+        if (pipEligible && resolution != null) {
+            val request = PipRequest(resolution)
+            host.pipRequest = request
+            PipController.updateParams(target, autoEnter = true, request = request)
+        } else {
+            host.pipRequest = null
+            PipController.updateParams(
+                target,
+                autoEnter = false,
+                request = PipRequest(resolution ?: ui.virtualScreenSettings.resolution),
+            )
         }
     }
-
-    // 脚本增删改（含编辑器保存）后仓库会自增 revision；据此重新拉取，保证快捷区与运行历史同步。
-    val revision by container.scriptRepository.revision.collectAsStateWithLifecycle()
-    LaunchedEffect(revision) {
-        scripts = container.scriptRepository.listAsync()
-        scriptsLoaded = true
-    }
-
-    // 运行历史里脚本可能已被删除 / 重命名，只保留仍然存在的。
-    // 新记录以 id 关联；旧版本没有 id，回退到按名称匹配。
-    val recentItems = remember(recent, scripts) {
-        val byId = scripts.associateBy { it.id }
-        val byName = scripts.associateBy { it.name }
-        recent.mapNotNull { record ->
-            val script = record.id.takeIf { it.isNotBlank() }?.let(byId::get)
-                ?: if (record.id.isBlank()) byName[record.name] else null
-            script?.let { RunItem(it, record.at) }
-        }
-    }
-    val primary = recentItems.firstOrNull()
 
     // 读取 / 操作两维度的就绪判定与「权限与能力」页保持一致：任一后端就绪即视为该维度已授权。
-    val accessibilityReady = ControlMode.ACCESSIBILITY in readyModes
-    val shizukuReady = ControlMode.SHIZUKU in readyModes
-    val rootReady = ControlMode.ROOT in readyModes
-    val hidReady = ControlMode.HID in readyModes
-    val readReady = screenCaptureActive || accessibilityReady || shizukuReady || rootReady
+    val accessibilityReady = ControlMode.ACCESSIBILITY in ui.readyModes
+    val shizukuReady = ControlMode.SHIZUKU in ui.readyModes
+    val rootReady = ControlMode.ROOT in ui.readyModes
+    val hidReady = ControlMode.HID in ui.readyModes
+    val readReady = ui.screenCaptureActive || accessibilityReady || shizukuReady || rootReady
     val operateReady = hidReady || accessibilityReady || shizukuReady || rootReady
 
     // 首页展示已授权的权限清单，按「屏幕录制 / 蓝牙 HID / 无障碍 / Shizuku / Root」顺序拼接为一行。
     val grantedCapabilities = listOfNotNull(
-        if (screenCaptureActive) stringResource(R.string.run_capture_label) else null,
+        if (ui.screenCaptureActive) stringResource(R.string.run_capture_label) else null,
         if (hidReady) ControlMode.HID.localizedName() else null,
         if (accessibilityReady) ControlMode.ACCESSIBILITY.localizedName() else null,
         if (shizukuReady) ControlMode.SHIZUKU.localizedName() else null,
@@ -185,7 +162,7 @@ fun RunScreen(
             DeviceInfoCard()
 
             SectionCard(stringResource(R.string.run_status_title)) {
-                if (running) {
+                if (ui.running) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             Modifier
@@ -194,7 +171,7 @@ fun RunScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            runningScript.orEmpty(),
+                            ui.runningScript.orEmpty(),
                             color = MaterialTheme.colorScheme.onSurface,
                             style = MaterialTheme.typography.bodyLarge,
                             maxLines = 1,
@@ -207,6 +184,14 @@ fun RunScreen(
                         color = extra.success,
                         style = MaterialTheme.typography.labelLarge,
                     )
+                    if (activeVirtualScreen != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            stringResource(R.string.virtual_screen_run_hint),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 } else {
                     Text(
                         stringResource(R.string.run_idle),
@@ -216,8 +201,13 @@ fun RunScreen(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
-                        onClick = { primary?.let { requestRun(it.script) } },
-                        enabled = !running && primary != null,
+                        onClick = {
+                            primary?.let {
+                                haptics.tap()
+                                viewModel.requestRun(it.script)
+                            }
+                        },
+                        enabled = !ui.running && primary != null,
                     ) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
@@ -226,13 +216,13 @@ fun RunScreen(
                     OutlinedButton(
                         onClick = {
                             haptics.reject()
-                            container.scriptExecutionManager.requestStop()
+                            viewModel.stop()
                         },
-                        enabled = running,
+                        enabled = ui.running,
                     ) { Text(stringResource(R.string.common_stop)) }
                 }
-                val runState = runningScriptId?.let { envData[it]?.state }.orEmpty()
-                if (running && runState.isNotEmpty()) {
+                val runState = ui.runState
+                if (ui.running && runState.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
                     Text(stringResource(R.string.run_vars_title), style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.height(4.dp))
@@ -246,7 +236,7 @@ fun RunScreen(
                         )
                     }
                 }
-                if (scriptsLoaded && scripts.isEmpty()) {
+                if (ui.scriptsLoaded && ui.scripts.isEmpty()) {
                     TextButton(onClick = onOpenScripts) { Text(stringResource(R.string.run_no_scripts)) }
                 }
             }
@@ -254,7 +244,7 @@ fun RunScreen(
             SectionCard(
                 title = stringResource(R.string.run_quick_title),
                 trailing = {
-                    if (recentItems.isNotEmpty()) {
+                    if (ui.recentItems.isNotEmpty()) {
                         TextButton(onClick = { confirmClear = true }) {
                             Text(stringResource(R.string.run_quick_clear))
                         }
@@ -263,18 +253,21 @@ fun RunScreen(
             ) {
                 when {
                     // 首次进入脚本列表仍在异步加载，先留空避免闪一下空状态。
-                    !scriptsLoaded -> Unit
-                    recentItems.isEmpty() -> Text(
+                    !ui.scriptsLoaded -> Unit
+                    ui.recentItems.isEmpty() -> Text(
                         stringResource(R.string.run_quick_empty),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
-                    else -> recentItems.forEach { item ->
+                    else -> ui.recentItems.forEach { item ->
                         QuickRunRow(
                             item = item,
-                            enabled = !running,
-                            onRun = { requestRun(item.script) },
+                            enabled = !ui.running,
+                            onRun = {
+                                haptics.tap()
+                                viewModel.requestRun(item.script)
+                            },
                         )
                     }
                 }
@@ -283,22 +276,13 @@ fun RunScreen(
         }
     }
 
-    envDialog?.let { state ->
+    envDialog?.let { dialog ->
         ScriptEnvDialog(
-            scriptName = state.script.name,
-            fields = state.fields,
-            initial = state.initial,
-            onDismiss = { envDialog = null },
-            onConfirm = { values ->
-                container.scriptEnvRepository.saveValues(state.script.id, values)
-                container.scriptExecutionManager.run(
-                    state.script.id,
-                    state.script.name,
-                    state.source,
-                    values,
-                )
-                envDialog = null
-            },
+            scriptName = dialog.script.name,
+            fields = dialog.fields,
+            initial = dialog.initial,
+            onDismiss = viewModel::dismissEnv,
+            onConfirm = viewModel::confirmEnv,
         )
     }
 
@@ -310,21 +294,13 @@ fun RunScreen(
             onDismiss = { confirmClear = false },
             onConfirm = {
                 haptics.reject()
-                container.runHistoryRepository.clear()
+                viewModel.clearHistory()
                 confirmClear = false
             },
         )
     }
 }
 
-private data class EnvDialogState(
-    val script: ScriptInfo,
-    val source: String,
-    val fields: List<EnvField>,
-    val initial: Map<String, String>,
-)
-
-private data class RunItem(val script: ScriptInfo, val at: Long)
 
 @Composable
 private fun QuickRunRow(

@@ -3,7 +3,7 @@ package com.benton.izukijs.controller.root
 import android.content.Context
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.LogBus
+import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -19,7 +19,9 @@ class RootManager(
 ) {
 
     private val shell = RootShell(context)
-    private val controller = RootController(context, shell, logBus)
+    private val controller = RootController(context, shell, logBus) {
+        controllers.targetDisplayId
+    }
 
     fun init() {
         scope.launch(Dispatchers.IO) {
