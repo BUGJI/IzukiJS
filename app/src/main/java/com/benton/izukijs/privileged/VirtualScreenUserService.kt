@@ -37,7 +37,13 @@ class VirtualScreenUserService : IVirtualScreenService.Stub {
         "izuki-virtualscreen-${VirtualScreenProtocol.SERVICE_VERSION} " +
             "pid=${Process.myPid()} uid=${Process.myUid()}"
 
-    override fun create(width: Int, height: Int, dpi: Int, captureSurface: Surface?): Int {
+    override fun create(
+        width: Int,
+        height: Int,
+        dpi: Int,
+        captureSurface: Surface?,
+        showSystemDecorations: Boolean,
+    ): Int {
         serviceError = null
         val ctx = serviceContext ?: SystemContext.get()
         if (ctx == null || captureSurface == null) {
@@ -46,7 +52,9 @@ class VirtualScreenUserService : IVirtualScreenService.Stub {
             return -1
         }
         val target = display ?: PrivilegedVirtualDisplay(ctx).also { display = it }
-        return runCatching { target.create(width, height, dpi, captureSurface) }
+        return runCatching {
+            target.create(width, height, dpi, captureSurface, showSystemDecorations)
+        }
             .getOrElse { throwable ->
                 serviceError = throwable.message ?: throwable.javaClass.name
                 PrivilegedLog.e("create failed", throwable)

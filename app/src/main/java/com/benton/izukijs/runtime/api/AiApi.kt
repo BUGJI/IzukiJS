@@ -28,7 +28,7 @@ class AiApi(
     private val deviceApi: DeviceApi,
     private val notificationApi: NotificationApi,
     private val screenshotPathProvider: () -> String?,
-    private val nodeTreeProvider: () -> NodeTreeResult,
+    private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
     private val logBus: LogBus,
     private val isExitRequested: () -> Boolean,
 ) {

@@ -1,7 +1,7 @@
 package com.benton.izukijs.model
 
 /**
- * 三种（以及未来 Root）控制模式。
+ * 控制后端。除无障碍 / HID 外，其余后端都通过 Shell 命令实现输入与截图。
  */
 enum class ControlMode(val displayName: String, val description: String) {
     ACCESSIBILITY(
@@ -11,6 +11,10 @@ enum class ControlMode(val displayName: String, val description: String) {
     SHIZUKU(
         displayName = "Shizuku",
         description = "通过 Shizuku 以 ADB 权限注入输入、截图、执行 Shell。功能最强，需常驻 Shizuku。"
+    ),
+    ADB(
+        displayName = "无线调试",
+        description = "通过系统无线调试配对，以 ADB 权限注入输入、截图并执行 Shell，无需安装 Shizuku。"
     ),
     HID(
         displayName = "蓝牙 HID",

@@ -84,6 +84,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.controller.adb.AdbConnectionManager
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.runtime.HttpSettings
 import com.benton.izukijs.runtime.RuntimeSettings
@@ -125,6 +126,7 @@ fun PermissionScreen(
     onBack: () -> Unit,
     onOpenHid: () -> Unit,
     onOpenUnlockSettings: () -> Unit,
+    onOpenAdb: () -> Unit,
 ) {
     val container = rememberAppContainer()
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
@@ -133,12 +135,15 @@ fun PermissionScreen(
 
     val shizukuManager = container.shizukuManager
     val rootManager = container.rootManager
+    val adbManager = container.adbManager
+    val adbState by adbManager.state.collectAsStateWithLifecycle()
 
     val accessibilityReady = ControlMode.ACCESSIBILITY in readyModes
     val shizukuReady = ControlMode.SHIZUKU in readyModes
     val shizukuRunning = shizukuManager.isShizukuRunning()
     val rootReady = ControlMode.ROOT in readyModes
     val hidReady = ControlMode.HID in readyModes
+    val adbReady = ControlMode.ADB in readyModes
 
     val floatingEnabled by FloatingWindowService.active.collectAsStateWithLifecycle()
     val debugOverlayEnabled by DebugOverlayService.active.collectAsStateWithLifecycle()
@@ -216,8 +221,8 @@ fun PermissionScreen(
     var infoSheet by remember { mutableStateOf<PermissionInfo?>(null) }
 
     // 任一读取 / 操作后端就绪即视为该维度已授权。
-    val readReady = screenCaptureActive || accessibilityReady || shizukuReady || rootReady
-    val operateReady = hidReady || accessibilityReady || shizukuReady || rootReady
+    val readReady = screenCaptureActive || accessibilityReady || shizukuReady || adbReady || rootReady
+    val operateReady = hidReady || accessibilityReady || shizukuReady || adbReady || rootReady
 
     // ---- 卡片定义（同时被多个分组复用的项只声明一次） ----
 
@@ -409,6 +414,54 @@ fun PermissionScreen(
                         { shizukuManager.requestPermission(SHIZUKU_REQUEST_CODE) }
                     },
                     onRevoke = if (shizukuReady) ({ shizukuManager.revoke() }) else null,
+                )
+            },
+        )
+    }
+
+    @Composable
+    fun AdbCard() {
+        val info = PermissionInfo(
+            title = stringResource(R.string.control_adb),
+            description = stringResource(R.string.perm_adb_desc),
+            dimensions = listOf(
+                Dimension(stringResource(R.string.dim_accuracy), stringResource(R.string.rating_high), Rating.GOOD),
+                Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+                Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_complex), Rating.BAD),
+            ),
+            pros = listOf(
+                stringResource(R.string.perm_adb_pro_1),
+                stringResource(R.string.perm_adb_pro_2),
+            ),
+            cons = listOf(
+                stringResource(R.string.perm_adb_con_1),
+                stringResource(R.string.perm_adb_con_2),
+            ),
+        )
+        val status = when {
+            !adbManager.isSupported() -> R.string.adb_state_unsupported
+            adbState is AdbConnectionManager.State.NeedsLocalNetworkPermission ->
+                R.string.adb_state_local_network
+            !adbManager.hasLocalNetworkPermission() -> R.string.adb_state_local_network
+            adbReady -> R.string.common_ready
+            adbState is AdbConnectionManager.State.Pairing -> R.string.adb_state_pairing
+            adbState is AdbConnectionManager.State.Connecting -> R.string.adb_state_connecting
+            adbState is AdbConnectionManager.State.Error -> R.string.adb_state_error
+            adbManager.hasIdentity() -> R.string.adb_state_disconnected
+            else -> R.string.adb_state_needs_pairing
+        }
+        PermissionCard(
+            info = info,
+            status = stringResource(status),
+            ready = adbReady,
+            onShowInfo = { infoSheet = info },
+            action = {
+                CapabilityActions(
+                    actionLabel = stringResource(
+                        if (adbReady) R.string.perm_action_manage_settings else R.string.perm_action_adb_setup,
+                    ),
+                    onAction = onOpenAdb,
+                    onRevoke = null,
                 )
             },
         )
@@ -923,7 +976,7 @@ fun PermissionScreen(
         title = { Text(stringResource(R.string.run_permissions_title)) },
         onBack = onBack,
         actions = {
-            IconButton(onClick = { shizukuManager.refresh(); permissionRefresh++ }) {
+            IconButton(onClick = { shizukuManager.refresh(); adbManager.refresh(); permissionRefresh++ }) {
                 Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.common_refresh))
             }
         },
@@ -962,6 +1015,8 @@ fun PermissionScreen(
                             Spacer(Modifier.height(12.dp))
                             ShizukuCard()
                             Spacer(Modifier.height(12.dp))
+                            AdbCard()
+                            Spacer(Modifier.height(12.dp))
                             RootCard()
                             Spacer(Modifier.height(12.dp))
                             NotificationListenerCard()
@@ -977,6 +1032,8 @@ fun PermissionScreen(
                             AccessibilityCard()
                             Spacer(Modifier.height(12.dp))
                             ShizukuCard()
+                            Spacer(Modifier.height(12.dp))
+                            AdbCard()
                             Spacer(Modifier.height(12.dp))
                             RootCard()
                         }

@@ -7,6 +7,8 @@ import androidx.core.app.NotificationManagerCompat
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.log.RunLogRegistry
+import com.benton.izukijs.core.log.RunStatus
 import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
@@ -69,6 +71,14 @@ class ScriptExecutionManager(
     private val _runningScriptId = MutableStateFlow<String?>(null)
     val runningScriptId: StateFlow<String?> = _runningScriptId.asStateFlow()
 
+    private val _runningRunId = MutableStateFlow<String?>(null)
+    val runningRunId: StateFlow<String?> = _runningRunId.asStateFlow()
+
+    @Volatile
+    private var lastStartedRunId: String? = null
+
+    fun lastRunId(): String? = lastStartedRunId
+
     private var job: Job? = null
 
     @Volatile
@@ -93,6 +103,9 @@ class ScriptExecutionManager(
             logBus.warn("已有脚本正在运行，请先停止")
             return false
         }
+        val runId = RunLogRegistry.newRunId()
+        lastStartedRunId = runId
+        RunLogRegistry.begin(runId, scriptId, scriptName)
         // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
         val spec = ScriptEnvSpec.parse(source)
         val useGlobal = scriptEnvRepository.useGlobalEnv(scriptId)
@@ -127,6 +140,7 @@ class ScriptExecutionManager(
 
         _runningScript.value = scriptName
         _runningScriptId.value = scriptId
+        _runningRunId.value = runId
         runHistoryRepository.record(scriptId, scriptName)
         logBus.info("▶ 开始运行: $scriptName")
         if (needs != null) {
@@ -138,6 +152,8 @@ class ScriptExecutionManager(
         FloatingWindowService.showForRun(appContext)
 
         job = scope.launch {
+            RunLogRegistry.enter(runId)
+            try {
             var jsEngine: JsEngine? = null
             var failure: Throwable? = null
             val settings = runtimeSettings.current()
@@ -174,7 +190,7 @@ class ScriptExecutionManager(
                     },
             )
             if (effectiveRunMode == RunMode.BACKGROUND && needs?.contains("selector") == true) {
-                logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 images / ocr / 坐标输入")
+                logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 capture / ocr / 坐标输入")
             }
             try {
                 jsEngine = JsEngine(
@@ -209,7 +225,7 @@ class ScriptExecutionManager(
                 val startedThisRun = virtualScreen.startGeneration() > startGenerationBefore
                 if (virtualScreen.isActive()) {
                     if (virtualScreenSettings.current().autoStopAfterRun && startedThisRun) {
-                        runCatching { virtualScreen.stop() }
+                        runCatching { virtualScreen.stop(VirtualScreenManager.STOP_RUN_FINISHED) }
                     } else {
                         logBus.info("后台虚拟屏保持运行，可在运行状态页手动停止或由脚本销毁")
                     }
@@ -223,13 +239,25 @@ class ScriptExecutionManager(
                     failure != null -> logBus.error("✘ 运行出错: ${failure.message}")
                     else -> logBus.success("✔ 脚本执行完成")
                 }
+                val status = when {
+                    timedOut -> RunStatus.TIMEOUT
+                    exited -> RunStatus.STOPPED
+                    failure != null -> RunStatus.FAILED
+                    else -> RunStatus.SUCCEEDED
+                }
+                val error = failure?.let { it.stackTraceToString().take(MAX_RUN_ERROR_CHARS) }
+                RunLogRegistry.finish(runId, status, error)
                 _running.value = false
                 _runningScript.value = null
                 _runningScriptId.value = null
+                _runningRunId.value = null
                 ScriptForegroundService.stop(appContext)
                 ScriptNotificationCenter.clear()
                 val success = !timedOut && (failure == null || exited)
                 runCatching { onFinished?.invoke(success) }
+            }
+            } finally {
+                RunLogRegistry.exit()
             }
         }
         return true
@@ -240,7 +268,7 @@ class ScriptExecutionManager(
             logBus.warn("@need http 已声明，但「脚本网络」未启用")
         }
         if ("shell" in needs && controllers.controllerFor(Capability.SHELL)?.isReady() != true) {
-            logBus.warn("@need shell 已声明，但 Shizuku / Root 未就绪")
+            logBus.warn("@need shell 已声明，但 Shizuku / 无线调试 / Root 未就绪")
         }
         if ("selector" in needs &&
             controllers.controllerFor(Capability.NODE_TREE)?.isReady() != true
@@ -266,7 +294,7 @@ class ScriptExecutionManager(
             logBus.warn("@need virtualscreen 已声明，但 Shizuku 未授权或系统版本低于 Android 10")
         }
         if ("selector" in needs && virtualScreen.isActive()) {
-            logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 images / ocr / 坐标输入")
+            logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 capture / ocr / 坐标输入")
         }
     }
 
@@ -299,5 +327,8 @@ class ScriptExecutionManager(
 
         /** 脚本头部 `@env RUN_MODE=background` 使用的键名。 */
         const val RUN_MODE_KEY = "RUN_MODE"
+
+        /** 单次运行保留的错误堆栈上限，避免内存与返回体过大。 */
+        const val MAX_RUN_ERROR_CHARS = 4_000
     }
 }

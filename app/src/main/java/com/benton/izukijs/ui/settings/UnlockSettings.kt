@@ -35,6 +35,7 @@ import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SecretField
+import com.benton.izukijs.ui.common.StatusRow
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
@@ -42,15 +43,18 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-fun UnlockSettingsPage() {
+fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
     val container = rememberAppContainer()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val unlockSettings by container.unlockSettingsRepository.settings.collectAsStateWithLifecycle()
+    val mcpConfig by container.mcpConfigRepository.config.collectAsStateWithLifecycle()
     val recordingState by container.unlockGestureRecorder.state.collectAsStateWithLifecycle()
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
-    val unlockReady = ControlMode.SHIZUKU in readyModes || ControlMode.ROOT in readyModes
+    val unlockReady = ControlMode.SHIZUKU in readyModes ||
+        ControlMode.ADB in readyModes ||
+        ControlMode.ROOT in readyModes
 
     val pinPlain = remember(unlockSettings.pinCipher) {
         SecretCipher.decrypt(unlockSettings.pinCipher)
@@ -228,6 +232,34 @@ fun UnlockSettingsPage() {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+    SectionCard(stringResource(R.string.unlock_mcp_section)) {
+        Text(
+            stringResource(R.string.unlock_mcp_section_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        StatusRow(
+            label = stringResource(R.string.unlock_mcp_service),
+            value = stringResource(if (mcpConfig.enabled) R.string.common_on else R.string.common_off),
+        )
+        Spacer(Modifier.height(4.dp))
+        StatusRow(
+            label = stringResource(R.string.unlock_mcp_allow_tool),
+            value = stringResource(if (mcpConfig.allowUnlock) R.string.common_on else R.string.common_off),
+        )
+        Spacer(Modifier.height(4.dp))
+        StatusRow(
+            label = stringResource(R.string.unlock_mcp_auto_unlock),
+            value = stringResource(if (mcpConfig.autoUnlock) R.string.common_on else R.string.common_off),
+        )
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onOpenMcp) {
+            Text(stringResource(R.string.unlock_mcp_open_settings))
         }
     }
 

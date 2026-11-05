@@ -40,6 +40,41 @@ class NotificationApi(
     }
 
     /**
+     * 带过滤 / 分页的通知查询，返回 `{ok, total, count, notifications}`。
+     *
+     * [detail] 为 false 时只返回 package / title / text / postTime / ongoing，避免一次调用吃满上下文。
+     */
+    fun query(
+        packageName: String?,
+        limit: Int,
+        since: Long,
+        excludeOngoing: Boolean,
+        detail: Boolean,
+    ): String {
+        val all = NotificationListener.Store.snapshot()
+            .asSequence()
+            .filter { packageName == null || it.packageName == packageName }
+            .filter { since <= 0L || it.postTime >= since }
+            .filter { !excludeOngoing || !it.ongoing }
+            .sortedByDescending { it.postTime }
+            .toList()
+        val selected = all.take(limit.coerceAtLeast(0))
+        return JSONObject().apply {
+            put("ok", true)
+            put("total", all.size)
+            put("count", selected.size)
+            if (selected.size < all.size) put("truncated", true)
+            packageName?.let { put("package", it) }
+            put(
+                "notifications",
+                JSONArray().apply {
+                    selected.forEach { put(it.toJson(detail)) }
+                },
+            )
+        }.toString()
+    }
+
+    /**
      * 等待某应用的新通知（在调用之后 post 的），返回其 JSON；超时 / 无匹配返回 null。
      * 阻塞式轮询，超时上限 [MAX_TIMEOUT_MS]。
      */
@@ -123,12 +158,12 @@ class NotificationApi(
             true
         }
 
-    private fun NotificationItem.toJson(): JSONObject = JSONObject().apply {
-        put("key", key)
+    private fun NotificationItem.toJson(detail: Boolean = true): JSONObject = JSONObject().apply {
+        if (detail) put("key", key)
         put("package", packageName)
         put("title", title)
         put("text", text)
-        put("subText", subText)
+        if (detail) put("subText", subText)
         put("postTime", postTime)
         put("ongoing", ongoing)
     }

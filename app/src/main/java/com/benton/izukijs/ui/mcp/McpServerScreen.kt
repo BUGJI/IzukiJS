@@ -6,6 +6,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.Build
 import android.os.PersistableBundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -26,7 +29,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -38,11 +44,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.permission.LocalNetworkPermission
 import com.benton.izukijs.mcp.McpBindMode
 import com.benton.izukijs.mcp.McpConfig
 import com.benton.izukijs.mcp.McpHttpHandler
+import com.benton.izukijs.model.Capability
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
@@ -53,21 +64,45 @@ import com.benton.izukijs.ui.common.NumberField
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.SectionCard
+import com.benton.izukijs.ui.common.StatusRow
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
+private enum class McpPermissionAction {
+    ENABLE,
+    SWITCH_TO_LAN,
+    START,
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun McpServerScreen(onBack: () -> Unit) {
+fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
     val container = rememberAppContainer()
     val context = LocalContext.current
     val resources = LocalResources.current
     val config by container.mcpConfigRepository.config.collectAsStateWithLifecycle()
     val status by container.mcpServerController.status.collectAsStateWithLifecycle()
+    val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
+    val shellReady = remember(readyModes) {
+        container.controllerManager.controllerFor(Capability.SHELL) != null
+    }
     val snackbar = LocalSnackbarController.current
     val scope = rememberCoroutineScope()
+
+    var permissionRefresh by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) permissionRefresh++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val localNetworkGranted = remember(permissionRefresh) {
+        LocalNetworkPermission.isGranted(context)
+    }
 
     var confirmingRegenerate by remember { mutableStateOf(false) }
     var blockedText by rememberSaveable(config.blockedPackages) {
@@ -80,7 +115,77 @@ fun McpServerScreen(onBack: () -> Unit) {
     fun apply(new: McpConfig, restart: Boolean = true) {
         val old = current()
         container.mcpConfigRepository.save(new)
-        if (restart && new.enabled && needsRestart(old, new)) McpServerService.restart(context)
+        val canRestart = new.bindMode != McpBindMode.LAN ||
+            !LocalNetworkPermission.isRequired() ||
+            LocalNetworkPermission.isGranted(context)
+        if (restart && new.enabled && needsRestart(old, new) && canRestart) {
+            McpServerService.restart(context)
+        }
+    }
+
+    var pendingPermissionAction by remember { mutableStateOf<McpPermissionAction?>(null) }
+
+    fun performMcpAction(action: McpPermissionAction) {
+        when (action) {
+            McpPermissionAction.ENABLE -> {
+                val token = current().token.ifBlank { McpConfig.newToken() }
+                container.mcpConfigRepository.save(current().copy(enabled = true, token = token))
+                McpServerService.start(context)
+            }
+            McpPermissionAction.SWITCH_TO_LAN -> apply(current().copy(bindMode = McpBindMode.LAN))
+            McpPermissionAction.START -> if (current().enabled) McpServerService.start(context)
+        }
+    }
+
+    fun needsLocalNetworkFor(action: McpPermissionAction): Boolean {
+        val willUseLan = when (action) {
+            McpPermissionAction.ENABLE -> current().bindMode == McpBindMode.LAN
+            McpPermissionAction.SWITCH_TO_LAN,
+            McpPermissionAction.START,
+            -> true
+        }
+        return willUseLan &&
+            LocalNetworkPermission.isRequired() &&
+            !LocalNetworkPermission.isGranted(context)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        permissionRefresh++
+        val action = pendingPermissionAction
+        pendingPermissionAction = null
+        if (!granted) {
+            scope.launch { snackbar.show(resources.getString(R.string.mcp_lan_permission_denied)) }
+            return@rememberLauncherForActivityResult
+        }
+        action?.let { performMcpAction(it) }
+    }
+
+    fun requestMcpAction(action: McpPermissionAction) {
+        if (needsLocalNetworkFor(action)) {
+            pendingPermissionAction = action
+            permissionLauncher.launch(LocalNetworkPermission.permission)
+        } else {
+            performMcpAction(action)
+        }
+    }
+
+    val lanNeedsPermission = config.bindMode == McpBindMode.LAN &&
+        LocalNetworkPermission.isRequired() &&
+        !localNetworkGranted
+
+    // 权限从系统设置授予后回到本页时自动恢复 LAN 监听；不监听 status.running，
+    // 避免用户从通知栏主动停止服务后被重新拉起。
+    LaunchedEffect(localNetworkGranted) {
+        val latest = current()
+        if (localNetworkGranted &&
+            latest.enabled &&
+            latest.bindMode == McpBindMode.LAN &&
+            !container.mcpServerController.status.value.running
+        ) {
+            McpServerService.start(context)
+        }
     }
 
     fun copy(label: String, text: String, sensitive: Boolean = false) {
@@ -120,9 +225,7 @@ fun McpServerScreen(onBack: () -> Unit) {
                     description = stringResource(R.string.mcp_enable_desc),
                 ) { enabled ->
                     if (enabled) {
-                        val token = current().token.ifBlank { McpConfig.newToken() }
-                        container.mcpConfigRepository.save(current().copy(enabled = true, token = token))
-                        McpServerService.start(context)
+                        requestMcpAction(McpPermissionAction.ENABLE)
                     } else {
                         container.mcpConfigRepository.save(current().copy(enabled = false))
                         McpServerService.stop(context)
@@ -130,6 +233,8 @@ fun McpServerScreen(onBack: () -> Unit) {
                 }
                 Spacer(Modifier.height(8.dp))
                 val statusText = when {
+                    status.needsLocalNetworkPermission ->
+                        stringResource(R.string.mcp_lan_permission_required)
                     status.error != null -> stringResource(R.string.mcp_status_error, status.error.orEmpty())
                     isRunning -> stringResource(R.string.mcp_status_running)
                     else -> stringResource(R.string.mcp_status_stopped)
@@ -208,7 +313,11 @@ fun McpServerScreen(onBack: () -> Unit) {
                 ChipFlow {
                     FilterChip(
                         selected = config.bindMode == McpBindMode.LAN,
-                        onClick = { apply(config.copy(bindMode = McpBindMode.LAN)) },
+                        onClick = {
+                            if (config.bindMode != McpBindMode.LAN) {
+                                requestMcpAction(McpPermissionAction.SWITCH_TO_LAN)
+                            }
+                        },
                         label = { Text(stringResource(R.string.mcp_bind_lan)) },
                     )
                     FilterChip(
@@ -229,6 +338,21 @@ fun McpServerScreen(onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (lanNeedsPermission) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.mcp_lan_permission_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = {
+                        pendingPermissionAction = McpPermissionAction.START
+                        permissionLauncher.launch(LocalNetworkPermission.permission)
+                    }) {
+                        Text(stringResource(R.string.mcp_grant_local_network))
+                    }
+                }
                 if (config.bindMode == McpBindMode.LOCALHOST) {
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -258,12 +382,39 @@ fun McpServerScreen(onBack: () -> Unit) {
                     checked = config.allowShell,
                     description = stringResource(R.string.mcp_allow_shell_desc),
                 ) { apply(config.copy(allowShell = it)) }
+                Spacer(Modifier.height(4.dp))
+                StatusRow(
+                    label = stringResource(R.string.mcp_shell_backend),
+                    value = stringResource(if (shellReady) R.string.common_ready else R.string.common_not_ready),
+                    valueColor = if (shellReady) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+                if (!shellReady) {
+                    TextButton(onClick = onOpenSetup) {
+                        Text(stringResource(R.string.perm_action_authorize))
+                    }
+                }
                 Spacer(Modifier.height(8.dp))
                 SwitchRow(
                     label = stringResource(R.string.mcp_allow_scripts),
                     checked = config.allowScripts,
                     description = stringResource(R.string.mcp_allow_scripts_desc),
                 ) { apply(config.copy(allowScripts = it)) }
+                Spacer(Modifier.height(8.dp))
+                SwitchRow(
+                    label = stringResource(R.string.mcp_allow_unlock),
+                    checked = config.allowUnlock,
+                    description = stringResource(R.string.mcp_allow_unlock_desc),
+                ) { apply(config.copy(allowUnlock = it)) }
+                Spacer(Modifier.height(8.dp))
+                SwitchRow(
+                    label = stringResource(R.string.mcp_auto_unlock),
+                    checked = config.autoUnlock,
+                    description = stringResource(R.string.mcp_auto_unlock_desc),
+                ) { apply(config.copy(autoUnlock = it)) }
             }
 
             Spacer(Modifier.height(12.dp))

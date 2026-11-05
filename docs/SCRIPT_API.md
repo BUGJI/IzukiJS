@@ -27,7 +27,7 @@
 | `inputWithMethod(text, method)` | 指定输入方式：`auto` / `input` / `clipboard` / `broadcast` |
 | `back()` / `home()` / `recents()` | 返回 / 主页 / 最近任务 |
 
-> 底层由控制模式提供：无障碍 / Shizuku / Root / 蓝牙 HID。具体能力见「控制模式」。
+> 底层由控制模式提供：无障碍 / Shizuku / 无线调试 / Root / 蓝牙 HID。具体能力见「控制模式」。
 
 ### `gesture(strokes)` 复杂轨迹
 
@@ -80,7 +80,7 @@ gesture([
 |---|---|
 | `app.launch(packageName)` | 启动应用 |
 | `app.openUrl(url)` | 打开链接 |
-| `app.currentPackage()` | 当前前台包名（无障碍 → Shizuku/Root → 使用情况访问 依次兜底） |
+| `app.currentPackage()` | 当前前台包名（无障碍 → Shizuku/无线调试/Root → 使用情况访问 依次兜底） |
 | `app.list()` | 已安装应用数组 `[{package,label,system,enabled}]`（需「应用列表」开启） |
 | `app.info(packageName)` | 单个应用信息对象，或 `null` |
 | `app.isInstalled(packageName)` | 是否已安装 |
@@ -285,14 +285,17 @@ selector.scrollIntoView({ text: "隐私政策" });
 `waitFor` 的便捷包装；`findByText` / `findByTextContains` / `findByTextRegex` / `findByDesc*`
 同理。所有等待方法都会响应「停止」，不会把界面卡死；单次 `waitFor` / `waitGone` 最长等待 10 分钟。
 
-## `shell`（需 Shizuku 或 Root）
+## `shell`（需 Shizuku、无线调试或 Root）
 
 | 方法 | 说明 |
 |---|---|
 | `shell.available()` | 是否可用 |
 | `shell.isRoot()` | 是否 Root 后端 |
 | `shell.exec(cmd)` | 执行命令，返回 stdout（无输出则 stderr） |
+| `shell.execResult(cmd)` | 执行命令，返回 `{ok, stdout, stderr, exit_code}`（JSON 字符串） |
 | `shell.exitCode(cmd)` | 执行命令，返回退出码 |
+
+> 无线调试后端使用 adb 的合并输出流，`stderr` 会并入 `stdout`；Shizuku / Root 保持原样。
 
 ## `images`（OpenCV）
 
@@ -323,13 +326,15 @@ hits.forEach(function (hit) { log(hit.x + "," + hit.y); });
 
 - **本地**：MLKit 中文模型，端侧离线。
 - **在线**：百度 OCR / Google Vision / 自定义，适合低端设备省算力；在线失败自动回退本地。
-- 坐标均为屏幕像素包围盒中心。
+- 坐标均为全分辨率屏幕像素；`x` / `y` 是包围盒**中心**，不是左上角。结构化的 `blocks` 额外提供
+  `left / top / right / bottom`，判断越界请用四边而不是 `x + w`。
+- 结构化结果还包含 `image: {w, h}`；超出图像的块会被裁剪并标记 `suspicious`。
 
 | 方法 | 说明 |
 |---|---|
 | `ocr.recognize()` | 识别当前屏幕，返回全文 |
 | `ocr.recognizePath(path)` | 识别指定图片 |
-| `ocr.find(text)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null` |
+| `ocr.find(text)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null`（x/y 为中心） |
 
 ```js
 var hit = ocr.find("登录");
@@ -340,7 +345,7 @@ if (hit) click(hit.x, hit.y);
 
 | 方法 | 说明 |
 |---|---|
-| `permissions.accessibility()` / `shizuku()` / `root()` / `hid()` | 控制模式是否就绪 |
+| `permissions.accessibility()` / `shizuku()` / `adb()` / `root()` / `hid()` | 控制模式是否就绪 |
 | `permissions.overlay()` | 悬浮窗权限 |
 | `permissions.screenCapture()` | 持续录屏是否开启 |
 | `permissions.notifications()` / `bluetooth()` | 通知 / 蓝牙权限 |
@@ -396,7 +401,7 @@ virtualScreen.stop();
 | `virtualScreen.launch(pkg)` | 在虚拟屏上启动应用（已在主屏运行时先强停再迁移） |
 | `virtualScreen.displayId()` | 虚拟屏 displayId |
 | `virtualScreen.size()` | `{ width, height, dpi }` |
-| `virtualScreen.info()` | 状态、模式、目标、帧序号、分辨率与 displayId |
+| `virtualScreen.info()` | 状态、模式、目标、帧序号、分辨率、displayId 与最近停止原因 / 时间 |
 | `virtualScreen.target(value?)` | 查询或切换操作目标：`auto` / `virtual` / `main` |
 | `virtualScreen.awaitFrame(timeoutMs)` | 等待虚拟屏首帧，默认 1000ms |
 | `virtualScreen.capture(path?, source?)` | 直接捕获并保存；`source` 缺省 `virtual` |
@@ -433,13 +438,16 @@ virtualScreen.target("virtual");
 - 「脚本运行结束后自动销毁」默认开启，且只销毁本次脚本启动/重建的虚拟屏；关闭后脚本结束时保留
   虚拟屏，需脚本调用 `virtualScreen.stop()` 或在「运行状态 → 虚拟屏」页手动停止。App 进程被杀时
   保留的虚拟屏也会随之销毁。
+- `start()` 实际使用的分辨率会写回设置，下次启动沿用上次尺寸；`info()` 的 `lastStopReason`
+  会记录 `user_stop` / `service_disconnected` / `app_restart` / `resolution_changed` / `run_finished`。
+- 虚拟屏激活期间每 30 秒调用一次特权服务心跳，降低后端被系统空闲回收的概率。
 - `virtualScreen.capture()` 与 `captureScreen(path, source)` 的 `source` 支持
   `auto` / `virtual` / `main`；对不存在的虚拟屏做 `virtual` 捕获会返回 null 并记录警告。
 - `device.width()/height()/screenWidth()/screenHeight()` 在目标为虚拟屏时返回虚拟屏分辨率。
 - `app.launch()` 在虚拟屏激活时走虚拟屏；目标应用已在主屏运行时会先强停再迁移。
   `app.openUrl()` 也会定向到虚拟屏，但不会强停。
 - `app.currentPackage()` 在虚拟屏激活时返回虚拟屏上的前台包名。
-- 虚拟屏上**不支持 `selector.*` / 无障碍控件树**，请改用 `images` / `ocr` / 坐标输入。
+- 虚拟屏上**不支持 `selector.*` / 无障碍控件树**，请改用 `capture` / `ocr` / 坐标输入。
 - 脚本结束（正常、异常或超时）时会自动销毁本次创建的虚拟屏；`stop()` 用于脚本内提前释放。
 - 后台运行中停在「运行」页按 Home，可进入系统画中画预览；小窗只读。
 - 只有 `virtualscreen` 在 `@need` 中声明时，全局 `virtualScreen` 与 `require("virtualScreen")` 才存在。
@@ -606,28 +614,29 @@ if (ai.available()) {
 
 1. **虚拟屏帧源**（虚拟屏激活且当前目标为虚拟屏；会等待最多 1 秒首帧）
 2. **持续录屏**（若已授权，见 `docs/TOOLS.md`）
-3. 控制后端的截图能力（无障碍 API30+ / Shizuku / Root）
+3. 控制后端的截图能力（无障碍 API30+ / Shizuku / 无线调试 / Root）
 
 `captureScreen(path, source)` 可忽略默认目标，用 `source="main"` / `"virtual"` 一次性指定来源。
 
 ## `press` 的按键限制
 
 - 无障碍模式：仅 `BACK` / `HOME` / `APP_SWITCH` 有效（映射为全局动作）。
-- Shizuku / Root：通过 `input keyevent` 支持绝大部分键码。
+- Shizuku / 无线调试 / Root：通过 `input keyevent` 支持绝大部分键码。
 - 蓝牙 HID：仅映射了字母、数字、Enter/Esc/Backspace/Tab/Space/Delete、方向键。
 
 ## 控制模式与能力组合
 
-| 能力 | 无障碍 | Shizuku | Root | HID |
-|---|---|---|---|---|
-| 手势/绝对坐标 | ✅ | ✅ | ✅ | ✅ |
-| 键盘/文本 | 部分 | ✅ | ✅ | ✅ |
-| 读控件树 | ✅ | ❌ | ❌ | ❌ |
-| 截图 | ✅(30+) | ✅ | ✅ | ❌ |
-| Shell | ❌ | ✅ | ✅ | ❌ |
+| 能力 | 无障碍 | Shizuku | 无线调试 | Root | HID |
+|---|---|---|---|---|---|
+| 手势/绝对坐标 | ✅ | ✅ | ✅ | ✅ | ✅ |
+| 键盘/文本 | 部分 | ✅ | ✅ | ✅ | ✅ |
+| 读控件树 | ✅ | ❌ | ❌ | ❌ | ❌ |
+| 截图 | ✅(30+) | ✅ | ✅ | ✅ | ❌ |
+| Shell | ❌ | ✅ | ✅ | ✅ | ❌ |
 
 > 上表的「读控件树」指脚本侧 `selector.*` 的能力，**只有无障碍后端支持**。
-> 补充：AI Agent 的读屏工具额外支持在 Shizuku / Root 下通过 `uiautomator dump` 兜底
-> （较慢，约 1~2 秒且偶发失败），但两者都不是脚本 API 的一部分。
+> 补充：AI Agent 的读屏工具额外支持在 Shizuku / 无线调试 / Root 下通过 `uiautomator dump` 兜底
+> （较慢，约 1~2 秒且偶发失败），但这些都不是脚本 API 的一部分。
+> 无线调试需要 Android 11+；后台虚拟屏与 Shizuku 特权解锁仍依赖 Shizuku。
 
-推荐组合：**无障碍读控件树 + HID/Shizuku 注入输入**。在「设置 → 控制模式优先级」中指定优先后端即可。
+推荐组合：**无障碍读控件树 + HID/Shizuku/无线调试 注入输入**。在「设置 → 控制模式优先级」中指定优先后端即可。

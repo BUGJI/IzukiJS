@@ -22,6 +22,18 @@ class OcrProcessor(
     private var onlineKey: Pair<OcrConfig, CaptureSettings>? = null
 
     fun recognize(bitmap: Bitmap): OcrResult? {
+        val result = recognizeRaw(bitmap) ?: return null
+        val sanitized = OcrGeometry.sanitize(result.blocks, bitmap.width, bitmap.height)
+        if (sanitized.clamped > 0 || sanitized.dropped > 0) {
+            logBus.warn(
+                "OCR 包围盒越界：裁剪 ${sanitized.clamped} 块、丢弃 ${sanitized.dropped} 块" +
+                    "（图像 ${bitmap.width}×${bitmap.height}）",
+            )
+        }
+        return result.copy(blocks = sanitized.blocks)
+    }
+
+    private fun recognizeRaw(bitmap: Bitmap): OcrResult? {
         val config = configRepository.current()
         return when (config.mode) {
             OcrMode.LOCAL -> local.recognize(bitmap)

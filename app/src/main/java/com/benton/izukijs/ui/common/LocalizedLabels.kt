@@ -17,6 +17,7 @@ fun ControlMode.localizedName(): String = stringResource(
     when (this) {
         ControlMode.ACCESSIBILITY -> R.string.control_accessibility
         ControlMode.SHIZUKU -> R.string.control_shizuku
+        ControlMode.ADB -> R.string.control_adb
         ControlMode.HID -> R.string.control_hid
         ControlMode.ROOT -> R.string.control_root
     },

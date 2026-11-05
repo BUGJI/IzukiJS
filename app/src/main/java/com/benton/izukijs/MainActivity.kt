@@ -19,8 +19,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.core.permission.LocalNetworkPermission
 import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.LanguagePreferences
+import com.benton.izukijs.mcp.McpBindMode
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.navigation.IzukiNavHost
 import com.benton.izukijs.ui.pip.LocalIsInPip
@@ -48,7 +50,11 @@ class MainActivity : ComponentActivity(), PipHost {
         val container = (application as IzukiApp).container
         // 应用在前台启动时，若此前已启用 MCP 服务则恢复运行（前台服务需用户可见时启动）。
         // 已在运行时不再重复下发启动 Intent，避免语言切换 / 配置重建导致监听器无谓重启、客户端断连。
-        if (container.mcpConfigRepository.current().enabled &&
+        val mcpConfig = container.mcpConfigRepository.current()
+        val needsLocalNetwork = mcpConfig.bindMode == McpBindMode.LAN &&
+            !LocalNetworkPermission.isGranted(this)
+        if (mcpConfig.enabled &&
+            !needsLocalNetwork &&
             !container.mcpServerController.status.value.running
         ) {
             McpServerService.start(this)

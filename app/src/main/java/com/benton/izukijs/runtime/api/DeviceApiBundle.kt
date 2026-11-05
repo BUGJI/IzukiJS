@@ -85,7 +85,9 @@ class DeviceApiBundle(
                             if (virtual != null) {
                                 logBus.debug("捕获虚拟屏 ${virtual.width}×${virtual.height}")
                             } else {
-                                logBus.warn("虚拟屏暂无可用的画面帧")
+                                logBus.warn(
+                                    "虚拟屏暂无可用的画面帧；虚拟屏可能刚启动或尚未启动应用",
+                                )
                             }
                             virtual
                         }

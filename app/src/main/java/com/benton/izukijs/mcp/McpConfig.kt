@@ -15,7 +15,7 @@ enum class McpBindMode(val displayName: String) {
 /**
  * MCP 服务配置。
  *
- * 安全默认：必须配置 [token] 才能启动；`shell` / 脚本执行默认关闭，需要显式开启。
+ * 安全默认：必须配置 [token] 才能启动；`shell` / 脚本执行 / 解锁默认关闭，需要显式开启。
  * 读屏与控制类工具默认可用（这是本功能的核心用途）。
  */
 data class McpConfig(
@@ -25,6 +25,10 @@ data class McpConfig(
     val token: String = "",
     val allowShell: Boolean = false,
     val allowScripts: Boolean = false,
+    /** 向 MCP 客户端暴露 `unlock` 工具，复用自主解锁凭据；默认关闭。 */
+    val allowUnlock: Boolean = false,
+    /** 执行主屏读屏 / 控制类工具前，若设备锁屏则先尝试自主解锁；默认关闭。 */
+    val autoUnlock: Boolean = false,
     /** 允许 Shell 执行高危命令（rm -rf /、mkfs、pm uninstall 等），默认关闭。 */
     val allowDangerousShell: Boolean = false,
     /** 禁止启动的应用包名列表；支持结尾 `*` 前缀通配（如 `com.bank.*`）。 */

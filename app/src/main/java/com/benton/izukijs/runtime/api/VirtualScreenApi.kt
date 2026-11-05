@@ -126,6 +126,8 @@ class VirtualScreenApi(
             put("width", resolution.width)
             put("height", resolution.height)
             put("dpi", resolution.dpi)
+            manager.lastStopReason()?.let { put("lastStopReason", it) }
+            if (manager.lastStopAt() > 0L) put("lastStopAt", manager.lastStopAt())
             put("state", when (state) {
                 VirtualScreenState.Idle -> "idle"
                 VirtualScreenState.Starting -> "starting"

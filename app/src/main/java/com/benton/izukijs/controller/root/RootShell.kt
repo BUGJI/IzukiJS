@@ -3,6 +3,7 @@ package com.benton.izukijs.controller.root
 import android.content.Context
 import com.benton.izukijs.controller.ShellResult
 import com.benton.izukijs.controller.shell.ShellRunner
+import com.benton.izukijs.controller.shell.readProcessOutput
 import java.io.File
 
 /**
@@ -41,8 +42,7 @@ class RootShell(private val context: Context) : ShellRunner {
 
     private fun runSu(command: String): ShellResult? = runCatching {
         val process = ProcessBuilder("su", "-c", command).start()
-        val stdout = process.inputStream.bufferedReader().use { it.readText() }
-        val stderr = process.errorStream.bufferedReader().use { it.readText() }
+        val (stdout, stderr) = readProcessOutput(process)
         val code = process.waitFor()
         ShellResult(stdout, stderr, code)
     }.getOrNull()

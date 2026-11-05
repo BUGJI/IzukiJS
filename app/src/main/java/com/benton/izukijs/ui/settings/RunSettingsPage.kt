@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,15 +32,15 @@ import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.appViewModel
 
 @Composable
-internal fun RunSettings() {
-    VirtualScreenSettingsSection()
+internal fun RunSettings(onOpenSetup: () -> Unit = {}) {
+    VirtualScreenSettingsSection(onOpenSetup = onOpenSetup)
 
     Spacer(Modifier.height(12.dp))
     NotificationSettingsSection()
 }
 
 @Composable
-private fun VirtualScreenSettingsSection() {
+private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -95,6 +96,11 @@ private fun VirtualScreenSettingsSection() {
                 settings.defaultMode
             }
             save(settings.copy(allowedModes = modes, defaultMode = default))
+        }
+        if (!shizukuReady) {
+            TextButton(onClick = onOpenSetup) {
+                Text(stringResource(R.string.virtual_screen_open_setup))
+            }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -202,6 +208,13 @@ private fun VirtualScreenSettingsSection() {
                 description = stringResource(R.string.virtual_screen_auto_stop_after_run_desc),
                 checked = settings.autoStopAfterRun,
             ) { save(settings.copy(autoStopAfterRun = it)) }
+
+            Spacer(Modifier.height(12.dp))
+            SwitchRow(
+                label = stringResource(R.string.virtual_screen_show_system_decorations),
+                description = stringResource(R.string.virtual_screen_show_system_decorations_desc),
+                checked = settings.showSystemDecorations,
+            ) { save(settings.copy(showSystemDecorations = it)) }
         }
 
         Spacer(Modifier.height(12.dp))

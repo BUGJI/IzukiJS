@@ -38,6 +38,10 @@ class PermissionsApi(
     @JavascriptInterface
     fun shizuku(): Boolean = ControlMode.SHIZUKU in controllers.readyModes.value
 
+    /** 无线调试（ADB over Wi-Fi）后端是否就绪。 */
+    @JavascriptInterface
+    fun adb(): Boolean = ControlMode.ADB in controllers.readyModes.value
+
     @JavascriptInterface
     fun root(): Boolean = ControlMode.ROOT in controllers.readyModes.value
 
@@ -133,11 +137,12 @@ class PermissionsApi(
         } else {
             ControlMode.ACCESSIBILITY in controllers.readyModes.value ||
                 ControlMode.SHIZUKU in controllers.readyModes.value ||
+                ControlMode.ADB in controllers.readyModes.value ||
                 ControlMode.ROOT in controllers.readyModes.value ||
                 ControlMode.HID in controllers.readyModes.value
         }
 
-    /** 是否有截图来源（无障碍/Shizuku/Root 或持续录屏；目标为虚拟屏时为虚拟屏帧源）。 */
+    /** 是否有截图来源（无障碍/Shizuku/无线调试/Root 或持续录屏；目标为虚拟屏时为虚拟屏帧源）。 */
     @JavascriptInterface
     fun canScreenshot(): Boolean =
         if (usesVirtualDisplay()) {
@@ -154,6 +159,7 @@ class PermissionsApi(
     private fun statusMap(): Map<String, Boolean> = linkedMapOf(
         "accessibility" to accessibility(),
         "shizuku" to shizuku(),
+        "adb" to adb(),
         "root" to root(),
         "hid" to hid(),
         "overlay" to overlay(),

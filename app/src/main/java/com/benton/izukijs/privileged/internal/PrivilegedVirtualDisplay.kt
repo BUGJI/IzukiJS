@@ -41,15 +41,21 @@ internal class PrivilegedVirtualDisplay(
 
     @SuppressLint("WrongConstant")
     @Synchronized
-    fun create(width: Int, height: Int, dpi: Int, surface: Surface): Int {
+    fun create(
+        width: Int,
+        height: Int,
+        dpi: Int,
+        surface: Surface,
+        showSystemDecorations: Boolean = false,
+    ): Int {
         destroy()
         lastError = null
         val manager = obtainDisplayManager()
             ?: return fail("DisplayManager unavailable")
         var primaryError: String? = null
         val attempts = listOf(
-            "preferred" to buildPreferredDisplayFlags(),
-            "legacy" to buildLegacyDisplayFlags(),
+            "preferred" to buildPreferredDisplayFlags(showSystemDecorations),
+            "legacy" to buildLegacyDisplayFlags(showSystemDecorations),
         )
         for ((label, flags) in attempts) {
             val outcome = runCatching {
@@ -220,11 +226,12 @@ internal class PrivilegedVirtualDisplay(
      * 与已验证可用的后台虚拟屏配置对齐：不设 FLAG_PUBLIC，且不与
      * FLAG_OWN_DISPLAY_GROUP 同时使用互斥的 FLAG_DEVICE_DISPLAY_GROUP。
      */
-    private fun buildPreferredDisplayFlags(): Int {
+    private fun buildPreferredDisplayFlags(showSystemDecorations: Boolean): Int {
         var flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
             FLAG_SUPPORTS_TOUCH or
             FLAG_DESTROY_CONTENT_ON_REMOVAL
+        if (showSystemDecorations) flags = flags or FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             flags = flags or
                 FLAG_TRUSTED or
@@ -241,12 +248,13 @@ internal class PrivilegedVirtualDisplay(
     }
 
     /** 兼容旧 ROM 的回退组合；仍使用按 uid 修正后的 DisplayManager。 */
-    private fun buildLegacyDisplayFlags(): Int {
+    private fun buildLegacyDisplayFlags(showSystemDecorations: Boolean): Int {
         var flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
             FLAG_SUPPORTS_TOUCH or
             FLAG_DESTROY_CONTENT_ON_REMOVAL
+        if (showSystemDecorations) flags = flags or FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             flags = flags or
                 FLAG_TRUSTED or
@@ -320,6 +328,7 @@ internal class PrivilegedVirtualDisplay(
 
         const val FLAG_SUPPORTS_TOUCH = 1 shl 6
         const val FLAG_DESTROY_CONTENT_ON_REMOVAL = 1 shl 8
+        const val FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS = 1 shl 9
         const val FLAG_TRUSTED = 1 shl 10
         const val FLAG_OWN_DISPLAY_GROUP = 1 shl 11
         const val FLAG_ALWAYS_UNLOCKED = 1 shl 12

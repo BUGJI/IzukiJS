@@ -663,7 +663,7 @@ class ScreenUnlockController(
         }
     }
 
-    private fun isLocked(): Boolean = runCatching {
+    fun isLocked(): Boolean = runCatching {
         context.getSystemService(KeyguardManager::class.java)?.isKeyguardLocked ?: false
     }.getOrDefault(false)
 
@@ -671,7 +671,7 @@ class ScreenUnlockController(
         context.getSystemService(KeyguardManager::class.java)?.isDeviceSecure ?: false
     }.getOrDefault(false)
 
-    private fun isInteractive(): Boolean = runCatching {
+    fun isInteractive(): Boolean = runCatching {
         context.getSystemService(PowerManager::class.java)?.isInteractive ?: true
     }.getOrDefault(true)
 

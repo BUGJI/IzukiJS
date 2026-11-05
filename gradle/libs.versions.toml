@@ -13,6 +13,9 @@ navigationCompose = "2.10.2"
 quickjs = "1.4.6.1"
 timber = "5.0.1"
 shizuku = "13.1.0"
+libadb = "3.1.1"
+bouncycastle = "1.81"
+conscrypt = "2.5.3"
 opencv = "5.0.0.1"
 mlkitTextChinese = "16.0.1"
 mlkitBarcode = "17.3.0"
@@ -42,6 +45,9 @@ quickjs-android = { group = "com.github.hjhrq1991", name = "quickjs-android", ve
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
 shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
+libadb-android = { group = "com.github.MuntashirAkon", name = "libadb-android", version.ref = "libadb" }
+bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk15to18", version.ref = "bouncycastle" }
+conscrypt-android = { group = "org.conscrypt", name = "conscrypt-android", version.ref = "conscrypt" }
 opencv = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
 mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitTextChinese" }
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }

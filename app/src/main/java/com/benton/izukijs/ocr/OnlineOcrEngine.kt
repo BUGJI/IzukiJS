@@ -43,10 +43,10 @@ class OnlineOcrEngine(
         return copy(
             blocks = blocks.map { block ->
                 block.copy(
-                    x = (block.x * factor).toInt(),
-                    y = (block.y * factor).toInt(),
-                    width = (block.width * factor).toInt(),
-                    height = (block.height * factor).toInt(),
+                    left = (block.left * factor).toInt(),
+                    top = (block.top * factor).toInt(),
+                    right = (block.right * factor).toInt(),
+                    bottom = (block.bottom * factor).toInt(),
                 )
             },
         )
@@ -87,7 +87,7 @@ class OnlineOcrEngine(
             val top = location.optInt("top")
             val width = location.optInt("width")
             val height = location.optInt("height")
-            blocks.add(OcrBlock(word, left + width / 2, top + height / 2, width, height))
+            blocks.add(OcrBlock(word, left, top, left + width, top + height))
         }
         return OcrResult(text.toString().trim(), blocks)
     }
@@ -163,10 +163,10 @@ class OnlineOcrEngine(
             blocks.add(
                 OcrBlock(
                     annotation.optString("description"),
-                    (minX + maxX) / 2,
-                    (minY + maxY) / 2,
-                    maxX - minX,
-                    maxY - minY,
+                    minX,
+                    minY,
+                    maxX,
+                    maxY,
                 ),
             )
         }

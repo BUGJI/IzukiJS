@@ -342,6 +342,7 @@ object ConfigSections {
                 put("dpi", c.resolution.dpi)
                 put("pipOnHome", c.pipOnHome)
                 put("autoStopAfterRun", c.autoStopAfterRun)
+                put("showSystemDecorations", c.showSystemDecorations)
             }
         },
         decode = { o, base ->
@@ -361,6 +362,10 @@ object ConfigSections {
                 ),
                 pipOnHome = o.optBoolean("pipOnHome", base.pipOnHome),
                 autoStopAfterRun = o.optBoolean("autoStopAfterRun", base.autoStopAfterRun),
+                showSystemDecorations = o.optBoolean(
+                    "showSystemDecorations",
+                    base.showSystemDecorations,
+                ),
             ).normalized()
         },
     )

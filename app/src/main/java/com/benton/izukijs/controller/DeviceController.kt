@@ -42,7 +42,7 @@ sealed interface NodeTreeResult {
     /** 成功读到控件树。 */
     data class Success(val root: NodeSnapshot) : NodeTreeResult
 
-    /** 没有任何可用后端（无障碍未开启，且无 Shizuku / Root）。 */
+    /** 没有任何可用后端（无障碍未开启，且无 Shizuku / 无线调试 / Root）。 */
     data object NoBackend : NodeTreeResult
 
     /** 后端存在但读取失败，[message] 为底层原始错误。 */
@@ -79,7 +79,7 @@ interface DeviceController {
 
     /**
      * 是否支持把输入 / 截图定向到指定 display。
-     * 目前只有 Shizuku / Root 这类 Shell 后端支持；无障碍与 HID 固定操作主屏。
+     * 目前只有 Shizuku / 无线调试 / Root 这类 Shell 后端支持；无障碍与 HID 固定操作主屏。
      */
     fun supportsDisplayTarget(): Boolean = false
 

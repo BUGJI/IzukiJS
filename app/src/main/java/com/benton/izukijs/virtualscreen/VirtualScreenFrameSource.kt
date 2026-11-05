@@ -107,6 +107,19 @@ class VirtualScreenFrameSource(
         }
     }
 
+    /** 等待比 [afterSeq] 更新的帧；已满足时立即返回 true。[timeoutMs] <= 0 时只检查当前状态。 */
+    fun awaitFrameAfter(afterSeq: Long, timeoutMs: Long): Boolean = lock.withLock {
+        if (frameSeq > afterSeq) return true
+        if (closed || timeoutMs <= 0L) return frameSeq > afterSeq
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        while (frameSeq <= afterSeq && !closed) {
+            val remaining = deadline - SystemClock.elapsedRealtime()
+            if (remaining <= 0L) break
+            frameAvailable.await(remaining, TimeUnit.MILLISECONDS)
+        }
+        frameSeq > afterSeq
+    }
+
     fun currentSeq(): Long = lock.withLock { frameSeq }
 
     fun close() {

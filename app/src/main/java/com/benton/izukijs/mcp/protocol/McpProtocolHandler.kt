@@ -139,29 +139,25 @@ class McpProtocolHandler(
         // 一旦前面的操作卡住就永远查不到结果。
         if (tool.synchronous) {
             val started = System.currentTimeMillis()
-            val result = runCatching { tool.call(arguments) }
-                .getOrElse { McpToolResult.error("工具执行失败：${it.message}") }
+            val result = tool.call(arguments)
+            val elapsed = System.currentTimeMillis() - started
+            logTool(name, arguments, elapsed, result.content.firstOrNull()?.text)
             auditLog.record(
                 tool = name,
                 arguments = arguments,
                 ok = !result.isError,
                 message = result.content.firstOrNull()?.text?.takeIf { result.isError },
             )
-            return success(id, withElapsed(result, System.currentTimeMillis() - started).toJson())
+            return success(id, withElapsed(result, elapsed).toJson())
         }
 
-        logBus.info("🔌 MCP 调用工具 $name")
+        val callStarted = System.currentTimeMillis()
+        logBus.debug("🔌 MCP 开始 $name(${summarize(arguments)})")
         val requestId = operations.create(name)
         val executor = toolDispatcher
         val future = try {
             executor.submit<McpToolResult> {
-                val result = try {
-                    tool.call(arguments)
-                } catch (t: Throwable) {
-                    auditLog.record(name, arguments, ok = false, message = t.message)
-                    operations.fail(requestId, t.message ?: t.javaClass.simpleName)
-                    throw t
-                }
+                val result = tool.call(arguments)
                 if (result.isError) {
                     operations.fail(requestId, result.content.firstOrNull()?.text ?: "执行失败")
                 } else {
@@ -182,36 +178,84 @@ class McpProtocolHandler(
         }
 
         return try {
-            val started = System.currentTimeMillis()
             val result = future.get(SYNC_WAIT_SEC, TimeUnit.SECONDS)
-            success(id, withElapsed(result, System.currentTimeMillis() - started).toJson())
+            val elapsed = System.currentTimeMillis() - callStarted
+            logTool(name, arguments, elapsed, result.content.firstOrNull()?.text)
+            success(id, withElapsed(result, elapsed).toJson())
         } catch (t: TimeoutException) {
             // 操作已提交到设备队列，是否已真正执行未知——返回句柄而非报错。
-            logBus.warn("MCP 工具 $name 超过 ${SYNC_WAIT_SEC}s 仍未返回，转异步（request_id=$requestId）")
+            val elapsed = System.currentTimeMillis() - callStarted
+            logBus.warn(
+                "🔌 MCP $name(${summarize(arguments)}) ${elapsed}ms → 转异步（request_id=$requestId）",
+            )
             success(id, runningResult(name, requestId))
         } catch (t: Throwable) {
             val cause = t.cause ?: t
-            logBus.warn("MCP 工具 $name 执行异常：${cause.message}")
-            failure(id, INTERNAL_ERROR, "工具执行异常：${cause.message}")
+            logBus.warn(
+                "🔌 MCP $name(${summarize(arguments)}) 异常：${cause.message ?: cause.javaClass.simpleName}",
+            )
+            failure(id, INTERNAL_ERROR, "工具执行异常：${cause.message ?: cause.javaClass.simpleName}")
+        }
+    }
+
+    /** 工具日志：带脱敏参数与耗时，慢调用（>1s）或失败升为 WARN。 */
+    private fun logTool(name: String, arguments: JSONObject, elapsedMs: Long, resultText: String?) {
+        val failed = resultText?.let { text ->
+            text.trim().startsWith("{") &&
+                runCatching { !JSONObject(text).optBoolean("ok", true) }.getOrDefault(false)
+        } ?: false
+        val line = "🔌 MCP $name(${summarize(arguments)}) ${elapsedMs}ms"
+        if (failed) {
+            logBus.warn(line)
+        } else if (elapsedMs > SLOW_CALL_MS) {
+            logBus.warn(line)
+        } else {
+            logBus.info(line)
+        }
+    }
+
+    private fun summarize(arguments: JSONObject): String {
+        if (arguments.length() == 0) return ""
+        val out = JSONObject()
+        arguments.keys().forEach { key ->
+            val value = arguments.opt(key)
+            val lower = key.lowercase()
+            out.put(
+                key,
+                when {
+                    SENSITIVE.any { lower.contains(it) } -> "***"
+                    key == "content" && value is String -> "<${value.length} chars>"
+                    value is String -> value.take(ARG_MAX_CHARS)
+                    value is JSONObject -> "{…}"
+                    value is JSONArray -> "[${value.length()}]"
+                    else -> value
+                },
+            )
+        }
+        return out.toString().let {
+            if (it.length <= LOG_ARGS_MAX_CHARS) it else it.take(LOG_ARGS_MAX_CHARS) + "…"
         }
     }
 
     /**
-     * 把本次调用的耗时（含设备队列等待）注入工具返回文本块中的 JSON。
-     *
-     * 仅处理能解析为 JSON 对象的文本块；对图片块（screenshot）与纯文本结果保持不变，
-     * 因此不会影响既有返回结构。
+     * 把本次调用的耗时注入工具返回文本块中的 JSON；纯文本结果额外追加一个元数据块，
+     * 保证所有工具都能拿到 elapsed_ms。
      */
     private fun withElapsed(result: McpToolResult, elapsedMs: Long): McpToolResult {
+        var injected = false
         val updated = result.content.map { content ->
             if (content.type != "text") return@map content
             val text = content.text?.trim()
             val json = text?.takeIf { it.startsWith("{") }
                 ?.let { runCatching { JSONObject(it) }.getOrNull() }
                 ?: return@map content
+            injected = true
             content.copy(text = json.put("elapsed_ms", elapsedMs).toString())
         }
-        return result.copy(content = updated)
+        if (injected) return result.copy(content = updated)
+        return result.copy(
+            content = updated + McpContent.text(JSONObject().put("elapsed_ms", elapsedMs).toString()),
+        )
     }
 
     /** 异步句柄：说明操作已提交、结果未知，并给出回查方式。 */
@@ -275,10 +319,24 @@ class McpProtocolHandler(
         /** 同步等待窗口：超过则返回 request_id 转异步，避免客户端读超时。 */
         private const val SYNC_WAIT_SEC = 20L
 
+        private const val SLOW_CALL_MS = 1_000L
+        private const val ARG_MAX_CHARS = 80
+        private const val LOG_ARGS_MAX_CHARS = 240
+
+        private val SENSITIVE = listOf(
+            "token",
+            "password",
+            "passwd",
+            "secret",
+            "apikey",
+            "api_key",
+            "authorization",
+        )
+
         private val SUPPORTED_VERSIONS = setOf("2025-06-18", "2025-03-26", "2024-11-05")
 
         private val INSTRUCTIONS =
-            "Izuki JS 运行于 Android，可读取控件树 / OCR / 截图，并通过无障碍 / Shizuku / Root / " +
+            "Izuki JS 运行于 Android，可读取控件树 / OCR / 截图，并通过无障碍 / Shizuku / 无线调试 / Root / " +
                 "蓝牙 HID 注入点击、滑动、文本与按键。坐标默认是全分辨率屏幕像素；click 支持 " +
                 "normalized=true 的 0~1 归一化坐标（推荐，免疫截图缩放）。操作前建议先用 ocr / " +
                 "ui_dump / screenshot 观察。耗时操作超过同步窗口会返回 {status:\"running\", request_id}，" +

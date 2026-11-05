@@ -14,6 +14,7 @@ import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import org.json.JSONObject
 
 /** 一个已解析的 HTTP 请求。 */
 data class HttpRequest(
@@ -163,7 +164,16 @@ class HttpServer(
                 inFlight.incrementAndGet()
                 val response = try {
                     runCatching { handler(request) }
-                        .getOrElse { HttpResponse.text(500, "Internal Server Error: ${it.message}") }
+                        .getOrElse {
+                            HttpResponse.text(
+                                500,
+                                JSONObject()
+                                    .put("error", it.message ?: "internal error")
+                                    .put("stage", "dispatch")
+                                    .put("retryable", true)
+                                    .toString(),
+                            )
+                        }
                 } finally {
                     inFlight.decrementAndGet()
                 }

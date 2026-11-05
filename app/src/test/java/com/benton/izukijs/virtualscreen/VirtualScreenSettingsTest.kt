@@ -42,4 +42,12 @@ class VirtualScreenSettingsTest {
         val disabled = VirtualScreenSettings(autoStopAfterRun = false).normalized()
         assertFalse(disabled.autoStopAfterRun)
     }
+
+    @Test
+    fun systemDecorationsDefaultsToOffAndSurvivesNormalization() {
+        assertFalse(VirtualScreenSettings().showSystemDecorations)
+        assertTrue(
+            VirtualScreenSettings(showSystemDecorations = true).normalized().showSystemDecorations,
+        )
+    }
 }

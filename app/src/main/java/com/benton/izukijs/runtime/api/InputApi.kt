@@ -1,5 +1,6 @@
 package com.benton.izukijs.runtime.api
 
+import android.view.KeyEvent
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.DeviceController
@@ -214,6 +215,10 @@ class InputApi(
 
     @JavascriptInterface
     fun press(keyCode: Int): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_HOME && controllers.targetDisplayId != null) {
+            logBus.warn("虚拟屏没有 launcher，home 键不会生效；请改用 back 或 app.launch")
+            return false
+        }
         val controller = controllers.controllerFor(Capability.KEY)
         val ok = controller?.pressKey(keyCode) ?: false
         logBus.debug("按键 keyCode=$keyCode${controller.resultTag(ok)}")
@@ -239,7 +244,13 @@ class InputApi(
     fun back(): Boolean = globalAction(GLOBAL_BACK, "返回")
 
     @JavascriptInterface
-    fun home(): Boolean = globalAction(GLOBAL_HOME, "主页")
+    fun home(): Boolean {
+        if (controllers.targetDisplayId != null) {
+            logBus.warn("虚拟屏没有 launcher，home 键不会生效；请改用 back 或 app.launch")
+            return false
+        }
+        return globalAction(GLOBAL_HOME, "主页")
+    }
 
     @JavascriptInterface
     fun recents(): Boolean = globalAction(GLOBAL_RECENTS, "最近任务")

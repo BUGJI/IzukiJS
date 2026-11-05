@@ -16,8 +16,9 @@ interface IVirtualScreenService {
 
     /**
      * 创建虚拟屏；[captureSurface] 由 App 侧的 ImageReader 提供，返回 displayId，失败返回 -1。
+     * [showSystemDecorations] 为 true 时尝试请求系统状态栏 / 导航栏 insets。
      */
-    int create(int width, int height, int dpi, in Surface captureSurface) = 2;
+    int create(int width, int height, int dpi, in Surface captureSurface, boolean showSystemDecorations) = 2;
 
     int displayId() = 3;
 

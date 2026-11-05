@@ -7,6 +7,57 @@
 
 ## [未发布]
 
+## [1.1.10] - 2026-11-05
+
+### 新增
+
+- 新增「无线调试」控制后端：Android 11+ 可通过系统无线调试配对码与本机 adbd 配对，
+  无需安装 Shizuku 即可获得手势 / 按键 / 文本 / 截图 / Shell 能力；支持 mDNS 自动重连
+  与手动端口回退。由于部分系统在切换 App 后会关闭系统配对对话框，配对码通过通知栏
+  内联回复输入。配对身份保存在 `noBackupFilesDir` 并加密。后台虚拟屏与 Shizuku
+  特权解锁仍需 Shizuku。
+- MCP 新增自主解锁集成：「允许解锁工具」暴露 `unlock` 工具，可触发一次锁屏解锁；
+  「操作前自动解锁」会在主屏读屏 / 控制类工具执行前，若设备锁屏或息屏则先尝试解锁。
+  两项均默认关闭，且要求「设置 → 安全解锁」已启用并配置有效凭据。
+- 脚本 API 新增 `shell.execResult(cmd)`，返回结构化的 stdout / stderr / exit_code。
+- 「设置 → 运行与虚拟屏」新增「尝试显示系统栏」开关（实验性，默认关闭），通过隐藏 flag
+  `VIRTUAL_DISPLAY_FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS` 尝试恢复状态栏 / 导航栏 insets。
+
+### 变更
+
+- 设置页补充跨功能入口：安全解锁页汇总 MCP 解锁工具 / 操作前自动解锁状态并可跳转；
+  控制后端页、运行设置的虚拟屏开关、MCP 的 Shell 开关在未就绪时可直达「权限与能力」。
+
+### 修复
+
+- `ui_dump` 在持续动画界面上不再固定等待 6s：dump 前用两帧差快速识别动画并直接降级，单次预算降到
+  1.5s；`click(hit=true)` 在控件树不可用时返回 `hit_checked=false` + `hit_reason`。
+- `find` / `click(by=text)` 会先把同一行的 OCR 块聚合成整行再匹配，`Read timed out` 这类跨块短语
+  不再失配；并新增保守的编辑距离容错（`fuzzy`）与 `min_conf` 过滤。
+- `shell` 工具返回结构化 `{ok, stdout, stderr, exit_code, elapsed_ms}`，不再丢失 stderr / 退出码；
+  Shizuku / Root 后端改为并发排空 stdout/stderr，避免管道写满阻塞。
+- `find` / `click` / `wait` 的 `ok` 改为业务成功语义并补充 `matched` / `executed` / `degraded`；
+  `wait(for=idle)` 使用硬 deadline，单次 dump 预算不会突破外层超时。
+- `notifications list` 支持 `package` / `limit` / `since_ms` / `exclude_ongoing` / `detail`，默认返回
+  精简字段，避免一次返回全量通知吃满上下文。
+- `run_script` 返回 `run_id`；新增 `get_run_log`，`read_logs` 支持 `level` / `since_ms` / `grep` /
+  `run_id`，脚本运行输出可与本次运行配对。
+- 新增 `delete_script` / `rename_script`；运行中的脚本拒绝删除或改名。
+- MCP 返回统一补充 `elapsed_ms`；工具日志记录脱敏参数与耗时（慢调用 >1s 升 WARN）；HTTP 500 与工具
+  异常改为紧凑 JSON，不再向客户端抛 Kotlin 堆栈。
+- MCP 服务启动时预热工具目录，降低冷启动首批请求读超时的概率。
+- Android 17（API 37）补充 `ACCESS_LOCAL_NETWORK` 权限申请：避免无线调试 mDNS 被系统
+  `NsdPickerActivity`（「选择要连接的设备」）拦截并中断配对；MCP 局域网模式缺少权限时不再静默失败。
+- 虚拟屏 OCR 结构化结果补充真实 `left/top/right/bottom` 与 `image` 尺寸，越界包围盒会裁剪并标记
+  `suspicious`；明确 `x/y` 为包围盒中心，避免被误当成左上角。
+- `virtual_screen_input` 输入成功后等待画面重绘再返回，并提供 `frameSeq` / `frameAdvanced`，
+  修复输入后立刻截图仍拿到上一帧的问题；`virtual_screen capture` 也支持 `wait_next_frame`。
+- 虚拟屏状态新增 `lastStopReason` / `lastStopAt`，实际分辨率会写回设置；激活期间每 30 秒向特权
+  服务发送一次心跳，降低后端被空闲回收的概率。
+- `info(foreground)` 支持 `target=auto|main|virtual`，虚拟屏激活时不再把主屏应用误报为虚拟屏前台。
+- `virtual_screen_input` 的 `home` 键改为返回明确错误（虚拟屏无 launcher）；空屏截图补充启动应用引导。
+- 修正虚拟屏控件树报错与文档中误写的 `images`，统一改为 `capture`。
+
 ## [1.1.9] - 2026-11-05
 
 ### 新增
@@ -297,7 +348,8 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.9...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.10...HEAD
+[1.1.10]: https://github.com/BUGJI/IzukiJS/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/BUGJI/IzukiJS/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/BUGJI/IzukiJS/compare/v1.1.7...v1.1.8
 [1.1.3]: https://github.com/BUGJI/IzukiJS/compare/v1.1.1...v1.1.3

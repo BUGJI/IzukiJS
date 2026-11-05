@@ -34,4 +34,11 @@ class McpConfigTest {
     fun emptyListBlocksNothing() {
         assertFalse(McpConfig().isPackageBlocked("com.anything"))
     }
+
+    @Test
+    fun unlockFlagsDefaultOff() {
+        val defaults = McpConfig()
+        assertFalse(defaults.allowUnlock)
+        assertFalse(defaults.autoUnlock)
+    }
 }

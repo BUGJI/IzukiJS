@@ -56,6 +56,7 @@ class LogBus(private val capacity: Int = 500) {
             while (buffer.size > capacity) buffer.removeFirst()
         }
         Log.println(level.toLogcatPriority(), "IzukiJS", message)
+        RunLogRegistry.record(entry)
         sink?.invoke(entry)
         scheduleEmit()
     }

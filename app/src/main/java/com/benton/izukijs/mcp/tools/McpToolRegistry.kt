@@ -6,12 +6,17 @@ import android.view.KeyEvent
 import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.ai.ShellGuard
 import com.benton.izukijs.controller.NodeTreeResult
+import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.core.log.RunLogRegistry
+import com.benton.izukijs.core.log.RunStatus
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.McpConfig
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
+import com.benton.izukijs.service.ScreenUnlockController
+import com.benton.izukijs.service.UnlockResult
 import com.benton.izukijs.virtualscreen.ScreenTarget
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.virtualscreen.VirtualScreenOptions
@@ -30,18 +35,19 @@ import org.json.JSONObject
  * 行为一致；这里只额外提供 MCP 专属的截图（图像内容块）、异步结果查询与脚本管理。
  *
  * 目录按 [configProvider] 的当前配置惰性重建：`allowShell` / `allowScripts` /
- * `allowDangerousShell` / 黑名单变更后，下一次 `tools/list` 即反映新配置，
- * 无需重建监听（也就不会打断在线会话）。
+ * `allowUnlock` / `autoUnlock` / `allowDangerousShell` / 黑名单变更后，下一次 `tools/list`
+ * 即反映新配置，无需重建监听（也就不会打断在线会话）。
  */
 class McpToolRegistry(
     private val bundle: DeviceApiBundle,
-    private val nodeTreeProvider: () -> NodeTreeResult,
+    private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
     private val scriptRepository: ScriptRepository,
     private val executionManager: ScriptExecutionManager,
     private val operations: OperationRegistry,
     private val logFileStore: LogFileStore,
     private val configProvider: () -> McpConfig,
     private val virtualScreen: VirtualScreenManager? = null,
+    private val screenUnlock: ScreenUnlockController? = null,
 ) {
 
     @Volatile
@@ -65,6 +71,11 @@ class McpToolRegistry(
 
     fun find(name: String): McpTool? = tools().firstOrNull { it.name == name }
 
+    /** 服务启动后在后台预热工具目录，避免首个 tools/list 或 tools/call 承担构建开销。 */
+    fun prewarm() {
+        runCatching { tools() }
+    }
+
     private fun buildCatalog(config: McpConfig): List<McpTool> {
         val agentTools = AgentTools(
             inputApi = bundle.inputApi,
@@ -78,7 +89,7 @@ class McpToolRegistry(
             nodeTreeProvider = nodeTreeProvider,
             allowShell = config.allowShell,
         )
-        return buildList {
+        val catalog = buildList {
             addAll(sharedTools(agentTools, config))
             add(screenshotTool())
             virtualScreen?.let { manager ->
@@ -86,9 +97,15 @@ class McpToolRegistry(
                 add(virtualScreenInputTool(manager))
             }
             add(readLogsTool())
+            add(getRunLogTool())
             add(getResultTool())
             add(listOperationsTool())
+            if (config.allowUnlock && screenUnlock != null) add(unlockTool())
             if (config.allowScripts) addAll(scriptTools())
+        }
+        if (!config.autoUnlock || screenUnlock == null) return catalog
+        return catalog.map { tool ->
+            if (tool.name in AUTO_UNLOCK_TOOLS) withAutoUnlock(tool) else tool
         }
     }
 
@@ -131,7 +148,7 @@ class McpToolRegistry(
             when (name) {
                 "ocr" -> return virtualOcr()
                 "ui_dump" -> return McpToolResult.error(
-                    "后台虚拟屏不支持控件树，请改用 images / ocr / 坐标输入",
+                    "后台虚拟屏不支持控件树，请改用 capture / ocr / 坐标输入",
                 )
                 "find" -> return McpToolResult.error(
                     "虚拟屏暂不支持 find，请先用 ocr(target=virtual) 获取文字坐标，再按坐标输入",
@@ -160,7 +177,9 @@ class McpToolRegistry(
 
     private fun virtualOcr(): McpToolResult {
         val bitmap = bundle.captureProvider(ScreenTarget.VIRTUAL, CAPTURE_WAIT_MS)
-            ?: return McpToolResult.error("虚拟屏未运行或暂无可用的画面帧，请先启动虚拟屏")
+            ?: return McpToolResult.error(
+                "虚拟屏未运行，或已启动但尚未收到画面帧；请先 start 并 launch 一个应用后重试",
+            )
         val json = bundle.ocrApi.recognizeBlocksJson(bitmap)
             ?: return McpToolResult.error("OCR 未识别到文字")
         return McpToolResult.text(json)
@@ -174,19 +193,205 @@ class McpToolRegistry(
         }.toString(),
     )
 
+    // ---- 自主解锁（受 allowUnlock / autoUnlock 控制） ----
+
+    private fun unlockTool(): McpTool = McpTool(
+        name = "unlock",
+        description = "尝试解锁当前锁屏，复用「设置 → 安全解锁」中保存的凭据；不会主动锁屏。" +
+            "若设备已解锁则直接返回。需先在「设置 → 安全解锁」启用自主解锁，并在 MCP 工具开关中" +
+            "开启「允许解锁工具」。",
+        inputSchema = McpSchemas.objectSchema(emptyMap()),
+    ) {
+        val controller = screenUnlock
+            ?: return@McpTool unlockResultJson(UnlockResult.UNSUPPORTED)
+        unlockResultJson(runBlocking { controller.ensureUnlocked() })
+    }
+
+    private fun unlockResultJson(result: UnlockResult): McpToolResult {
+        val ok = result == UnlockResult.OK || result == UnlockResult.ALREADY_UNLOCKED
+        val payload = JSONObject().apply {
+            put("ok", ok)
+            put("action", "unlock")
+            put("result", result.name)
+            put("message", unlockMessage(result))
+        }
+        return McpToolResult(listOf(McpContent.text(payload.toString())), isError = !ok)
+    }
+
+    private fun unlockBlocked(result: UnlockResult): McpToolResult = McpToolResult.text(
+        JSONObject().apply {
+            put("ok", false)
+            put("blocked", true)
+            put("reason", if (result == UnlockResult.DISABLED) "unlock_disabled" else "unlock_failed")
+            put("result", result.name)
+            put("message", unlockMessage(result))
+        }.toString(),
+    )
+
+    private fun unlockMessage(result: UnlockResult): String = when (result) {
+        UnlockResult.OK -> "已解锁"
+        UnlockResult.ALREADY_UNLOCKED -> "设备未锁屏"
+        UnlockResult.DISABLED -> "自主解锁未启用，请先在「设置 → 安全解锁」中开启；" +
+            "若要允许外部 AI 调用，还需在 MCP 工具开关中开启「允许解锁工具」"
+        UnlockResult.NO_BACKEND -> "没有可用的解锁后端（需要 Shizuku / 无线调试 / Root）"
+        UnlockResult.CREDENTIAL_REQUIRED -> "未配置解锁凭据"
+        UnlockResult.CREDENTIAL_INVALID -> "解锁凭据无效"
+        UnlockResult.CREDENTIAL_REJECTED -> "解锁凭据被拒绝"
+        UnlockResult.PATTERN_SCREEN_MISMATCH -> "图案录制方向与当前屏幕不一致"
+        UnlockResult.LOCK_FAILED -> "锁屏失败"
+        UnlockResult.WAKE_FAILED -> "唤醒屏幕失败"
+        UnlockResult.DISMISS_FAILED -> "收起锁屏失败"
+        UnlockResult.UNSUPPORTED -> "当前设备或控制后端不支持自动解锁"
+        UnlockResult.TIMEOUT -> "解锁超时"
+        UnlockResult.NO_INPUT -> "没有可用的输入设备"
+        UnlockResult.RECORDING_TIMEOUT -> "录制超时"
+        UnlockResult.CANCELLED -> "解锁已取消"
+    }
+
+    /** 操作前自动解锁：仅在设备锁屏或息屏时触发，失败则阻止本次设备操作。 */
+    private fun withAutoUnlock(tool: McpTool): McpTool = McpTool(
+        name = tool.name,
+        description = tool.description,
+        inputSchema = tool.inputSchema,
+        readOnly = tool.readOnly,
+        synchronous = tool.synchronous,
+    ) { args ->
+        val controller = screenUnlock
+        if (controller != null &&
+            shouldAutoUnlock(tool.name, args) &&
+            (controller.isLocked() || !controller.isInteractive())
+        ) {
+            val result = runBlocking { controller.ensureUnlocked() }
+            when (result) {
+                UnlockResult.OK, UnlockResult.ALREADY_UNLOCKED -> Unit
+                UnlockResult.DISABLED -> {
+                    if (controller.isLocked()) return@McpTool unlockBlocked(result)
+                }
+                else -> return@McpTool unlockBlocked(result)
+            }
+        }
+        tool.call(args)
+    }
+
+    /** 虚拟屏操作不需要解锁主屏；其余自动解锁集合内的工具都针对主屏。 */
+    private fun shouldAutoUnlock(name: String, args: JSONObject): Boolean {
+        if (name == "screenshot" || name in TARGETED_SHARED) {
+            return !args.optString("target").equals("virtual", ignoreCase = true)
+        }
+        return true
+    }
+
     // ---- 日志 ----
 
     private fun readLogsTool(): McpTool = McpTool(
         name = "read_logs",
-        description = "读取应用最近日志的尾部（按行数限制），用于排查脚本运行 / 控制后端问题。",
+        description = "读取应用最近日志的尾部，可按级别 / 时间 / 关键字过滤；传 run_id 可读取某次脚本运行的配对日志。",
         inputSchema = McpSchemas.objectSchema(
-            mapOf("lines" to McpSchemas.integer("返回行数 1~2000，默认 200")),
+            mapOf(
+                "lines" to McpSchemas.integer("返回行数 1~2000，默认 200"),
+                "level" to McpSchemas.enum(
+                    "最低日志级别（含）",
+                    listOf("debug", "info", "success", "warn", "error"),
+                ),
+                "since_ms" to McpSchemas.integer("只返回不早于该时间戳的日志"),
+                "grep" to McpSchemas.string("按关键字过滤（不区分大小写）"),
+                "run_id" to McpSchemas.string("只读取该次脚本运行的日志，通常来自 run_script 的返回"),
+            ),
         ),
         readOnly = true,
         synchronous = true,
     ) { args ->
-        McpToolResult.text(logFileStore.tail(args.optInt("lines", 200).coerceIn(1, 2000)))
+        val lines = args.optInt("lines", 200).coerceIn(1, 2000)
+        val level = parseLogLevel(args.optString("level"))
+        val grep = args.optString("grep").takeIf { it.isNotBlank() }
+        val runId = args.optString("run_id").trim()
+        if (runId.isNotEmpty()) {
+            val record = RunLogRegistry.find(runId)
+                ?: return@McpTool McpToolResult.text(
+                    JSONObject().put("ok", false).put("message", "找不到运行记录：$runId").toString(),
+                )
+            return@McpTool McpToolResult.text(runLogJson(record, lines, level, grep).toString())
+        }
+        McpToolResult.text(
+            logFileStore.query(
+                maxLines = lines,
+                level = level?.name,
+                since = args.optLong("since_ms", 0L),
+                grep = grep,
+            ),
+        )
     }
+
+    private fun getRunLogTool(): McpTool = McpTool(
+        name = "get_run_log",
+        description = "读取一次脚本运行的状态与配对输出（run_id 由 run_script 返回）。",
+        inputSchema = McpSchemas.objectSchema(
+            mapOf(
+                "run_id" to McpSchemas.string("run_script 返回的 run_id"),
+                "tail" to McpSchemas.integer("返回最后 N 条日志，默认 200"),
+                "level" to McpSchemas.enum(
+                    "最低日志级别（含）",
+                    listOf("debug", "info", "success", "warn", "error"),
+                ),
+                "grep" to McpSchemas.string("按关键字过滤（不区分大小写）"),
+            ),
+            required = listOf("run_id"),
+        ),
+        readOnly = true,
+        synchronous = true,
+    ) { args ->
+        val runId = args.optString("run_id").trim()
+        val record = RunLogRegistry.find(runId)
+            ?: return@McpTool McpToolResult.text(
+                JSONObject().put("ok", false).put("message", "找不到运行记录：$runId").toString(),
+            )
+        McpToolResult.text(
+            runLogJson(
+                record,
+                args.optInt("tail", 200).coerceIn(1, 2000),
+                parseLogLevel(args.optString("level")),
+                args.optString("grep").takeIf { it.isNotBlank() },
+            ).toString(),
+        )
+    }
+
+    private fun runLogJson(
+        record: com.benton.izukijs.core.log.RunRecord,
+        tail: Int,
+        level: LogLevel?,
+        grep: String?,
+    ): JSONObject {
+        val logs = JSONArray()
+        RunLogRegistry.filter(record, tail, level, grep).forEach { entry ->
+            logs.put(
+                JSONObject()
+                    .put("time", entry.timeMillis)
+                    .put("level", entry.level.name.lowercase())
+                    .put("message", entry.message),
+            )
+        }
+        return JSONObject().apply {
+            put("ok", record.status != RunStatus.FAILED && record.status != RunStatus.TIMEOUT)
+            put("run_id", record.runId)
+            put("script_id", record.scriptId)
+            put("script", record.scriptName)
+            put("status", record.status.name.lowercase())
+            put("startedAt", record.startedAt)
+            if (record.finishedAt > 0L) put("finishedAt", record.finishedAt)
+            put(
+                "elapsed_ms",
+                if (record.finishedAt > 0L) record.finishedAt - record.startedAt
+                else System.currentTimeMillis() - record.startedAt,
+            )
+            record.error?.let { put("error", it) }
+            put("logs", logs)
+        }
+    }
+
+    private fun parseLogLevel(raw: String): LogLevel? =
+        raw.trim().takeIf { it.isNotBlank() }?.let { value ->
+            LogLevel.entries.firstOrNull { it.name.equals(value, ignoreCase = true) }
+        }
 
     // ---- 截图（返回图像内容块） ----
 
@@ -215,9 +420,9 @@ class McpToolRegistry(
         val source = bundle.captureProvider(target, CAPTURE_WAIT_MS)
             ?: return@McpTool McpToolResult.error(
                 if (target == ScreenTarget.VIRTUAL) {
-                    "虚拟屏未运行或暂无可用的画面帧，请先启动虚拟屏"
+                    "虚拟屏未运行，或已启动但尚未收到画面帧；请先 start 并 launch 一个应用后重试"
                 } else {
-                    "截图失败：无可用截图后端（需屏幕捕获 / 无障碍 / Shizuku / Root）"
+                    "截图失败：无可用截图后端（需屏幕捕获 / 无障碍 / Shizuku / 无线调试 / Root）"
                 },
             )
         encodeCapture(source, args)
@@ -280,6 +485,11 @@ class McpToolRegistry(
                 "quality" to McpSchemas.integer("capture 压缩质量 1~100，默认 90"),
                 "region" to McpSchemas.intArray("capture 裁剪区域 [l,t,r,b]（虚拟屏像素）"),
                 "format" to McpSchemas.enum("capture 图像格式", listOf("jpeg", "webp")),
+                "wait_next_frame" to McpSchemas.boolean(
+                    "先等待比 after_frame 更新的帧再截图；after_frame 省略时等待当前帧之后的下一帧",
+                ),
+                "after_frame" to McpSchemas.integer("wait_next_frame 的基准 frameSeq，通常传上一条输入响应里的 frameSeq"),
+                "frame_timeout_ms" to McpSchemas.integer("wait_next_frame 的超时（毫秒），默认 1000"),
             ),
             required = listOf("action"),
         ),
@@ -313,8 +523,22 @@ class McpToolRegistry(
                 if (!manager.isActive()) {
                     return@McpTool McpToolResult.error("虚拟屏未运行，请先执行 action=start")
                 }
+                if (args.optBoolean("wait_next_frame", false)) {
+                    val baseline = if (args.has("after_frame")) {
+                        args.optLong("after_frame", 0L)
+                    } else {
+                        manager.frameSeq()
+                    }
+                    val timeout = args.optInt("frame_timeout_ms", DEFAULT_CAPTURE_FRAME_WAIT_MS)
+                        .coerceIn(0, MAX_CAPTURE_FRAME_WAIT_MS)
+                        .toLong()
+                    manager.awaitFrameAfter(baseline, timeout)
+                }
                 val source = bundle.captureProvider(ScreenTarget.VIRTUAL, CAPTURE_WAIT_MS)
-                    ?: return@McpTool McpToolResult.error("虚拟屏暂无可用的画面帧，请稍后重试")
+                    ?: return@McpTool McpToolResult.error(
+                        "虚拟屏已启动，但尚未收到画面帧；请先用 action=launch 启动一个应用，" +
+                            "或等待首帧绘制后重试",
+                    )
                 encodeCapture(source, args)
             }
 
@@ -346,7 +570,8 @@ class McpToolRegistry(
     private fun virtualScreenInputTool(manager: VirtualScreenManager): McpTool = McpTool(
         name = "virtual_screen_input",
         description = "在后台虚拟屏上输入。坐标为相对虚拟屏的 0~1 归一化值；不会改变脚本的" +
-            "全局操作目标。action=key 时 key 可为 back / home / recents / enter / esc 或键码。",
+            "全局操作目标。输入成功后默认等待画面重绘（wait_frame=true）。action=key 时 key 可为 " +
+            "back / recents / enter / esc 或键码；虚拟屏没有 launcher，home 会返回明确错误。",
         inputSchema = McpSchemas.objectSchema(
             mapOf(
                 "action" to McpSchemas.enum(
@@ -361,6 +586,8 @@ class McpToolRegistry(
                 "y2" to McpSchemas.number("swipe 终点归一化 y（0~1）"),
                 "duration_ms" to McpSchemas.integer("长按 / 滑动时长（毫秒），默认 600 / 300"),
                 "key" to McpSchemas.string("按键：back / home / recents / enter / esc 或键码"),
+                "wait_frame" to McpSchemas.boolean("输入成功后等待画面重绘再返回，默认 true"),
+                "frame_timeout_ms" to McpSchemas.integer("等待新帧的超时（毫秒），默认 600"),
             ),
             required = listOf("action"),
         ),
@@ -370,6 +597,31 @@ class McpToolRegistry(
         }
         val size = manager.size()
             ?: return@McpTool McpToolResult.error("虚拟屏分辨率不可用")
+        val waitFrame = args.optBoolean("wait_frame", true)
+        val frameTimeoutMs = args.optInt("frame_timeout_ms", DEFAULT_INPUT_FRAME_WAIT_MS)
+            .coerceIn(0, MAX_INPUT_FRAME_WAIT_MS)
+            .toLong()
+
+        /** 输入成功后等待画面重绘，响应里带上新的 frameSeq，避免调用方立刻截图拿到上一帧。 */
+        fun finishInput(
+            action: String,
+            ok: Boolean,
+            baseline: Long,
+            build: JSONObject.() -> Unit,
+        ): McpToolResult {
+            val advanced = if (ok && waitFrame) manager.awaitFrameAfter(baseline, frameTimeoutMs) else false
+            return McpToolResult.text(
+                JSONObject().apply {
+                    put("ok", ok)
+                    put("action", action)
+                    put("frameSeq", manager.frameSeq())
+                    put("frameAdvanced", advanced)
+                    if (ok && waitFrame && !advanced) put("frameWaitMs", frameTimeoutMs)
+                    build()
+                }.toString(),
+            )
+        }
+
         when (val action = args.optString("action")) {
             "tap", "long_press" -> {
                 val x = normalizedCoordinate(args, "x")
@@ -380,6 +632,7 @@ class McpToolRegistry(
                 val px = (x * size.width).toFloat()
                 val py = (y * size.height).toFloat()
                 val duration = args.optInt("duration_ms", if (action == "tap") 300 else 600)
+                val baseline = manager.frameSeq()
                 val ok = runBlocking {
                     if (action == "tap") {
                         manager.tap(px, py)
@@ -387,14 +640,10 @@ class McpToolRegistry(
                         manager.longPress(px, py, duration.toLong())
                     }
                 }
-                McpToolResult.text(
-                    JSONObject()
-                        .put("ok", ok)
-                        .put("action", action)
-                        .put("x", px.toInt())
-                        .put("y", py.toInt())
-                        .toString(),
-                )
+                finishInput(action, ok, baseline) {
+                    put("x", px.toInt())
+                    put("y", py.toInt())
+                }
             }
 
             "swipe" -> {
@@ -406,6 +655,7 @@ class McpToolRegistry(
                     return@McpTool McpToolResult.error("swipe 需要 0~1 的 x1 / y1 / x2 / y2")
                 }
                 val duration = args.optInt("duration_ms", 300)
+                val baseline = manager.frameSeq()
                 val ok = runBlocking {
                     manager.swipe(
                         (x1 * size.width).toFloat(),
@@ -415,26 +665,25 @@ class McpToolRegistry(
                         duration.toLong(),
                     )
                 }
-                McpToolResult.text(
-                    JSONObject()
-                        .put("ok", ok)
-                        .put("action", "swipe")
-                        .put("duration_ms", duration)
-                        .toString(),
-                )
+                finishInput("swipe", ok, baseline) {
+                    put("duration_ms", duration)
+                }
             }
 
             "key" -> {
                 val keyCode = keyCode(args.optString("key"))
                     ?: return@McpTool McpToolResult.error("无法识别的按键：${args.optString("key")}")
+                if (keyCode == KeyEvent.KEYCODE_HOME) {
+                    return@McpTool McpToolResult.error(
+                        "虚拟屏没有 launcher，home 键不会生效；请改用 back，" +
+                            "或用 virtual_screen action=launch 启动桌面应用",
+                    )
+                }
+                val baseline = manager.frameSeq()
                 val ok = runBlocking { manager.key(keyCode) }
-                McpToolResult.text(
-                    JSONObject()
-                        .put("ok", ok)
-                        .put("action", "key")
-                        .put("key_code", keyCode)
-                        .toString(),
-                )
+                finishInput("key", ok, baseline) {
+                    put("key_code", keyCode)
+                }
             }
 
             else -> McpToolResult.error("未知 action：$action")
@@ -455,6 +704,8 @@ class McpToolRegistry(
             put("width", resolution.width)
             put("height", resolution.height)
             put("dpi", resolution.dpi)
+            manager.lastStopReason()?.let { put("lastStopReason", it) }
+            if (manager.lastStopAt() > 0L) put("lastStopAt", manager.lastStopAt())
             put("state", when (state) {
                 VirtualScreenState.Idle -> "idle"
                 VirtualScreenState.Starting -> "starting"
@@ -622,7 +873,7 @@ class McpToolRegistry(
         },
         McpTool(
             name = "run_script",
-            description = "运行指定脚本。脚本在自己的运行时中执行，本调用立即返回，可用 running_script / stop_script 观察与停止。",
+            description = "运行指定脚本。立即返回 run_id；用 get_run_log / read_logs(run_id=...) 取回配对的输出与退出状态。",
             inputSchema = McpSchemas.objectSchema(
                 mapOf(
                     "id" to McpSchemas.string("脚本 id"),
@@ -642,8 +893,75 @@ class McpToolRegistry(
             val values = args.optJSONObject("values")?.let { obj ->
                 obj.keys().asSequence().associateWith { obj.optString(it) }
             } ?: emptyMap()
-            executionManager.run(script.id, script.name, scriptRepository.read(script), values)
-            McpToolResult.text("已开始运行脚本：${script.name}")
+            val started = executionManager.run(script.id, script.name, scriptRepository.read(script), values)
+            if (!started) {
+                return@McpTool McpToolResult.text(
+                    JSONObject().put("ok", false).put("message", "脚本启动失败").toString(),
+                )
+            }
+            val runId = executionManager.lastRunId()
+            val record = runId?.let { RunLogRegistry.find(it) }
+            McpToolResult.text(
+                JSONObject().apply {
+                    put("ok", true)
+                    put("run_id", runId)
+                    put("script_id", script.id)
+                    put("name", script.name)
+                    put("startedAt", record?.startedAt ?: System.currentTimeMillis())
+                }.toString(),
+            )
+        },
+        McpTool(
+            name = "delete_script",
+            description = "删除指定脚本（同时清理历史版本）。运行中的脚本不可删除。",
+            inputSchema = McpSchemas.objectSchema(
+                mapOf("id" to McpSchemas.string("脚本 id")),
+                required = listOf("id"),
+            ),
+        ) { args ->
+            val id = args.optString("id").trim()
+            val script = scriptRepository.find(id)
+                ?: return@McpTool McpToolResult.error("找不到脚本：$id")
+            if (executionManager.runningScriptId.value == script.id) {
+                return@McpTool McpToolResult.error("脚本正在运行，无法删除：${script.name}")
+            }
+            scriptRepository.delete(script)
+            McpToolResult.text(
+                JSONObject().put("ok", true).put("id", script.id).put("deleted", true).toString(),
+            )
+        },
+        McpTool(
+            name = "rename_script",
+            description = "重命名脚本。返回真实新 id（重名时可能加后缀）；运行中的脚本不可改名。",
+            inputSchema = McpSchemas.objectSchema(
+                mapOf(
+                    "id" to McpSchemas.string("当前脚本 id"),
+                    "name" to McpSchemas.string("新名称"),
+                ),
+                required = listOf("id", "name"),
+            ),
+        ) { args ->
+            val id = args.optString("id").trim()
+            val name = args.optString("name").trim()
+            if (name.isEmpty()) return@McpTool McpToolResult.error("rename_script 需要 name")
+            val script = scriptRepository.find(id)
+                ?: return@McpTool McpToolResult.error("找不到脚本：$id")
+            if (executionManager.runningScriptId.value == script.id) {
+                return@McpTool McpToolResult.error("脚本正在运行，无法改名：${script.name}")
+            }
+            if (name == script.id) {
+                return@McpTool McpToolResult.text(
+                    JSONObject().put("ok", true).put("id", script.id).put("name", script.name).toString(),
+                )
+            }
+            val renamed = scriptRepository.rename(script, name)
+            McpToolResult.text(
+                JSONObject().apply {
+                    put("ok", true)
+                    put("id", renamed.id)
+                    put("name", renamed.name)
+                }.toString(),
+            )
         },
         McpTool(
             name = "stop_script",
@@ -676,6 +994,10 @@ class McpToolRegistry(
     private companion object {
         const val MAX_SCRIPT_BYTES = 1024 * 1024
         const val CAPTURE_WAIT_MS = 1_000L
+        const val DEFAULT_INPUT_FRAME_WAIT_MS = 600
+        const val MAX_INPUT_FRAME_WAIT_MS = 3_000
+        const val DEFAULT_CAPTURE_FRAME_WAIT_MS = 1_000
+        const val MAX_CAPTURE_FRAME_WAIT_MS = 3_000
 
         val READ_ONLY_SHARED = setOf(
             "ocr",
@@ -686,5 +1008,21 @@ class McpToolRegistry(
         )
 
         val TARGETED_SHARED = setOf("ocr", "ui_dump", "find")
+
+        /** 执行前可按需自动解锁的主屏工具；虚拟屏 / 脚本 / 查询类工具不在此列。 */
+        val AUTO_UNLOCK_TOOLS = setOf(
+            "screenshot",
+            "ocr",
+            "ui_dump",
+            "find",
+            "click",
+            "swipe",
+            "gesture",
+            "text",
+            "press",
+            "wait",
+            "app",
+            "batch",
+        )
     }
 }

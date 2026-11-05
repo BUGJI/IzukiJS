@@ -15,7 +15,9 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -87,12 +89,30 @@ class VirtualScreenManager(
     @Volatile
     private var startGenerationValue: Long = 0L
 
+    @Volatile
+    private var lastStopReasonValue: String? = null
+
+    @Volatile
+    private var lastStopAtValue: Long = 0L
+
+    private var heartbeatJob: Job? = null
+
     init {
+        val runtime = settingsRepository.runtimeState()
+        lastStopReasonValue = runtime.lastStopReason
+        lastStopAtValue = runtime.lastStopAt
+        if (runtime.wasActive) {
+            // 上次进程退出时虚拟屏仍处于激活状态：服务随进程结束，记录原因供下次诊断。
+            lastStopReasonValue = STOP_APP_RESTART
+            lastStopAtValue = System.currentTimeMillis()
+            settingsRepository.recordStop(STOP_APP_RESTART, lastStopAtValue)
+            logBus.warn("上次运行结束时虚拟屏仍处于激活状态，服务已随进程释放")
+        }
         scope.launch {
             client.connected.collect { connected ->
                 if (!connected && _state.value is VirtualScreenState.Active) {
                     logBus.warn("虚拟屏特权服务断开，正在清理虚拟屏")
-                    cleanupInternal(destroyRemote = false)
+                    cleanupInternal(destroyRemote = false, reason = STOP_SERVICE_DISCONNECTED)
                 }
             }
         }
@@ -165,7 +185,7 @@ class VirtualScreenManager(
                     "（${current.resolution.width}x${current.resolution.height}" +
                     " → ${resolution.width}x${resolution.height}）",
             )
-            cleanupInternal(destroyRemote = true)
+            cleanupInternal(destroyRemote = true, reason = STOP_RESOLUTION_CHANGED)
         }
         if (!available()) {
             fail("需要 Shizuku 授权，且系统版本需为 Android 10+")
@@ -186,6 +206,7 @@ class VirtualScreenManager(
                 resolution.height,
                 resolution.dpi,
                 source.surface,
+                settingsRepository.current().showSystemDecorations,
             )
         } catch (t: Throwable) {
             source.close()
@@ -215,6 +236,9 @@ class VirtualScreenManager(
         previewSurfaces.forEach { (owner, surface) -> previewRenderer.attach(owner, surface) }
         _state.value = VirtualScreenState.Active(displayId, resolution)
         startGenerationValue++
+        settingsRepository.saveResolution(resolution)
+        settingsRepository.markActive(true)
+        startHeartbeat()
         if (!targetExplicit) targetMode = ScreenTarget.AUTO
         applyTarget()
         logBus.success("后台虚拟屏已启动（display=$displayId）")
@@ -224,11 +248,11 @@ class VirtualScreenManager(
     fun startBlocking(options: VirtualScreenOptions? = null): Boolean =
         runBlocking { start(options) }
 
-    suspend fun stop() {
-        startMutex.withLock { cleanupInternal(destroyRemote = true) }
+    suspend fun stop(reason: String = STOP_USER) {
+        startMutex.withLock { cleanupInternal(destroyRemote = true, reason = reason) }
     }
 
-    fun stopBlocking() = runBlocking { stop() }
+    fun stopBlocking(reason: String = STOP_USER) = runBlocking { stop(reason) }
 
     /** 取最新一帧；[waitMs] > 0 时等待首帧。返回的 Bitmap 由调用方负责 recycle。 */
     fun capture(waitMs: Long = 0L): Bitmap? = frameSource?.captureLatest(waitMs)
@@ -238,8 +262,17 @@ class VirtualScreenManager(
 
     fun canCapture(): Boolean = isActive() && frameSource != null
 
+    /** 最近一次停止原因：user_stop / service_disconnected / app_restart / resolution_changed / run_finished。 */
+    fun lastStopReason(): String? = lastStopReasonValue
+
+    fun lastStopAt(): Long = lastStopAtValue
+
     fun captureAfter(frameSeq: Long, timeoutMs: Long = 500L): Bitmap? =
         frameSource?.capture(frameSeq, timeoutMs)
+
+    /** 等待比 [frameSeq] 更新的帧；用于输入后确认画面已重绘。 */
+    fun awaitFrameAfter(frameSeq: Long, timeoutMs: Long = 600L): Boolean =
+        frameSource?.awaitFrameAfter(frameSeq, timeoutMs) == true
 
     fun frameSeq(): Long = frameSource?.currentSeq() ?: 0L
 
@@ -403,8 +436,10 @@ class VirtualScreenManager(
         }
     }
 
-    private suspend fun cleanupInternal(destroyRemote: Boolean) {
+    private suspend fun cleanupInternal(destroyRemote: Boolean, reason: String? = null) {
         val hadState = _state.value !is VirtualScreenState.Idle
+        heartbeatJob?.cancel()
+        heartbeatJob = null
         targetMode = ScreenTarget.AUTO
         targetExplicit = false
         controllers.targetDisplayId = null
@@ -417,10 +452,26 @@ class VirtualScreenManager(
         frameSource?.close()
         frameSource = null
         activeResolution = null
+        if (reason != null) {
+            lastStopReasonValue = reason
+            lastStopAtValue = System.currentTimeMillis()
+            settingsRepository.recordStop(reason, lastStopAtValue)
+        }
         if (hadState) {
-            logBus.info("后台虚拟屏已停止")
+            logBus.info("后台虚拟屏已停止（原因：${reason ?: STOP_UNKNOWN}）")
         }
         _state.value = VirtualScreenState.Idle
+    }
+
+    private fun startHeartbeat() {
+        heartbeatJob?.cancel()
+        heartbeatJob = scope.launch {
+            while (_state.value is VirtualScreenState.Active) {
+                delay(HEARTBEAT_INTERVAL_MS)
+                if (_state.value !is VirtualScreenState.Active) break
+                client.ping()
+            }
+        }
     }
 
     private fun fail(message: String): Boolean {
@@ -436,5 +487,13 @@ class VirtualScreenManager(
         private const val DISPLAY_NONE = -1
         private const val DEFAULT_FRAME_WAIT_MS = 1_000L
         private const val MAX_INPUT_DURATION_MS = 60_000L
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L
+
+        const val STOP_USER = "user_stop"
+        const val STOP_SERVICE_DISCONNECTED = "service_disconnected"
+        const val STOP_APP_RESTART = "app_restart"
+        const val STOP_RESOLUTION_CHANGED = "resolution_changed"
+        const val STOP_RUN_FINISHED = "run_finished"
+        const val STOP_UNKNOWN = "unknown"
     }
 }

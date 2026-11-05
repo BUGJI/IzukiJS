@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -44,6 +45,7 @@ fun LogsScreen(
 ) {
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val logs by container.logBus.entries.collectAsStateWithLifecycle()
     val virtualScreenState by container.virtualScreenManager.state.collectAsStateWithLifecycle()
@@ -60,7 +62,7 @@ fun LogsScreen(
                             shareFile(
                                 context = context,
                                 file = file,
-                                chooserTitle = context.getString(R.string.logs_export),
+                                chooserTitle = resources.getString(R.string.logs_export),
                             )
                         }
                     }

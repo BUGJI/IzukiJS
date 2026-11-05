@@ -118,17 +118,19 @@ fun RunScreen(
     // 读取 / 操作两维度的就绪判定与「权限与能力」页保持一致：任一后端就绪即视为该维度已授权。
     val accessibilityReady = ControlMode.ACCESSIBILITY in ui.readyModes
     val shizukuReady = ControlMode.SHIZUKU in ui.readyModes
+    val adbReady = ControlMode.ADB in ui.readyModes
     val rootReady = ControlMode.ROOT in ui.readyModes
     val hidReady = ControlMode.HID in ui.readyModes
-    val readReady = ui.screenCaptureActive || accessibilityReady || shizukuReady || rootReady
-    val operateReady = hidReady || accessibilityReady || shizukuReady || rootReady
+    val readReady = ui.screenCaptureActive || accessibilityReady || shizukuReady || adbReady || rootReady
+    val operateReady = hidReady || accessibilityReady || shizukuReady || adbReady || rootReady
 
-    // 首页展示已授权的权限清单，按「屏幕录制 / 蓝牙 HID / 无障碍 / Shizuku / Root」顺序拼接为一行。
+    // 首页展示已授权的权限清单，按「屏幕录制 / 蓝牙 HID / 无障碍 / Shizuku / 无线调试 / Root」顺序拼接为一行。
     val grantedCapabilities = listOfNotNull(
         if (ui.screenCaptureActive) stringResource(R.string.run_capture_label) else null,
         if (hidReady) ControlMode.HID.localizedName() else null,
         if (accessibilityReady) ControlMode.ACCESSIBILITY.localizedName() else null,
         if (shizukuReady) ControlMode.SHIZUKU.localizedName() else null,
+        if (adbReady) ControlMode.ADB.localizedName() else null,
         if (rootReady) ControlMode.ROOT.localizedName() else null,
     )
     val grantedText = if (grantedCapabilities.isEmpty()) {

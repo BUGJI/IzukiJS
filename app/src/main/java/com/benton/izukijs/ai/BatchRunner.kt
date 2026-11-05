@@ -13,7 +13,13 @@ internal object BatchRunner {
     data class Action<A>(val tool: String, val args: A)
 
     /** 单步结果。 */
-    data class Step(val index: Int, val tool: String, val ok: Boolean, val result: String)
+    data class Step(
+        val index: Int,
+        val tool: String,
+        val ok: Boolean,
+        val result: String,
+        val elapsedMs: Long,
+    )
 
     /** 整体结果。[stoppedEarly] 表示因失败而提前中断，[truncated] 表示动作数超限被截断。 */
     data class Outcome(
@@ -40,10 +46,12 @@ internal object BatchRunner {
         var stoppedEarly = false
 
         for ((index, action) in toRun.withIndex()) {
+            val started = System.currentTimeMillis()
             val result = runCatching { execute(action.tool, action.args) }
                 .getOrElse { "[错误] ${it.message}" }
+            val elapsed = System.currentTimeMillis() - started
             val failed = isFailure(result)
-            steps.add(Step(index, action.tool, !failed, result.truncate(MAX_RESULT_CHARS)))
+            steps.add(Step(index, action.tool, !failed, result.truncate(MAX_RESULT_CHARS), elapsed))
             if (failed) {
                 ok = false
                 if (!continueOnError) {

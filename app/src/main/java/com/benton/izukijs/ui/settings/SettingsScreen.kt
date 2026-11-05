@@ -196,7 +196,12 @@ fun SettingsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
+fun SettingsDetailScreen(
+    categoryKey: String,
+    onBack: () -> Unit = {},
+    onOpenSetup: () -> Unit = {},
+    onOpenMcp: () -> Unit = {},
+) {
     val category = SettingsCategory.fromKey(categoryKey)
     SettingsDetailScaffold(
         title = category?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings_title),
@@ -204,10 +209,10 @@ fun SettingsDetailScreen(categoryKey: String, onBack: () -> Unit = {}) {
     ) {
         when (category) {
             SettingsCategory.GENERAL -> GeneralSettings()
-            SettingsCategory.CONTROL -> ControlSettings()
+            SettingsCategory.CONTROL -> ControlSettings(onOpenSetup = onOpenSetup)
             SettingsCategory.VISION -> VisionSettings()
-            SettingsCategory.RUN -> RunSettings()
-            SettingsCategory.UNLOCK -> UnlockSettingsPage()
+            SettingsCategory.RUN -> RunSettings(onOpenSetup = onOpenSetup)
+            SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
             SettingsCategory.ENV -> GlobalEnvSettings()
             SettingsCategory.STORAGE -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()

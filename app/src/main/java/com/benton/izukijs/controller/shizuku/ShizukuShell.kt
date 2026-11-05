@@ -3,6 +3,7 @@ package com.benton.izukijs.controller.shizuku
 import android.content.pm.PackageManager
 import com.benton.izukijs.controller.ShellResult
 import com.benton.izukijs.controller.shell.ShellRunner
+import com.benton.izukijs.controller.shell.readProcessOutput
 import rikka.shizuku.Shizuku
 
 /**
@@ -16,8 +17,7 @@ class ShizukuShell : ShellRunner {
 
     override fun run(command: String): ShellResult? = runCatching {
         val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-        val stdout = process.inputStream.bufferedReader().use { it.readText() }
-        val stderr = process.errorStream.bufferedReader().use { it.readText() }
+        val (stdout, stderr) = readProcessOutput(process)
         val code = process.waitFor()
         ShellResult(stdout, stderr, code)
     }.getOrNull()

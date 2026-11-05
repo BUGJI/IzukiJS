@@ -25,8 +25,8 @@ android {
         applicationId = "com.benton.izukijs"
         minSdk = 28
         targetSdk = 37
-        versionCode = 11
-        versionName = "1.1.9"
+        versionCode = 12
+        versionName = "1.1.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -124,6 +124,9 @@ dependencies {
     implementation(libs.timber)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
+    implementation(libs.libadb.android)
+    implementation(libs.bouncycastle.bcpkix)
+    implementation(libs.conscrypt.android)
     implementation(libs.opencv)
     implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.mlkit.barcode.scanning)

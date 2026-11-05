@@ -52,6 +52,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.benton.izukijs.R
+import com.benton.izukijs.ui.adb.AdbSetupScreen
 import com.benton.izukijs.ui.ai.AiAgentScreen
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SnackbarController
@@ -84,6 +85,7 @@ object Routes {
     const val SETUP = "setup"
     const val SCHEDULE = "schedule"
     const val HID = "hid"
+    const val ADB = "adb"
     const val AI = "ai"
     const val MCP = "mcp"
     const val VIRTUAL_SCREEN = "virtual_screen"
@@ -377,6 +379,12 @@ private fun DetailNavHost(
             SettingsDetailScreen(
                 categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
                 onBack = { navController.popBackStack() },
+                onOpenSetup = {
+                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
+                },
+                onOpenMcp = {
+                    navController.navigate(Routes.MCP) { launchSingleTop = true }
+                },
             )
         }
         composable(
@@ -401,6 +409,7 @@ private fun DetailNavHost(
             PermissionScreen(
                 onBack = { navController.popBackStack() },
                 onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
+                onOpenAdb = { navController.navigate(Routes.ADB) { launchSingleTop = true } },
                 onOpenUnlockSettings = {
                     navController.navigate(Routes.settingsDetail(SettingsCategory.UNLOCK)) {
                         launchSingleTop = true
@@ -414,11 +423,19 @@ private fun DetailNavHost(
         composable(Routes.HID) {
             HidSetupScreen(onBack = { navController.popBackStack() })
         }
+        composable(Routes.ADB) {
+            AdbSetupScreen(onBack = { navController.popBackStack() })
+        }
         composable(Routes.AI) {
             AiAgentScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.MCP) {
-            McpServerScreen(onBack = { navController.popBackStack() })
+            McpServerScreen(
+                onBack = { navController.popBackStack() },
+                onOpenSetup = {
+                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
+                },
+            )
         }
         composable(Routes.VIRTUAL_SCREEN) {
             VirtualScreenScreen(

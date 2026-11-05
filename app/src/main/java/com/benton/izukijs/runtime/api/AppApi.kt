@@ -74,15 +74,22 @@ class AppApi(
     }
 
     @JavascriptInterface
-    fun currentPackage(): String? {
-        if (usesVirtualScreen()) {
-            virtualScreen?.currentPackageBlocking()?.let { return it }
-        }
+    fun currentPackage(): String? =
+        if (usesVirtualScreen()) virtualPackage() else mainPackage()
+
+    /** 虚拟屏上的前台包名；虚拟屏未激活或读取失败返回 null，不回退到主屏。 */
+    fun virtualPackage(): String? =
+        virtualScreen?.takeIf { it.isActive() }?.currentPackageBlocking()
+
+    /** 主屏前台包名（无障碍 → dumpsys → 使用记录）。 */
+    fun mainPackage(): String? {
         IzukiAccessibilityService.instance?.currentPackage()?.let { return it }
         val output = shellExec("dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp'")
         FOCUS_REGEX.find(output.orEmpty())?.groupValues?.get(1)?.let { return it }
-        return foreground()
+        return usageForeground()
     }
+
+    fun virtualScreenActive(): Boolean = virtualScreen?.isActive() == true
 
     private fun usesVirtualScreen(): Boolean =
         virtualScreen?.let {
@@ -149,12 +156,13 @@ class AppApi(
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
-    /** 当前前台包名（按最近的前台事件推断）。需使用情况访问。 */
+    /** 当前目标屏的前台包名：虚拟屏目标下读虚拟屏，否则按最近的前台事件推断主屏。 */
     @JavascriptInterface
-    fun foreground(): String? {
-        if (usesVirtualScreen()) {
-            virtualScreen?.currentPackageBlocking()?.let { return it }
-        }
+    fun foreground(): String? =
+        if (usesVirtualScreen()) virtualPackage() else usageForeground()
+
+    /** 主屏当前前台包名（按最近的前台事件推断）。需使用情况访问。 */
+    private fun usageForeground(): String? {
         if (!hasUsageAccess()) return null
         return runCatching {
             val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null

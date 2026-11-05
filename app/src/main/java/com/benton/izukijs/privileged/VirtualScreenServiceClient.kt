@@ -138,11 +138,12 @@ class VirtualScreenServiceClient(
         height: Int,
         dpi: Int,
         surface: Surface,
+        showSystemDecorations: Boolean,
     ): Int? {
         if (!ensureConnected()) return null
         return withContext(Dispatchers.IO) {
             val current = serviceOrNull() ?: return@withContext null
-            runCatching { current.create(width, height, dpi, surface) }
+            runCatching { current.create(width, height, dpi, surface, showSystemDecorations) }
                 .onFailure { onCallFailure("create", it) }
                 .getOrNull()
                 ?.takeIf { it >= 0 }
@@ -174,6 +175,16 @@ class VirtualScreenServiceClient(
             val current = serviceOrNull() ?: return@withContext
             runCatching { current.destroyDisplay() }
                 .onFailure { onCallFailure("destroyDisplay", it) }
+        }
+    }
+
+    /** 轻量心跳：触发一次 binder 事务，避免 UserService 因长时间空闲被系统回收。 */
+    suspend fun ping(): Boolean {
+        val current = serviceOrNull() ?: return false
+        return withContext(Dispatchers.IO) {
+            runCatching { current.version() }
+                .onFailure { onCallFailure("ping", it) }
+                .isSuccess
         }
     }
 

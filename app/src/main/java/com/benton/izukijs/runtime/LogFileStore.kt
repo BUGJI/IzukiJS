@@ -2,6 +2,7 @@ package com.benton.izukijs.runtime
 
 import android.content.Context
 import com.benton.izukijs.core.log.LogEntry
+import com.benton.izukijs.core.log.LogLevel
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -77,6 +78,59 @@ class LogFileStore(
             }
         }.getOrDefault("")
     }
+
+    /**
+     * 按级别 / 时间 / 关键字过滤日志尾部。
+     *
+     * 只读取尾部 [QUERY_MAX_BYTES]，避免大日志整文件载入；过滤后仍按时间正序输出。
+     */
+    fun query(
+        maxLines: Int = 200,
+        level: String? = null,
+        since: Long = 0L,
+        grep: String? = null,
+    ): String = synchronized(lock) {
+        flushLocked()
+        if (!logFile.exists()) return ""
+        val minOrdinal = level?.trim()?.takeIf { it.isNotBlank() }
+            ?.let { name -> LogLevel.entries.firstOrNull { it.name.equals(name, ignoreCase = true) } }
+            ?.ordinal
+        runCatching {
+            RandomAccessFile(logFile, "r").use { raf ->
+                val length = raf.length()
+                val chunk = minOf(length, QUERY_MAX_BYTES).toInt()
+                val start = (length - chunk).coerceAtLeast(0L)
+                raf.seek(start)
+                val bytes = ByteArray((length - start).toInt())
+                raf.readFully(bytes)
+                var lines = String(bytes, Charsets.UTF_8).split('\n')
+                if (start > 0L && lines.size > 1) lines = lines.drop(1)
+                lines.asSequence()
+                    .mapNotNull { line -> line.toLogLine() }
+                    .filter { minOrdinal == null || it.level.ordinal >= minOrdinal }
+                    .filter { since <= 0L || it.time >= since }
+                    .filter { grep.isNullOrBlank() || it.message.contains(grep, ignoreCase = true) }
+                    .toList()
+                    .takeLast(maxLines.coerceIn(1, MAX_QUERY_LINES))
+                    .map { it.raw }
+                    .joinToString("\n")
+            }
+        }.getOrDefault("")
+    }
+
+    private fun String.toLogLine(): LogLine? {
+        val first = indexOf('|')
+        if (first <= 0) return null
+        val second = indexOf('|', first + 1)
+        if (second <= first) return null
+        val time = substring(0, first).toLongOrNull() ?: return null
+        val level = LogLevel.entries.firstOrNull {
+            it.name.equals(substring(first + 1, second), ignoreCase = true)
+        } ?: return null
+        return LogLine(time, level, substring(second + 1), this)
+    }
+
+    private data class LogLine(val time: Long, val level: LogLevel, val message: String, val raw: String)
 
     /** 将当前日志复制到 [destination]，用于分享/导出。 */
     fun exportTo(destination: File): Boolean = synchronized(lock) {
@@ -188,5 +242,10 @@ class LogFileStore(
 
         /** 资源读取日志尾部时的最大读取字节数。 */
         const val TAIL_MAX_BYTES = 64L * 1024L
+
+        /** 过滤查询时读取的尾部上限。 */
+        const val QUERY_MAX_BYTES = 256L * 1024L
+
+        const val MAX_QUERY_LINES = 2_000
     }
 }

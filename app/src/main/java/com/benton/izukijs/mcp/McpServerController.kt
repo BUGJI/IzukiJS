@@ -22,6 +22,7 @@ data class McpStatus(
     val addresses: List<String> = emptyList(),
     val sessions: Int = 0,
     val error: String? = null,
+    val needsLocalNetworkPermission: Boolean = false,
 )
 
 /**
@@ -37,6 +38,7 @@ class McpServerController(
     private val registryFactory: (OperationRegistry) -> McpToolRegistry,
     private val resourcesFactory: () -> McpResources,
     private val serverVersion: String,
+    private val localNetworkPermissionGranted: () -> Boolean,
 ) {
 
     private val _status = MutableStateFlow(McpStatus())
@@ -63,8 +65,15 @@ class McpServerController(
             _status.value = McpStatus(error = "未配置访问令牌")
             return
         }
+        if (config.bindMode == McpBindMode.LAN && !localNetworkPermissionGranted()) {
+            logBus.warn("MCP 局域网模式需要本地网络权限（Android 17+）")
+            _status.value = McpStatus(needsLocalNetworkPermission = true)
+            return
+        }
 
         val registry = registryFactory(operations)
+        // 先构建一次工具目录，避免客户端在 initialize 后立刻并发请求时承担冷启动开销。
+        registry.prewarm()
         val resources = resourcesFactory()
         val dispatcher = Executors.newSingleThreadExecutor { runnable ->
             Thread(runnable, "izuki-mcp-tools").apply { isDaemon = true }

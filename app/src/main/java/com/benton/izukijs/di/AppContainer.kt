@@ -9,6 +9,7 @@ import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.ControllerSettingsRepository
 import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.controller.UiautomatorDumper
+import com.benton.izukijs.controller.adb.AdbManager
 import com.benton.izukijs.controller.hid.HidManager
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
@@ -34,6 +35,7 @@ import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.permission.LocalNetworkPermission
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.runtime.RuntimeSettingsRepository
@@ -208,9 +210,17 @@ class AppContainer(private val application: Application) {
         )
     }
 
-    /** 读控件树：无障碍优先，Shizuku / Root 的 uiautomator dump 兜底。 */
-    private val nodeTreeProvider: () -> NodeTreeResult = {
-        UiautomatorDumper.read(controllerManager, logBus)
+    /** 读控件树：无障碍优先，Shizuku / 无线调试 / Root 的 uiautomator dump 兜底。 */
+    private val nodeTreeProvider: (Long) -> NodeTreeResult = { timeoutMs ->
+        UiautomatorDumper.read(
+            controllerManager,
+            logBus,
+            timeoutMs,
+        ) {
+            com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
+                capture = { screenCapture.capture() },
+            )
+        }
     }
 
     val mcpServerController = McpServerController(
@@ -227,6 +237,7 @@ class AppContainer(private val application: Application) {
                 logFileStore = logFileStore,
                 configProvider = { mcpConfigRepository.current() },
                 virtualScreen = virtualScreenManager,
+                screenUnlock = screenUnlockController,
             )
         },
         resourcesFactory = {
@@ -240,6 +251,7 @@ class AppContainer(private val application: Application) {
             )
         },
         serverVersion = BuildConfig.VERSION_NAME,
+        localNetworkPermissionGranted = { LocalNetworkPermission.isGranted(application) },
     )
 
     val shizukuManager = ShizukuManager(application, controllerManager, logBus)
@@ -247,6 +259,8 @@ class AppContainer(private val application: Application) {
     val rootManager = RootManager(application, controllerManager, logBus, appScope)
 
     val hidManager = HidManager(application, controllerManager, logBus, appScope)
+
+    val adbManager = AdbManager(application, controllerManager, logBus, appScope)
 
     val scheduleRepository = ScheduleRepository(application)
 
@@ -279,6 +293,7 @@ class AppContainer(private val application: Application) {
         shizukuManager.init()
         rootManager.init()
         hidManager.init()
+        adbManager.init()
         scheduleManager.start()
         // 控制偏好以持久化的 Repository 为唯一数据源，实时同步到内存中的 ControllerManager。
         appScope.launch {

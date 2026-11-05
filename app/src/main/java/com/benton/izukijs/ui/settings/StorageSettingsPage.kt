@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,6 +41,7 @@ internal fun StorageSettings() {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val logSettings = ui.logSettings
     var logFileSize by remember { mutableStateOf(0L) }
@@ -139,7 +141,7 @@ internal fun StorageSettings() {
                         shareFile(
                             context = context,
                             file = file,
-                            chooserTitle = context.getString(R.string.storage_export_log_chooser),
+                            chooserTitle = resources.getString(R.string.storage_export_log_chooser),
                         )
                     }
                 }

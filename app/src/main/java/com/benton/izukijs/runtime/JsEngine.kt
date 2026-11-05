@@ -221,7 +221,13 @@ class JsEngine(
                     deviceApi = deviceApi,
                     notificationApi = bundle.notificationApi,
                     screenshotPathProvider = { globalApi.captureScreen("") },
-                    nodeTreeProvider = { UiautomatorDumper.read(controllers, logBus) },
+                    nodeTreeProvider = { timeoutMs ->
+                        UiautomatorDumper.read(controllers, logBus, timeoutMs) {
+                            com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
+                                capture = { screenCapture.capture() },
+                            )
+                        }
+                    },
                     logBus = logBus,
                     isExitRequested = { exitRequested },
                 ),

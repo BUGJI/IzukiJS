@@ -70,15 +70,25 @@ class OcrApi(
                     put("y", block.y)
                     put("w", block.width)
                     put("h", block.height)
+                    put("left", block.left)
+                    put("top", block.top)
+                    put("right", block.right)
+                    put("bottom", block.bottom)
+                    if (block.suspicious) put("suspicious", true)
                     block.confidence?.let { put("conf", it) }
                 },
             )
         }
         val json = JSONObject().apply {
             put("text", result.text)
+            put("image", JSONObject().put("w", width).put("h", height))
             put("blocks", blocks)
         }
-        logBus.debug("OCR 结构化识别 → ${result.blocks.size} 块（${width}×$height）")
+        val suspicious = result.blocks.count { it.suspicious }
+        logBus.debug(
+            "OCR 结构化识别 → ${result.blocks.size} 块（${width}×$height）" +
+                if (suspicious > 0) "，$suspicious 块坐标已裁剪" else "",
+        )
         return json.toString()
     }
 
@@ -98,13 +108,16 @@ class OcrApi(
             return null
         }
 
-        val block = result.blocks.firstOrNull { it.text.contains(query) }
-        return if (block == null) {
+        // 先按行聚合再匹配：OCR 常把一句话切成多块，单块包含匹配会漏掉整句。
+        val lines = com.benton.izukijs.ocr.OcrLineSynthesis.synthesize(result.blocks)
+        val match = com.benton.izukijs.ocr.OcrMatcher.match(lines, query).firstOrNull()
+        return if (match == null) {
             logBus.debug("OCR 查找 \"$query\" → 未找到（共 ${result.blocks.size} 块）✗")
             null
         } else {
-            logBus.debug("OCR 查找 \"$query\" → (${block.x}, ${block.y}) ✓")
-            "${block.x},${block.y},${block.width},${block.height}"
+            val line = match.line
+            logBus.debug("OCR 查找 \"$query\" → (${line.x}, ${line.y}) ✓")
+            "${line.x},${line.y},${line.width},${line.height}"
         }
     }
 

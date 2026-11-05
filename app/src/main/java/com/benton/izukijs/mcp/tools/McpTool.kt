@@ -39,7 +39,19 @@ data class McpToolResult(
         fun text(value: String): McpToolResult = McpToolResult(listOf(McpContent.text(value)))
 
         fun error(message: String): McpToolResult =
-            McpToolResult(listOf(McpContent.text(message)), isError = true)
+            McpToolResult(
+                listOf(
+                    McpContent.text(
+                        JSONObject().apply {
+                            put("ok", false)
+                            put("stage", "tool")
+                            put("message", message)
+                            put("retryable", false)
+                        }.toString(),
+                    ),
+                ),
+                isError = true,
+            )
     }
 }
 
@@ -60,7 +72,21 @@ class McpTool(
 ) {
     fun call(arguments: JSONObject): McpToolResult =
         runCatching { handler(arguments) }
-            .getOrElse { McpToolResult.error("工具执行失败：${it.message ?: it.javaClass.simpleName}") }
+            .getOrElse { t ->
+                McpToolResult(
+                    listOf(
+                        McpContent.text(
+                            JSONObject().apply {
+                                put("ok", false)
+                                put("stage", "tool")
+                                put("error", t.message ?: t.javaClass.simpleName)
+                                put("retryable", false)
+                            }.toString(),
+                        ),
+                    ),
+                    isError = true,
+                )
+            }
 
     /** 序列化为 MCP `tools/list` 元素。 */
     fun toJson(): JSONObject = JSONObject().apply {

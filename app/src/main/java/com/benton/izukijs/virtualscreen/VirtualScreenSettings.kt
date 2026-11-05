@@ -61,6 +61,13 @@ data class VirtualScreenSettings(
     val pipOnHome: Boolean = true,
     /** 脚本结束时自动销毁本次脚本启动的虚拟屏；关闭后保留到手动或脚本销毁。 */
     val autoStopAfterRun: Boolean = true,
+    /**
+     * 虚拟屏是否尝试显示系统装饰（状态栏 / 导航栏 insets）。
+     *
+     * 依赖隐藏 flag VIRTUAL_DISPLAY_FLAG_SHOULD_SHOW_SYSTEM_DECORATIONS，部分 ROM 会忽略；
+     * 默认关闭，便于与旧行为对比。
+     */
+    val showSystemDecorations: Boolean = false,
 ) {
     val backgroundAllowed: Boolean get() = RunMode.BACKGROUND in allowedModes
 
@@ -76,6 +83,13 @@ data class VirtualScreenSettings(
     }
 }
 
+/** 虚拟屏上次运行状态；用于重启后给出停止原因。 */
+data class VirtualScreenRuntimeState(
+    val wasActive: Boolean = false,
+    val lastStopReason: String? = null,
+    val lastStopAt: Long = 0L,
+)
+
 /** SharedPreferences 持久化 + 内存缓存。 */
 class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<VirtualScreenSettings>(
     context = context,
@@ -84,6 +98,28 @@ class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<Virtua
 ) {
 
     val settings: StateFlow<VirtualScreenSettings> get() = state
+
+    fun runtimeState(): VirtualScreenRuntimeState = VirtualScreenRuntimeState(
+        wasActive = prefs.getBoolean(KEY_WAS_ACTIVE, false),
+        lastStopReason = prefs.getString(KEY_LAST_STOP_REASON, null),
+        lastStopAt = prefs.getLong(KEY_LAST_STOP_AT, 0L),
+    )
+
+    fun markActive(active: Boolean) {
+        prefs.edit().putBoolean(KEY_WAS_ACTIVE, active).apply()
+    }
+
+    fun saveResolution(resolution: VirtualScreenResolution) {
+        save(current().copy(resolution = resolution.normalized()))
+    }
+
+    fun recordStop(reason: String, atMillis: Long = System.currentTimeMillis()) {
+        prefs.edit()
+            .putBoolean(KEY_WAS_ACTIVE, false)
+            .putString(KEY_LAST_STOP_REASON, reason)
+            .putLong(KEY_LAST_STOP_AT, atMillis)
+            .apply()
+    }
 
     override fun normalize(value: VirtualScreenSettings): VirtualScreenSettings = value.normalized()
 
@@ -104,6 +140,7 @@ class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<Virtua
             resolution = resolution,
             pipOnHome = prefs.getBoolean(KEY_PIP_ON_HOME, true),
             autoStopAfterRun = prefs.getBoolean(KEY_AUTO_STOP_AFTER_RUN, true),
+            showSystemDecorations = prefs.getBoolean(KEY_SHOW_SYSTEM_DECORATIONS, false),
         ).normalized()
     }
 
@@ -116,6 +153,7 @@ class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<Virtua
             .putInt(KEY_DPI, value.resolution.dpi)
             .putBoolean(KEY_PIP_ON_HOME, value.pipOnHome)
             .putBoolean(KEY_AUTO_STOP_AFTER_RUN, value.autoStopAfterRun)
+            .putBoolean(KEY_SHOW_SYSTEM_DECORATIONS, value.showSystemDecorations)
     }
 
     private companion object {
@@ -127,5 +165,9 @@ class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<Virtua
         const val KEY_DPI = "dpi"
         const val KEY_PIP_ON_HOME = "pip_on_home"
         const val KEY_AUTO_STOP_AFTER_RUN = "auto_stop_after_run"
+        const val KEY_SHOW_SYSTEM_DECORATIONS = "show_system_decorations"
+        const val KEY_WAS_ACTIVE = "was_active"
+        const val KEY_LAST_STOP_REASON = "last_stop_reason"
+        const val KEY_LAST_STOP_AT = "last_stop_at"
     }
 }

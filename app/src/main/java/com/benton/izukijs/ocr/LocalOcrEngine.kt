@@ -27,10 +27,10 @@ class LocalOcrEngine {
                     blocks.add(
                         OcrBlock(
                             text = element.text,
-                            x = rect?.centerX() ?: 0,
-                            y = rect?.centerY() ?: 0,
-                            width = rect?.width() ?: 0,
-                            height = rect?.height() ?: 0,
+                            left = rect?.left ?: 0,
+                            top = rect?.top ?: 0,
+                            right = rect?.right ?: 0,
+                            bottom = rect?.bottom ?: 0,
                             confidence = element.confidence?.takeIf { it >= 0f }?.toDouble(),
                         ),
                     )

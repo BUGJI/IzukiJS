@@ -94,6 +94,7 @@ class McpServerService : Service() {
     private fun buildNotification(): Notification {
         val status = controller.status.value
         val text = when {
+            status.needsLocalNetworkPermission -> getString(R.string.mcp_lan_permission_required)
             status.error != null -> status.error
             status.addresses.isNotEmpty() -> status.addresses.first()
             else -> getString(R.string.mcp_notif_starting)

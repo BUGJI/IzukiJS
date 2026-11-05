@@ -81,7 +81,7 @@ internal fun BackupSettingsScreen() {
                         shareFile(
                             context = context,
                             file = file,
-                            chooserTitle = context.getString(R.string.storage_export_log_chooser),
+                            chooserTitle = resources.getString(R.string.storage_export_log_chooser),
                             subject = file.name,
                         )
                     } else {

@@ -9,6 +9,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -28,7 +29,7 @@ import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.appViewModel
 
 @Composable
-internal fun ControlSettings() {
+internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val controllerSettings = ui.controllerSettings
@@ -147,6 +148,10 @@ internal fun ControlSettings() {
                     },
                 )
             }
+        }
+        Spacer(Modifier.height(8.dp))
+        TextButton(onClick = onOpenSetup) {
+            Text(stringResource(R.string.ctrl_open_permissions))
         }
     }
 
