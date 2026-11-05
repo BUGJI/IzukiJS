@@ -34,6 +34,12 @@
 -keep class org.opencv.** { *; }
 -dontwarn org.opencv.**
 
+# ===== Conscrypt =====
+# 这些适配类引用的是 Android 平台内 / 旧版 Harmony 的实现类，打包时并不存在。
+-dontwarn org.conscrypt.**
+-dontwarn com.android.org.conscrypt.**
+-dontwarn org.apache.harmony.xnet.provider.jsse.**
+
 # ===== MLKit =====
 -keep class com.google.mlkit.** { *; }
 -keep class com.google.android.gms.internal.mlkit_** { *; }
