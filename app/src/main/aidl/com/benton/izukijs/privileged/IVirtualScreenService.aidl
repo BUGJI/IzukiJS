@@ -31,4 +31,7 @@ interface IVirtualScreenService {
 
     /** 虚拟屏当前前台包名；没有虚拟屏或读取失败返回 null。 */
     String currentPackage() = 6;
+
+    /** 最近一次 create 失败的真实原因；成功或尚未创建时返回 null。 */
+    String lastError() = 7;
 }

@@ -80,10 +80,12 @@ adb forward tcp:8765 tcp:8765
 
 | 工具 | 说明 |
 |---|---|
-| `screenshot` | 截图，返回图像块及 `{image_size, screen_size}`（带 region 时附 `region`）；可用 `scale` / `quality` / `region=[l,t,r,b]` / `format=jpeg\|webp` 控制体积 |
-| `ocr` | 识别整屏文字，返回结构化文本块（含中心坐标 x/y、宽高、置信度）。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证 |
-| `ui_dump` | 控件树（无障碍优先；Shizuku / Root 下走 `uiautomator dump` 兜底） |
-| `find` | 查找元素并返回匹配项（中心坐标 + 边界）；`text` 模糊匹配，或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证） |
+| `virtual_screen` | 后台虚拟屏：`action=start\|stop\|status\|capture\|launch`。`start` 可传 `width` / `height` / `dpi`，`capture` 返回虚拟屏图像块，`launch` 按 `package` 拉起应用。每次调用自带 target，不改变脚本的全局操作目标 |
+| `virtual_screen_input` | 在虚拟屏上输入：`action=tap\|long_press\|swipe\|key`；坐标使用相对虚拟屏的 0~1 归一化值，`key` 支持 back / home / recents / enter / esc 或键码 |
+| `screenshot` | 截图，返回图像块及 `{image_size, screen_size}`（带 region 时附 `region`）；可用 `scale` / `quality` / `region=[l,t,r,b]` / `format=jpeg\|webp` 控制体积，`target=auto\|main\|virtual` 选择目标屏（默认 auto） |
+| `ocr` | 识别整屏文字，返回结构化文本块（含中心坐标 x/y、宽高、置信度）。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证。`target=virtual` 可识别后台虚拟屏 |
+| `ui_dump` | 控件树（无障碍优先；Shizuku / Root 下走 `uiautomator dump` 兜底）。`target=virtual` 会明确返回「虚拟屏不支持控件树」 |
+| `find` | 查找元素并返回匹配项（中心坐标 + 边界）；`text` 模糊匹配，或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证）。`target=virtual` 暂不支持，请改用 `ocr(target=virtual)` + 坐标输入 |
 | `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true` |
 | `swipe` | 滑动（支持 `normalized`） |
 | `gesture` | 复杂轨迹（曲线 / 多段 / 多指 / 停顿） |

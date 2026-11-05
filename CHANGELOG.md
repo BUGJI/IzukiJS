@@ -7,6 +7,22 @@
 
 ## [未发布]
 
+## [1.1.9] - 2026-11-05
+
+### 新增
+
+- MCP 新增 `virtual_screen` 与 `virtual_screen_input` 工具：支持启动 / 停止 / 查询状态 / 截图 /
+  启动应用，并在后台虚拟屏上点击、滑动、按键，调用不会改变脚本的全局操作目标。
+- MCP 的截图、OCR 与点击支持 `target=auto|main|virtual`，可按需截取并识别后台虚拟屏；
+  虚拟屏不支持控件树时明确提示改用 `ocr` / 坐标输入。
+- 虚拟屏新增按键输入能力。
+
+### 修复
+
+- 修复脚本 `virtualScreen.awaitFrame` 因 JS 层函数重名而递归调用自身的问题。
+- 虚拟屏创建失败时透传底层真实原因，并补充 flag 组合与 DisplayManager 包名 / uid 解析，
+  提升 Shizuku 下发虚拟屏在部分 ROM 上的创建成功率。
+
 ## [1.1.8] - 2026-11-04
 
 ### 新增
@@ -281,7 +297,8 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.8...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.9...HEAD
+[1.1.9]: https://github.com/BUGJI/IzukiJS/compare/v1.1.8...v1.1.9
 [1.1.8]: https://github.com/BUGJI/IzukiJS/compare/v1.1.7...v1.1.8
 [1.1.3]: https://github.com/BUGJI/IzukiJS/compare/v1.1.1...v1.1.3
 [1.1.1]: https://github.com/BUGJI/IzukiJS/compare/v1.1.0...v1.1.1

@@ -1,6 +1,8 @@
 package com.benton.izukijs.mcp.tools
 
+import android.graphics.Bitmap
 import android.graphics.Rect
+import android.view.KeyEvent
 import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.ai.ShellGuard
 import com.benton.izukijs.controller.NodeTreeResult
@@ -10,8 +12,14 @@ import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
+import com.benton.izukijs.virtualscreen.ScreenTarget
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
+import com.benton.izukijs.virtualscreen.VirtualScreenOptions
+import com.benton.izukijs.virtualscreen.VirtualScreenResolution
+import com.benton.izukijs.virtualscreen.VirtualScreenState
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,6 +41,7 @@ class McpToolRegistry(
     private val operations: OperationRegistry,
     private val logFileStore: LogFileStore,
     private val configProvider: () -> McpConfig,
+    private val virtualScreen: VirtualScreenManager? = null,
 ) {
 
     @Volatile
@@ -72,6 +81,10 @@ class McpToolRegistry(
         return buildList {
             addAll(sharedTools(agentTools, config))
             add(screenshotTool())
+            virtualScreen?.let { manager ->
+                add(virtualScreenTool(manager, config))
+                add(virtualScreenInputTool(manager))
+            }
             add(readLogsTool())
             add(getResultTool())
             add(listOperationsTool())
@@ -88,10 +101,24 @@ class McpToolRegistry(
                 McpTool(
                     name = spec.name,
                     description = spec.description,
-                    inputSchema = spec.parameters,
+                    inputSchema = if (spec.name in TARGETED_SHARED) {
+                        withTargetParam(spec.parameters)
+                    } else {
+                        spec.parameters
+                    },
                     readOnly = spec.name in READ_ONLY_SHARED,
                 ) { args -> runShared(agentTools, config, spec.name, args) }
             }
+
+    /** MCP 侧额外支持 per-call `target=main|virtual` 的共用工具。 */
+    private fun withTargetParam(schema: JSONObject): JSONObject {
+        val copy = JSONObject(schema.toString())
+        copy.getJSONObject("properties").put(
+            "target",
+            McpSchemas.enum("读取目标屏幕；省略时跟随当前脚本目标", listOf("main", "virtual")),
+        )
+        return copy
+    }
 
     /** 共用工具的执行入口，叠加安全护栏（危险 shell / 敏感 App 启动）。 */
     private fun runShared(
@@ -100,6 +127,17 @@ class McpToolRegistry(
         name: String,
         args: JSONObject,
     ): McpToolResult {
+        if (args.optString("target").equals("virtual", ignoreCase = true)) {
+            when (name) {
+                "ocr" -> return virtualOcr()
+                "ui_dump" -> return McpToolResult.error(
+                    "后台虚拟屏不支持控件树，请改用 images / ocr / 坐标输入",
+                )
+                "find" -> return McpToolResult.error(
+                    "虚拟屏暂不支持 find，请先用 ocr(target=virtual) 获取文字坐标，再按坐标输入",
+                )
+            }
+        }
         when (name) {
             "shell" -> {
                 if (!config.allowDangerousShell) {
@@ -118,6 +156,14 @@ class McpToolRegistry(
             }
         }
         return McpToolResult.text(agentTools.execute(name, args.toString()))
+    }
+
+    private fun virtualOcr(): McpToolResult {
+        val bitmap = bundle.captureProvider(ScreenTarget.VIRTUAL, CAPTURE_WAIT_MS)
+            ?: return McpToolResult.error("虚拟屏未运行或暂无可用的画面帧，请先启动虚拟屏")
+        val json = bundle.ocrApi.recognizeBlocksJson(bitmap)
+            ?: return McpToolResult.error("OCR 未识别到文字")
+        return McpToolResult.text(json)
     }
 
     private fun blocked(message: String): McpToolResult = McpToolResult.text(
@@ -148,10 +194,15 @@ class McpToolRegistry(
         name = "screenshot",
         description = "捕获当前屏幕，返回一张图像，并附带 image_size（图像像素）与 " +
             "screen_size（真实屏幕像素）。可用 `scale` 缩小、`region=[l,t,r,b]` 只截局部、`format` 选 " +
-            "jpeg/webp。注意 click 使用 screen_size 坐标系，或直接用 normalized 坐标，避免按 " +
-            "image_size 误算；带 region 时请改用屏幕像素坐标。",
+            "jpeg/webp。`target` 可选择 auto / main / virtual，按需截取后台虚拟屏。注意 click 使用 " +
+            "screen_size 坐标系，或直接用 normalized 坐标，避免按 image_size 误算；带 region 时" +
+            "请改用屏幕像素坐标。",
         inputSchema = McpSchemas.objectSchema(
             mapOf(
+                "target" to McpSchemas.enum(
+                    "截图目标屏幕；默认 auto（跟随当前脚本目标）",
+                    listOf("auto", "main", "virtual"),
+                ),
                 "scale" to McpSchemas.number("缩放比例 0.1~1，默认 1（原图）"),
                 "quality" to McpSchemas.integer("压缩质量 1~100，默认 90"),
                 "region" to McpSchemas.intArray("裁剪区域 [left,top,right,bottom]（屏幕像素），省略为整屏"),
@@ -160,8 +211,19 @@ class McpToolRegistry(
         ),
         readOnly = true,
     ) { args ->
-        val source = bundle.screenshotProvider()
-            ?: return@McpTool McpToolResult.error("截图失败：无可用截图后端（需屏幕捕获 / 无障碍 / Shizuku / Root）")
+        val target = ScreenTarget.from(args.optString("target")) ?: ScreenTarget.AUTO
+        val source = bundle.captureProvider(target, CAPTURE_WAIT_MS)
+            ?: return@McpTool McpToolResult.error(
+                if (target == ScreenTarget.VIRTUAL) {
+                    "虚拟屏未运行或暂无可用的画面帧，请先启动虚拟屏"
+                } else {
+                    "截图失败：无可用截图后端（需屏幕捕获 / 无障碍 / Shizuku / Root）"
+                },
+            )
+        encodeCapture(source, args)
+    }
+
+    private fun encodeCapture(source: Bitmap, args: JSONObject): McpToolResult {
         val scale = args.optDouble("scale", 1.0).coerceIn(0.1, 1.0)
         val quality = args.optInt("quality", 90).coerceIn(1, 100)
         val region = args.optJSONArray("region")?.let { array ->
@@ -183,7 +245,7 @@ class McpToolRegistry(
             put("screen_size", sizeOf(encoded.screenWidth, encoded.screenHeight))
             encoded.region?.let { put("region", JSONArray(it)) }
         }
-        McpToolResult(
+        return McpToolResult(
             listOf(
                 McpContent.image(encoded.base64, encoded.mimeType),
                 McpContent.text(meta.toString()),
@@ -193,6 +255,230 @@ class McpToolRegistry(
 
     private fun sizeOf(width: Int, height: Int): JSONObject =
         JSONObject().put("w", width).put("h", height)
+
+    // ---- 后台虚拟屏 ----
+
+    private fun virtualScreenTool(
+        manager: VirtualScreenManager,
+        config: McpConfig,
+    ): McpTool = McpTool(
+        name = "virtual_screen",
+        description = "后台虚拟屏：start / stop / status / capture / launch。每次调用自带 target，" +
+            "不会改变脚本的全局操作目标。capture 返回图像内容块；虚拟屏不支持 ui_dump / " +
+            "find(source=ui)，请改用 capture / ocr / 坐标输入。",
+        inputSchema = McpSchemas.objectSchema(
+            mapOf(
+                "action" to McpSchemas.enum(
+                    "操作",
+                    listOf("start", "stop", "status", "capture", "launch"),
+                ),
+                "width" to McpSchemas.integer("start 时的宽度，默认取设置"),
+                "height" to McpSchemas.integer("start 时的高度，默认取设置"),
+                "dpi" to McpSchemas.integer("start 时的密度，默认取设置"),
+                "package" to McpSchemas.string("launch 时的应用包名"),
+                "scale" to McpSchemas.number("capture 缩放比例 0.1~1，默认 1"),
+                "quality" to McpSchemas.integer("capture 压缩质量 1~100，默认 90"),
+                "region" to McpSchemas.intArray("capture 裁剪区域 [l,t,r,b]（虚拟屏像素）"),
+                "format" to McpSchemas.enum("capture 图像格式", listOf("jpeg", "webp")),
+            ),
+            required = listOf("action"),
+        ),
+    ) { args ->
+        when (val action = args.optString("action", "status")) {
+            "start" -> {
+                val base = manager.configuredResolution()
+                val options = VirtualScreenOptions(
+                    VirtualScreenResolution(
+                        width = args.optInt("width", base.width),
+                        height = args.optInt("height", base.height),
+                        dpi = args.optInt("dpi", base.dpi),
+                    ).normalized(),
+                )
+                val ok = manager.startBlocking(options)
+                McpToolResult.text(
+                    virtualScreenStateJson(manager).put("ok", ok).toString(),
+                )
+            }
+
+            "stop" -> {
+                manager.stopBlocking()
+                McpToolResult.text(
+                    virtualScreenStateJson(manager).put("ok", true).toString(),
+                )
+            }
+
+            "status" -> McpToolResult.text(virtualScreenStateJson(manager).toString())
+
+            "capture" -> {
+                if (!manager.isActive()) {
+                    return@McpTool McpToolResult.error("虚拟屏未运行，请先执行 action=start")
+                }
+                val source = bundle.captureProvider(ScreenTarget.VIRTUAL, CAPTURE_WAIT_MS)
+                    ?: return@McpTool McpToolResult.error("虚拟屏暂无可用的画面帧，请稍后重试")
+                encodeCapture(source, args)
+            }
+
+            "launch" -> {
+                val packageName = args.optString("package").trim()
+                if (packageName.isEmpty()) {
+                    return@McpTool McpToolResult.error("action=launch 需要 package")
+                }
+                if (!manager.isActive()) {
+                    return@McpTool McpToolResult.error("虚拟屏未运行，请先执行 action=start")
+                }
+                if (config.isPackageBlocked(packageName)) {
+                    return@McpTool blocked("目标应用 $packageName 在敏感应用黑名单中，已拒绝启动")
+                }
+                val ok = manager.launchBlocking(packageName)
+                McpToolResult.text(
+                    JSONObject()
+                        .put("ok", ok)
+                        .put("package", packageName)
+                        .put("displayId", manager.displayId())
+                        .toString(),
+                )
+            }
+
+            else -> McpToolResult.error("未知 action：$action")
+        }
+    }
+
+    private fun virtualScreenInputTool(manager: VirtualScreenManager): McpTool = McpTool(
+        name = "virtual_screen_input",
+        description = "在后台虚拟屏上输入。坐标为相对虚拟屏的 0~1 归一化值；不会改变脚本的" +
+            "全局操作目标。action=key 时 key 可为 back / home / recents / enter / esc 或键码。",
+        inputSchema = McpSchemas.objectSchema(
+            mapOf(
+                "action" to McpSchemas.enum(
+                    "操作",
+                    listOf("tap", "long_press", "swipe", "key"),
+                ),
+                "x" to McpSchemas.number("tap / long_press 的归一化 x（0~1）"),
+                "y" to McpSchemas.number("tap / long_press 的归一化 y（0~1）"),
+                "x1" to McpSchemas.number("swipe 起点归一化 x（0~1）"),
+                "y1" to McpSchemas.number("swipe 起点归一化 y（0~1）"),
+                "x2" to McpSchemas.number("swipe 终点归一化 x（0~1）"),
+                "y2" to McpSchemas.number("swipe 终点归一化 y（0~1）"),
+                "duration_ms" to McpSchemas.integer("长按 / 滑动时长（毫秒），默认 600 / 300"),
+                "key" to McpSchemas.string("按键：back / home / recents / enter / esc 或键码"),
+            ),
+            required = listOf("action"),
+        ),
+    ) { args ->
+        if (!manager.isActive()) {
+            return@McpTool McpToolResult.error("虚拟屏未运行，请先执行 virtual_screen action=start")
+        }
+        val size = manager.size()
+            ?: return@McpTool McpToolResult.error("虚拟屏分辨率不可用")
+        when (val action = args.optString("action")) {
+            "tap", "long_press" -> {
+                val x = normalizedCoordinate(args, "x")
+                val y = normalizedCoordinate(args, "y")
+                if (x == null || y == null) {
+                    return@McpTool McpToolResult.error("$action 需要 0~1 的 x / y")
+                }
+                val px = (x * size.width).toFloat()
+                val py = (y * size.height).toFloat()
+                val duration = args.optInt("duration_ms", if (action == "tap") 300 else 600)
+                val ok = runBlocking {
+                    if (action == "tap") {
+                        manager.tap(px, py)
+                    } else {
+                        manager.longPress(px, py, duration.toLong())
+                    }
+                }
+                McpToolResult.text(
+                    JSONObject()
+                        .put("ok", ok)
+                        .put("action", action)
+                        .put("x", px.toInt())
+                        .put("y", py.toInt())
+                        .toString(),
+                )
+            }
+
+            "swipe" -> {
+                val x1 = normalizedCoordinate(args, "x1")
+                val y1 = normalizedCoordinate(args, "y1")
+                val x2 = normalizedCoordinate(args, "x2")
+                val y2 = normalizedCoordinate(args, "y2")
+                if (x1 == null || y1 == null || x2 == null || y2 == null) {
+                    return@McpTool McpToolResult.error("swipe 需要 0~1 的 x1 / y1 / x2 / y2")
+                }
+                val duration = args.optInt("duration_ms", 300)
+                val ok = runBlocking {
+                    manager.swipe(
+                        (x1 * size.width).toFloat(),
+                        (y1 * size.height).toFloat(),
+                        (x2 * size.width).toFloat(),
+                        (y2 * size.height).toFloat(),
+                        duration.toLong(),
+                    )
+                }
+                McpToolResult.text(
+                    JSONObject()
+                        .put("ok", ok)
+                        .put("action", "swipe")
+                        .put("duration_ms", duration)
+                        .toString(),
+                )
+            }
+
+            "key" -> {
+                val keyCode = keyCode(args.optString("key"))
+                    ?: return@McpTool McpToolResult.error("无法识别的按键：${args.optString("key")}")
+                val ok = runBlocking { manager.key(keyCode) }
+                McpToolResult.text(
+                    JSONObject()
+                        .put("ok", ok)
+                        .put("action", "key")
+                        .put("key_code", keyCode)
+                        .toString(),
+                )
+            }
+
+            else -> McpToolResult.error("未知 action：$action")
+        }
+    }
+
+    private fun virtualScreenStateJson(manager: VirtualScreenManager): JSONObject {
+        val state = manager.state.value
+        val resolution = manager.size() ?: manager.configuredResolution()
+        return JSONObject().apply {
+            put("available", manager.available())
+            put("active", manager.isActive())
+            put("displayId", manager.displayId())
+            put("target", manager.target().displayName())
+            put("resolvedTarget", manager.resolvedTarget().displayName())
+            put("frameSeq", manager.frameSeq())
+            put("canCapture", manager.canCapture())
+            put("width", resolution.width)
+            put("height", resolution.height)
+            put("dpi", resolution.dpi)
+            put("state", when (state) {
+                VirtualScreenState.Idle -> "idle"
+                VirtualScreenState.Starting -> "starting"
+                is VirtualScreenState.Active -> "active"
+                is VirtualScreenState.Failed -> "failed"
+            })
+            if (state is VirtualScreenState.Failed) put("message", state.message)
+        }
+    }
+
+    private fun normalizedCoordinate(args: JSONObject, name: String): Double? {
+        if (!args.has(name)) return null
+        val value = args.optDouble(name, Double.NaN)
+        return value.takeIf { it.isFinite() && it in 0.0..1.0 }
+    }
+
+    private fun keyCode(raw: String): Int? = when (raw.trim().lowercase()) {
+        "back" -> KeyEvent.KEYCODE_BACK
+        "home" -> KeyEvent.KEYCODE_HOME
+        "recents", "recent", "app_switch" -> KeyEvent.KEYCODE_APP_SWITCH
+        "enter" -> KeyEvent.KEYCODE_ENTER
+        "esc", "escape" -> KeyEvent.KEYCODE_ESCAPE
+        else -> raw.trim().toIntOrNull()
+    }
 
     // ---- 异步结果查询（绕过设备队列，直接执行） ----
 
@@ -389,6 +675,7 @@ class McpToolRegistry(
 
     private companion object {
         const val MAX_SCRIPT_BYTES = 1024 * 1024
+        const val CAPTURE_WAIT_MS = 1_000L
 
         val READ_ONLY_SHARED = setOf(
             "ocr",
@@ -397,5 +684,7 @@ class McpToolRegistry(
             "info",
             "notifications",
         )
+
+        val TARGETED_SHARED = setOf("ocr", "ui_dump", "find")
     }
 }

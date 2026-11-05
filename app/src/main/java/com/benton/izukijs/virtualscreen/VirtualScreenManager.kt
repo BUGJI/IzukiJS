@@ -198,7 +198,14 @@ class VirtualScreenManager(
         }
         if (displayId == null || displayId < 0) {
             source.close()
-            fail("虚拟屏创建失败，请检查 Shizuku 权限或 ROM 限制")
+            val detail = client.lastError()
+            fail(
+                if (detail != null) {
+                    "虚拟屏创建失败：$detail"
+                } else {
+                    "虚拟屏创建失败，请检查 Shizuku 权限或 ROM 限制"
+                },
+            )
             return@withLock false
         }
 
@@ -298,6 +305,9 @@ class VirtualScreenManager(
         "input -d $id swipe ${x1.toInt()} ${y1.toInt()} " +
             "${x2.toInt()} ${y2.toInt()} ${durationMs.coerceIn(1L, MAX_INPUT_DURATION_MS)}"
     }
+
+    suspend fun key(keyCode: Int): Boolean =
+        inputCommand { id -> "input -d $id keyevent $keyCode" }
 
     private suspend fun inputCommand(build: (displayId: Int) -> String): Boolean =
         withContext(Dispatchers.IO) {

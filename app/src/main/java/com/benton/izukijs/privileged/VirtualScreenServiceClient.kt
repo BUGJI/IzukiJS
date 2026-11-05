@@ -149,6 +149,16 @@ class VirtualScreenServiceClient(
         }
     }
 
+    suspend fun lastError(): String? {
+        val current = serviceOrNull() ?: return null
+        return withContext(Dispatchers.IO) {
+            runCatching { current.lastError() }
+                .onFailure { onCallFailure("lastError", it) }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+        }
+    }
+
     suspend fun launch(intent: Intent, forceStopIfElsewhere: Boolean): Boolean? {
         if (!ensureConnected()) return null
         return withContext(Dispatchers.IO) {

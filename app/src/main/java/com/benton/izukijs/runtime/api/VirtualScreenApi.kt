@@ -82,7 +82,7 @@ class VirtualScreenApi(
     }
 
     @JavascriptInterface
-    fun awaitFrame(timeoutMs: Int): Boolean =
+    fun awaitFrameRaw(timeoutMs: Int): Boolean =
         manager.awaitFrame(timeoutMs.toLong().coerceAtLeast(0L))
 
     /** 直接捕获当前目标屏并保存；[source] 缺省为 virtual。 */

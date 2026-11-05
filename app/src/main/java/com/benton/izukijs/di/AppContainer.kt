@@ -226,6 +226,7 @@ class AppContainer(private val application: Application) {
                 operations = operations,
                 logFileStore = logFileStore,
                 configProvider = { mcpConfigRepository.current() },
+                virtualScreen = virtualScreenManager,
             )
         },
         resourcesFactory = {

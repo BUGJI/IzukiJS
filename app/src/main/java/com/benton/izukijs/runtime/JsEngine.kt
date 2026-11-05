@@ -294,7 +294,7 @@ class JsEngine(
                   return virtualScreen.setTargetRaw(String(value));
                 };
                 virtualScreen.awaitFrame = function (timeoutMs) {
-                  return virtualScreen.awaitFrame(timeoutMs == null ? 1000 : timeoutMs);
+                  return virtualScreen.awaitFrameRaw(timeoutMs == null ? 1000 : timeoutMs);
                 };
                 virtualScreen.capture = function (path, source) {
                   return virtualScreen.captureRaw(

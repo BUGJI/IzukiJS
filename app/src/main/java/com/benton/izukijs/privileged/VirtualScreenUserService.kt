@@ -21,6 +21,9 @@ class VirtualScreenUserService : IVirtualScreenService.Stub {
     private var serviceContext: Context? = null
     private var display: PrivilegedVirtualDisplay? = null
 
+    @Volatile
+    private var serviceError: String? = null
+
     constructor() {
         serviceContext = SystemContext.get()
     }
@@ -35,14 +38,28 @@ class VirtualScreenUserService : IVirtualScreenService.Stub {
             "pid=${Process.myPid()} uid=${Process.myUid()}"
 
     override fun create(width: Int, height: Int, dpi: Int, captureSurface: Surface?): Int {
+        serviceError = null
         val ctx = serviceContext ?: SystemContext.get()
         if (ctx == null || captureSurface == null) {
+            serviceError = "缺少 Context 或采集 Surface"
             PrivilegedLog.e("create: missing context or surface")
             return -1
         }
         val target = display ?: PrivilegedVirtualDisplay(ctx).also { display = it }
-        return target.create(width, height, dpi, captureSurface)
+        return runCatching { target.create(width, height, dpi, captureSurface) }
+            .getOrElse { throwable ->
+                serviceError = throwable.message ?: throwable.javaClass.name
+                PrivilegedLog.e("create failed", throwable)
+                -1
+            }
+            .also { displayId ->
+                if (displayId < 0) {
+                    serviceError = target.lastError ?: serviceError ?: "createVirtualDisplay failed"
+                }
+            }
     }
+
+    override fun lastError(): String? = serviceError ?: display?.lastError
 
     override fun displayId(): Int = display?.displayId() ?: -1
 

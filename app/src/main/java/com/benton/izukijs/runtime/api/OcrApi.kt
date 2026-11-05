@@ -49,10 +49,17 @@ class OcrApi(
             logBus.warn("OCR 识别失败：无法获取屏幕截图")
             return null
         }
+        return recognizeBlocksJson(bitmap)
+    }
+
+    /** 识别指定图像（调用方转移所有权，本方法负责 recycle）。供 MCP 按 target 识别虚拟屏。 */
+    fun recognizeBlocksJson(source: Bitmap): String? {
+        val width = source.width
+        val height = source.height
         val result = try {
-            ocrProcessor.recognize(bitmap)
+            ocrProcessor.recognize(source)
         } finally {
-            bitmap.recycle()
+            source.recycle()
         } ?: return null
         val blocks = JSONArray()
         result.blocks.forEach { block ->
@@ -71,7 +78,7 @@ class OcrApi(
             put("text", result.text)
             put("blocks", blocks)
         }
-        logBus.debug("OCR 结构化识别 → ${result.blocks.size} 块（${bitmap.width}×${bitmap.height}）")
+        logBus.debug("OCR 结构化识别 → ${result.blocks.size} 块（${width}×$height）")
         return json.toString()
     }
 

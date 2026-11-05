@@ -5,11 +5,13 @@ import android.app.ActivityManager
 import android.app.ActivityOptions
 import android.content.ComponentName
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.view.Surface
 import java.lang.reflect.Method
 
@@ -29,41 +31,52 @@ internal class PrivilegedVirtualDisplay(
     @Volatile
     private var currentDisplayId: Int = DISPLAY_NONE
 
+    /** 最近一次 create 失败的真实原因，供 App 侧透传。 */
+    @Volatile
+    var lastError: String? = null
+        private set
+
+    @Volatile
+    private var displayManager: DisplayManager? = null
+
     @SuppressLint("WrongConstant")
     @Synchronized
     fun create(width: Int, height: Int, dpi: Int, surface: Surface): Int {
         destroy()
-        val manager = context.getSystemService(DisplayManager::class.java)
+        lastError = null
+        val manager = obtainDisplayManager()
             ?: return fail("DisplayManager unavailable")
-        val flags = buildDisplayFlags()
-        val display = runCatching {
-            manager.createVirtualDisplay(VD_NAME, width, height, dpi, surface, flags)
-        }.getOrElse { first ->
-            PrivilegedLog.w("createVirtualDisplay(flags=0x${flags.toString(16)}) failed", first)
-            runCatching {
-                manager.createVirtualDisplay(
-                    VD_NAME,
-                    width,
-                    height,
-                    dpi,
-                    surface,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
-                        DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
-                        DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
-                        FLAG_SUPPORTS_TOUCH,
-                )
-            }.getOrElse { second ->
-                PrivilegedLog.e("createVirtualDisplay fallback failed", second)
-                return fail(second.message ?: "createVirtualDisplay failed")
-            }
-        }
-        virtualDisplay = display
-        currentDisplayId = display.display.displayId
-        applyDisplayTweaks(currentDisplayId)
-        PrivilegedLog.i(
-            "Virtual display created: id=$currentDisplayId ${width}x$height@$dpi flags=0x${flags.toString(16)}",
+        var primaryError: String? = null
+        val attempts = listOf(
+            "preferred" to buildPreferredDisplayFlags(),
+            "legacy" to buildLegacyDisplayFlags(),
         )
-        return currentDisplayId
+        for ((label, flags) in attempts) {
+            val outcome = runCatching {
+                manager.createVirtualDisplay(VD_NAME, width, height, dpi, surface, flags)
+            }
+            val display = outcome.getOrNull()
+            if (display != null) {
+                virtualDisplay = display
+                currentDisplayId = display.display.displayId
+                applyDisplayTweaks(currentDisplayId)
+                PrivilegedLog.i(
+                    "Virtual display created: id=$currentDisplayId ${width}x$height@$dpi " +
+                        "flags=0x${flags.toString(16)} ($label)",
+                )
+                return currentDisplayId
+            }
+            val throwable = outcome.exceptionOrNull()
+            val message = throwable?.let {
+                "${it.javaClass.simpleName}: ${it.message ?: it.javaClass.name}"
+            } ?: "createVirtualDisplay returned null"
+            PrivilegedLog.w(
+                "createVirtualDisplay($label flags=0x${flags.toString(16)}) failed: $message",
+                throwable,
+            )
+            if (primaryError == null) primaryError = message
+        }
+        return fail(primaryError ?: "createVirtualDisplay failed")
     }
 
     fun displayId(): Int = currentDisplayId
@@ -203,7 +216,32 @@ internal class PrivilegedVirtualDisplay(
         }
     }
 
-    private fun buildDisplayFlags(): Int {
+    /**
+     * 与已验证可用的后台虚拟屏配置对齐：不设 FLAG_PUBLIC，且不与
+     * FLAG_OWN_DISPLAY_GROUP 同时使用互斥的 FLAG_DEVICE_DISPLAY_GROUP。
+     */
+    private fun buildPreferredDisplayFlags(): Int {
+        var flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
+            FLAG_SUPPORTS_TOUCH or
+            FLAG_DESTROY_CONTENT_ON_REMOVAL
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            flags = flags or
+                FLAG_TRUSTED or
+                FLAG_OWN_DISPLAY_GROUP or
+                FLAG_ALWAYS_UNLOCKED or
+                FLAG_TOUCH_FEEDBACK_DISABLED
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                flags = flags or
+                    FLAG_OWN_FOCUS or
+                    FLAG_STEAL_TOP_FOCUS_DISABLED
+            }
+        }
+        return flags
+    }
+
+    /** 兼容旧 ROM 的回退组合；仍使用按 uid 修正后的 DisplayManager。 */
+    private fun buildLegacyDisplayFlags(): Int {
         var flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
@@ -218,14 +256,53 @@ internal class PrivilegedVirtualDisplay(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 flags = flags or
                     FLAG_OWN_FOCUS or
-                    FLAG_DEVICE_DISPLAY_GROUP or
                     FLAG_STEAL_TOP_FOCUS_DISABLED
             }
         }
         return flags
     }
 
+    private fun obtainDisplayManager(): DisplayManager? {
+        displayManager?.let { return it }
+        val uid = Process.myUid()
+        val packages = runCatching { context.packageManager.getPackagesForUid(uid) }
+            .getOrNull()
+            ?.toList()
+        val packageName = DisplayPackageResolver.resolve(uid, packages, context.packageName)
+        val manager = if (packageName == context.packageName) {
+            context.getSystemService(DisplayManager::class.java)
+        } else {
+            createPackageDisplayManager(packageName) ?: createWrappedDisplayManager(packageName)
+        } ?: context.getSystemService(DisplayManager::class.java)
+        displayManager = manager
+        if (manager != null) {
+            PrivilegedLog.i("DisplayManager package=$packageName uid=$uid")
+        }
+        return manager
+    }
+
+    private fun createPackageDisplayManager(packageName: String): DisplayManager? = runCatching {
+        context.createPackageContext(packageName, 0)
+            .getSystemService(DisplayManager::class.java)
+    }.onFailure {
+        PrivilegedLog.w("createPackageContext($packageName) failed: ${it.message}")
+    }.getOrNull()
+
+    private fun createWrappedDisplayManager(packageName: String): DisplayManager? = runCatching {
+        val wrapped = object : ContextWrapper(context) {
+            override fun getPackageName(): String = packageName
+
+            override fun getOpPackageName(): String = packageName
+        }
+        val constructor = DisplayManager::class.java.getDeclaredConstructor(Context::class.java)
+        constructor.isAccessible = true
+        constructor.newInstance(wrapped) as DisplayManager
+    }.onFailure {
+        PrivilegedLog.w("wrapped DisplayManager($packageName) failed: ${it.message}")
+    }.getOrNull()
+
     private fun fail(message: String): Int {
+        lastError = message
         PrivilegedLog.e(message)
         return DISPLAY_NONE
     }
@@ -248,7 +325,6 @@ internal class PrivilegedVirtualDisplay(
         const val FLAG_ALWAYS_UNLOCKED = 1 shl 12
         const val FLAG_TOUCH_FEEDBACK_DISABLED = 1 shl 13
         const val FLAG_OWN_FOCUS = 1 shl 14
-        const val FLAG_DEVICE_DISPLAY_GROUP = 1 shl 15
         const val FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 16
 
         /** WindowManager.DISPLAY_IME_POLICY_HIDE。 */
