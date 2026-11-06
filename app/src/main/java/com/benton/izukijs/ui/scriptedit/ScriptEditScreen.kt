@@ -14,14 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -30,9 +28,7 @@ import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -66,16 +62,13 @@ import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
-import com.benton.izukijs.ui.common.PageMaxWidth
+import com.benton.izukijs.ui.common.SectionCard
+import com.benton.izukijs.ui.common.SectionGap
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 
-private enum class ScriptEditTab(val labelRes: Int) {
-    ENVIRONMENT(R.string.script_edit_tab_env),
-    SUBSCRIPTION(R.string.script_edit_tab_subscription),
-}
 
 private data class ScriptEditBaseline(
     val name: String,
@@ -93,7 +86,7 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
-    val pagerState = rememberPagerState(pageCount = { ScriptEditTab.entries.size })
+
     val globalEnv by container.globalEnvRepository.values.collectAsStateWithLifecycle()
 
     var currentScriptId by rememberSaveable { mutableStateOf(scriptId) }
@@ -434,99 +427,70 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxSize().padding(padding).imePadding(),
                 contentAlignment = Alignment.TopCenter,
             ) {
-                Column(
-                    modifier = Modifier
-                        .widthIn(max = PageMaxWidth)
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
+                PageColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    applyImePadding = true,
                 ) {
-                    Spacer(Modifier.height(12.dp))
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { name = it },
-                            label = { Text(stringResource(R.string.script_edit_name)) },
-                            singleLine = true,
-                            isError = name.isBlank(),
-                            supportingText = if (name.isBlank()) {
-                                { Text(stringResource(R.string.script_edit_name_required)) }
-                            } else {
-                                null
-                            },
-                            modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    PrimaryTabRow(selectedTabIndex = pagerState.currentPage) {
-                        ScriptEditTab.entries.forEachIndexed { index, tab ->
-                            Tab(
-                                selected = pagerState.currentPage == index,
-                                onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                                text = { Text(stringResource(tab.labelRes)) },
-                            )
-                        }
-                    }
-                    HorizontalPager(
-                        state = pagerState,
-                        modifier = Modifier.weight(1f),
-                        pageSpacing = 16.dp,
-                    ) { page ->
-                        when (ScriptEditTab.entries[page]) {
-                            ScriptEditTab.ENVIRONMENT -> EnvironmentTab(
-                                useGlobalEnv = useGlobalEnv,
-                                onUseGlobalEnvChange = { useGlobalEnv = it },
-                                envText = envText,
-                                onEnvTextChange = {
-                                    envText = it
-                                    envErrorLine = null
-                                },
-                                globalCount = globalEnv.size,
-                                errorLine = envErrorLine,
-                            )
-
-                            ScriptEditTab.SUBSCRIPTION -> SubscriptionTab(
-                                subscription = subscription,
-                                url = url,
-                                onUrlChange = { newUrl ->
-                                    val wasBlank = url.isBlank()
-                                    url = newUrl
-                                    if (newUrl.isBlank()) {
-                                        intervalText = "0"
-                                        enabled = false
-                                    } else if (wasBlank) {
-                                        if ((intervalText.toLongOrNull() ?: 0L) <= 0L) {
-                                            intervalText =
-                                                SubscriptionSync.DEFAULT_INTERVAL_MINUTES.toString()
-                                        }
-                                        enabled = true
-                                    }
-                                },
-                                urlInvalid = urlInvalid,
-                                enabled = enabled,
-                                onEnabledChange = { checked ->
-                                    if ((intervalText.toLongOrNull() ?: 0L) > 0L) enabled = checked
-                                },
-                                intervalText = intervalText,
-                                onIntervalChange = { raw ->
-                                    val previous = intervalText.toLongOrNull() ?: 0L
-                                    intervalText = raw
-                                    val next = raw.toLongOrNull() ?: 0L
-                                    if (next <= 0L) {
-                                        enabled = false
-                                    } else if (previous <= 0L) {
-                                        enabled = true
-                                    }
-                                },
-                                intervalDisabled = intervalDisabled,
-                                intervalInvalid = intervalInvalid,
-                                syncing = syncing,
-                                syncReady = syncReady,
-                                deleting = deleting,
-                                onSyncNow = { syncNow() },
-                                onDelete = { showDelete = true },
-                            )
-                        }
-                    }
+                    Spacer(Modifier.height(SectionGap))
+                    NameSection(
+                        name = name,
+                        onNameChange = { name = it },
+                    )
+                    Spacer(Modifier.height(SectionGap))
+                    EnvironmentSection(
+                        useGlobalEnv = useGlobalEnv,
+                        onUseGlobalEnvChange = { useGlobalEnv = it },
+                        envText = envText,
+                        onEnvTextChange = {
+                            envText = it
+                            envErrorLine = null
+                        },
+                        globalCount = globalEnv.size,
+                        errorLine = envErrorLine,
+                    )
+                    Spacer(Modifier.height(SectionGap))
+                    SubscriptionSection(
+                        subscription = subscription,
+                        url = url,
+                        onUrlChange = { newUrl ->
+                            val wasBlank = url.isBlank()
+                            url = newUrl
+                            if (newUrl.isBlank()) {
+                                intervalText = "0"
+                                enabled = false
+                            } else if (wasBlank) {
+                                if ((intervalText.toLongOrNull() ?: 0L) <= 0L) {
+                                    intervalText =
+                                        SubscriptionSync.DEFAULT_INTERVAL_MINUTES.toString()
+                                }
+                                enabled = true
+                            }
+                        },
+                        urlInvalid = urlInvalid,
+                        enabled = enabled,
+                        onEnabledChange = { checked ->
+                            if ((intervalText.toLongOrNull() ?: 0L) > 0L) enabled = checked
+                        },
+                        intervalText = intervalText,
+                        onIntervalChange = { raw ->
+                            val previous = intervalText.toLongOrNull() ?: 0L
+                            intervalText = raw
+                            val next = raw.toLongOrNull() ?: 0L
+                            if (next <= 0L) {
+                                enabled = false
+                            } else if (previous <= 0L) {
+                                enabled = true
+                            }
+                        },
+                        intervalDisabled = intervalDisabled,
+                        intervalInvalid = intervalInvalid,
+                        syncing = syncing,
+                        syncReady = syncReady,
+                        deleting = deleting,
+                        onSyncNow = { syncNow() },
+                        onDelete = { showDelete = true },
+                    )
+                    Spacer(Modifier.height(SectionGap))
                 }
             }
         }
@@ -581,7 +545,29 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun EnvironmentTab(
+private fun NameSection(
+    name: String,
+    onNameChange: (String) -> Unit,
+) {
+    SectionCard {
+        OutlinedTextField(
+            value = name,
+            onValueChange = onNameChange,
+            label = { Text(stringResource(R.string.script_edit_name)) },
+            singleLine = true,
+            isError = name.isBlank(),
+            supportingText = if (name.isBlank()) {
+                { Text(stringResource(R.string.script_edit_name_required)) }
+            } else {
+                null
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+private fun EnvironmentSection(
     useGlobalEnv: Boolean,
     onUseGlobalEnvChange: (Boolean) -> Unit,
     envText: String,
@@ -589,44 +575,36 @@ private fun EnvironmentTab(
     globalCount: Int,
     errorLine: Int?,
 ) {
-    PageColumn(modifier = Modifier.fillMaxSize(), applyImePadding = false) {
-        Spacer(Modifier.height(12.dp))
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                SwitchRow(
-                    label = stringResource(R.string.script_edit_env_use_global),
-                    checked = useGlobalEnv,
-                    description = stringResource(R.string.script_edit_env_use_global_desc, globalCount),
-                    onChange = onUseGlobalEnvChange,
-                )
-                OutlinedTextField(
-                    value = envText,
-                    onValueChange = onEnvTextChange,
-                    label = { Text(stringResource(R.string.script_edit_env_variables)) },
-                    placeholder = { Text(stringResource(R.string.env_example)) },
-                    isError = errorLine != null,
-                    supportingText = {
-                        if (errorLine != null) {
-                            Text(stringResource(R.string.env_invalid_line, errorLine))
-                        } else {
-                            Text(stringResource(R.string.env_hint))
-                        }
-                    },
-                    minLines = 8,
-                    textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-        Spacer(Modifier.height(16.dp))
+    SectionCard(stringResource(R.string.script_edit_tab_env)) {
+        SwitchRow(
+            label = stringResource(R.string.script_edit_env_use_global),
+            checked = useGlobalEnv,
+            description = stringResource(R.string.script_edit_env_use_global_desc, globalCount),
+            onChange = onUseGlobalEnvChange,
+        )
+        Spacer(Modifier.height(SectionGap))
+        OutlinedTextField(
+            value = envText,
+            onValueChange = onEnvTextChange,
+            label = { Text(stringResource(R.string.script_edit_env_variables)) },
+            placeholder = { Text(stringResource(R.string.env_example)) },
+            isError = errorLine != null,
+            supportingText = {
+                if (errorLine != null) {
+                    Text(stringResource(R.string.env_invalid_line, errorLine))
+                } else {
+                    Text(stringResource(R.string.env_hint))
+                }
+            },
+            minLines = 8,
+            textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
 @Composable
-private fun SubscriptionTab(
+private fun SubscriptionSection(
     subscription: ScriptSubscription?,
     url: String,
     onUrlChange: (String) -> Unit,
@@ -643,13 +621,8 @@ private fun SubscriptionTab(
     onSyncNow: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    PageColumn(modifier = Modifier.fillMaxSize(), applyImePadding = false) {
-        Spacer(Modifier.height(12.dp))
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
+    SectionCard(stringResource(R.string.script_edit_tab_subscription)) {
+        Column(verticalArrangement = Arrangement.spacedBy(SectionGap)) {
                 OutlinedTextField(
                     value = url,
                     onValueChange = onUrlChange,
@@ -775,8 +748,6 @@ private fun SubscriptionTab(
                         Text(stringResource(R.string.subscription_delete))
                     }
                 }
-            }
         }
-        Spacer(Modifier.height(16.dp))
     }
 }

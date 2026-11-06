@@ -62,29 +62,40 @@ fun stableTopAppBarColors(): TopAppBarColors = TopAppBarDefaults.topAppBarColors
     scrolledContainerColor = MaterialTheme.colorScheme.surface,
 )
 
-/** 设置类页面统一的卡片容器：标题（+ 可选右上角操作）+ 内容。 */
+/** 全局统一的间距令牌：区块之间 12dp，卡片内边距 16dp，卡片标题与内容之间 8dp。 */
+val SectionGap: Dp = 12.dp
+val SectionCardPadding: Dp = 16.dp
+val SectionCardHeaderGap: Dp = 8.dp
+
+/**
+ * 设置类页面统一的卡片容器。
+ * [title] 为 null 时不渲染标题行，适用于只包含单个输入框的卡片。
+ * 标题右侧可通过 [trailing] 放置操作按钮。
+ */
 @Composable
 fun SectionCard(
-    title: String,
+    title: String? = null,
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Card(modifier = modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            if (trailing == null) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-            } else {
+        Column(modifier = Modifier.padding(SectionCardPadding)) {
+            if (title != null || trailing != null) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(title, style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.weight(1f))
-                    trailing()
+                    if (title != null) {
+                        Text(title, style = MaterialTheme.typography.titleMedium)
+                    }
+                    if (trailing != null) {
+                        Spacer(Modifier.weight(1f))
+                        trailing()
+                    }
                 }
+                Spacer(Modifier.height(SectionCardHeaderGap))
             }
-            Spacer(Modifier.height(8.dp))
             content()
         }
     }
