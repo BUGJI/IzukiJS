@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -22,6 +23,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.ui.pip.PipController
+import com.benton.izukijs.virtualscreen.DeviceScreenResolution
 import com.benton.izukijs.virtualscreen.VirtualScreenResolution
 import com.benton.izukijs.virtualscreen.VirtualScreenState
 import com.benton.izukijs.ui.common.ChipFlow
@@ -35,7 +37,7 @@ import com.benton.izukijs.ui.appViewModel
 internal fun RunSettings(onOpenSetup: () -> Unit = {}) {
     VirtualScreenSettingsSection(onOpenSetup = onOpenSetup)
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     NotificationSettingsSection()
 }
 
@@ -49,6 +51,11 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
     val state = ui.virtualScreenState
     val shizukuReady = ControlMode.SHIZUKU in readyModes && viewModel.virtualScreenAvailable()
     val pipSupported = PipController.isSupported(context)
+    val deviceResolution = remember(context) { DeviceScreenResolution.read(context) }
+    val resolutionPresets = buildList {
+        add(deviceResolution)
+        VirtualScreenResolution.presets.forEach { if (it != deviceResolution) add(it) }
+    }
 
     fun save(new: com.benton.izukijs.virtualscreen.VirtualScreenSettings) =
         viewModel.saveVirtualScreen(new)
@@ -72,7 +79,7 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         SwitchRow(
             label = stringResource(R.string.virtual_screen_allow_background),
             description = stringResource(
@@ -103,7 +110,7 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Text(
             stringResource(R.string.virtual_screen_default_mode),
             style = MaterialTheme.typography.bodyMedium,
@@ -120,21 +127,44 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
         }
 
         if (settings.backgroundAllowed) {
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
             Text(
                 stringResource(R.string.virtual_screen_resolution),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(4.dp))
             ChipFlow {
-                VirtualScreenResolution.presets.forEach { preset ->
+                resolutionPresets.forEach { preset ->
                     FilterChip(
                         selected = settings.resolution == preset,
                         onClick = { save(settings.copy(resolution = preset)) },
-                        label = { Text("${preset.width}×${preset.height}") },
+                        label = {
+                            Text(
+                                if (preset == deviceResolution) {
+                                    stringResource(
+                                        R.string.virtual_screen_device_preset,
+                                        preset.width,
+                                        preset.height,
+                                    )
+                                } else {
+                                    "${preset.width}×${preset.height}"
+                                },
+                            )
+                        },
                     )
                 }
             }
+            Text(
+                stringResource(
+                    R.string.virtual_screen_device_preset_desc,
+                    deviceResolution.width,
+                    deviceResolution.height,
+                    deviceResolution.dpi,
+                    VirtualScreenResolution.DEVICE_MAX_LONG_SIDE,
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(8.dp))
             Text(
                 stringResource(R.string.virtual_screen_custom_size),
@@ -194,7 +224,7 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
             }
 
             if (pipSupported) {
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(SectionGap))
                 SwitchRow(
                     label = stringResource(R.string.virtual_screen_pip_on_home),
                     description = stringResource(R.string.virtual_screen_pip_desc),
@@ -202,14 +232,14 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
                 ) { save(settings.copy(pipOnHome = it)) }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             SwitchRow(
                 label = stringResource(R.string.virtual_screen_auto_stop_after_run),
                 description = stringResource(R.string.virtual_screen_auto_stop_after_run_desc),
                 checked = settings.autoStopAfterRun,
             ) { save(settings.copy(autoStopAfterRun = it)) }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             SwitchRow(
                 label = stringResource(R.string.virtual_screen_show_system_decorations),
                 description = stringResource(R.string.virtual_screen_show_system_decorations_desc),
@@ -217,7 +247,7 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
             ) { save(settings.copy(showSystemDecorations = it)) }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Text(
             text = when (val current = state) {
                 VirtualScreenState.Idle -> stringResource(R.string.virtual_screen_status_idle)

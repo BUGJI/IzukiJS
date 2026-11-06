@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -69,7 +70,7 @@ internal fun GeneralSettings() {
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         SwitchRow(
             label = stringResource(R.string.settings_dynamic_color),
             description = stringResource(
@@ -83,7 +84,7 @@ internal fun GeneralSettings() {
             enabled = dynamicColorSupported,
             onChange = { update(appearance.copy(dynamicColor = it)) },
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         SwitchRow(
             label = stringResource(R.string.settings_amoled_title),
             description = stringResource(R.string.settings_amoled_desc),
@@ -91,9 +92,9 @@ internal fun GeneralSettings() {
             onChange = { update(appearance.copy(amoledBackground = it)) },
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         HorizontalDivider()
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Text(stringResource(R.string.settings_custom_color), style = MaterialTheme.typography.bodyMedium)
         Text(
             stringResource(
@@ -106,14 +107,14 @@ internal fun GeneralSettings() {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         val customColorEnabled = !appearance.dynamicColor
         ColorSwatchRow(
             selectedArgb = appearance.seedArgb,
             enabled = customColorEnabled,
             onSelect = { update(appearance.copy(seedArgb = it)) },
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         HexColorField(
             value = appearance.seedArgb,
             enabled = customColorEnabled,
@@ -127,10 +128,10 @@ internal fun GeneralSettings() {
         )
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     LanguageSettings()
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     EditorSettingsSection()
 }
 
@@ -172,7 +173,7 @@ internal fun NotificationSettingsSection() {
             },
         )
         if (!granted) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             Text(
                 stringResource(R.string.settings_notification_permission_denied),
                 style = MaterialTheme.typography.bodySmall,
@@ -260,7 +261,7 @@ private fun EditorSettingsSection() {
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         SwitchRow(
             label = stringResource(R.string.editor_auto_save),
             description = stringResource(R.string.editor_auto_save_desc),

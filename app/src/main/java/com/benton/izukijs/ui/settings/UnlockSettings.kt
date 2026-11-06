@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -80,7 +81,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
         }
 
         if (unlockSettings.enabled) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             Text(
                 stringResource(R.string.unlock_method),
                 style = MaterialTheme.typography.bodyMedium,
@@ -186,7 +187,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -235,7 +236,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     SectionCard(stringResource(R.string.unlock_mcp_section)) {
         Text(
             stringResource(R.string.unlock_mcp_section_desc),

@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.FilterChip
@@ -40,7 +41,7 @@ internal fun VisionSettings() {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Text(stringResource(R.string.capture_scale), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
         ChipFlow {
@@ -52,7 +53,7 @@ internal fun VisionSettings() {
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Text(stringResource(R.string.capture_jpeg_quality), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
         ChipFlow {
@@ -66,7 +67,7 @@ internal fun VisionSettings() {
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     SectionCard(stringResource(R.string.ocr_section_title)) {
         Text(
             stringResource(R.string.ocr_section_desc),
@@ -88,7 +89,7 @@ internal fun VisionSettings() {
         }
 
         if (ocrConfig.mode == OcrMode.ONLINE) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             Text(stringResource(R.string.ocr_provider_label), style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(4.dp))
             ChipFlow {
@@ -100,7 +101,7 @@ internal fun VisionSettings() {
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             when (ocrConfig.provider) {
                 OcrProvider.BAIDU -> {
                     SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = true) {

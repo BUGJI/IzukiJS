@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -68,7 +69,7 @@ fun SettingsScreen(
         title = { Text(stringResource(R.string.settings_title)) },
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(SectionGap))
             CategoryGroup {
                 CategoryRow(
                     title = stringResource(SettingsCategory.GENERAL.titleRes),
@@ -79,7 +80,7 @@ fun SettingsScreen(
                     ),
                 ) { onOpenCategory(SettingsCategory.GENERAL) }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_control_vision)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.CONTROL.titleRes),
@@ -104,7 +105,7 @@ fun SettingsScreen(
                     ),
                 ) { onOpenCategory(SettingsCategory.VISION) }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_run)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.RUN.titleRes),
@@ -138,7 +139,7 @@ fun SettingsScreen(
                     ),
                 ) { onOpenCategory(SettingsCategory.UNLOCK) }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_extensions)) {
                 CategoryRow(
                     title = stringResource(R.string.settings_ai_agent),
@@ -162,7 +163,7 @@ fun SettingsScreen(
                     summary = stringResource(R.string.settings_env_summary, ui.globalEnv.size),
                 ) { onOpenCategory(SettingsCategory.ENV) }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_data)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.STORAGE.titleRes),
@@ -177,7 +178,7 @@ fun SettingsScreen(
                     summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
             CategoryGroup {
                 CategoryRow(
                     title = stringResource(SettingsCategory.ABOUT.titleRes),
@@ -189,7 +190,7 @@ fun SettingsScreen(
                     },
                 ) { onOpenCategory(SettingsCategory.ABOUT) }
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
         }
     }
 }
@@ -288,7 +289,7 @@ private fun SettingsDetailScaffold(
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             content()
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(SectionGap))
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -64,7 +65,7 @@ internal fun StorageSettings() {
             viewModel.trimLogs()
             refreshLogSize()
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
 
         Text(stringResource(R.string.storage_log_level), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
@@ -84,7 +85,7 @@ internal fun StorageSettings() {
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
 
         Text(stringResource(R.string.storage_max_size), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
@@ -101,7 +102,7 @@ internal fun StorageSettings() {
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
 
         Text(stringResource(R.string.storage_retention_days), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
@@ -118,7 +119,7 @@ internal fun StorageSettings() {
                 )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,

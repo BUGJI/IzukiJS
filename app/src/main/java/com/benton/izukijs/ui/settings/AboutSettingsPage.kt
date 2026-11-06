@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -51,7 +52,7 @@ internal fun AboutSettings() {
         )
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     UpdateSettingsSection()
 }
 
@@ -72,7 +73,7 @@ private fun UpdateSettingsSection() {
         )
         Spacer(Modifier.height(8.dp))
         UpdateStatusLine(state)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
 
         val busy = state is UpdateState.Checking || state is UpdateState.Downloading
         val info = (state as? UpdateState.Available)?.info
@@ -117,14 +118,14 @@ private fun UpdateSettingsSection() {
             )
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         SwitchRow(
             label = stringResource(R.string.update_auto_check),
             description = stringResource(R.string.update_auto_check_desc),
             checked = settings.autoCheck,
         ) { update(settings.copy(autoCheck = it)) }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Text(stringResource(R.string.update_method), style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(4.dp))
         ChipFlow {

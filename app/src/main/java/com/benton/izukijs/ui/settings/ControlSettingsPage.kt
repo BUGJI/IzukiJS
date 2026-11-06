@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -54,7 +55,7 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
         onSelect = { saveController(controllerSettings.copy(readMode = it)) },
     )
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     PriorityCard(
         title = stringResource(R.string.ctrl_operate_priority_title),
         description = stringResource(R.string.ctrl_operate_priority_desc),
@@ -71,7 +72,7 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
     }
 
     if (choiceCapabilities.isNotEmpty()) {
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         SectionCard(stringResource(R.string.ctrl_cap_priority_title)) {
             Text(
                 stringResource(R.string.ctrl_cap_priority_desc),
@@ -115,7 +116,7 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
         }
     }
 
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     SectionCard(stringResource(R.string.ctrl_backends_title)) {
         Text(
             stringResource(R.string.ctrl_backends_desc),
@@ -224,7 +225,7 @@ private fun CapabilityPreferenceBlock(
     onSelect: (Capability, ControlMode?) -> Unit,
 ) {
     if (capabilities.isEmpty()) return
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(SectionGap))
     Text(
         title,
         style = MaterialTheme.typography.labelLarge,

@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.settings
 
+import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,7 +48,7 @@ fun GlobalEnvSettings() {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         OutlinedTextField(
             value = text,
             onValueChange = {
@@ -69,7 +70,7 @@ fun GlobalEnvSettings() {
             textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
             modifier = Modifier.fillMaxWidth(),
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(SectionGap))
         Button(
             onClick = {
                 when (val result = EnvText.parse(text)) {
