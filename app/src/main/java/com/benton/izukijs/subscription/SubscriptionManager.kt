@@ -206,7 +206,7 @@ class SubscriptionManager(
                     when (val code = connection.responseCode) {
                         HttpURLConnection.HTTP_NOT_MODIFIED -> FetchResult.NotModified
                         in 200..299 -> {
-                            val body = connection.inputStream.bufferedReader().use { it.readText() }
+                            val body = connection.inputStream.use { SubscriptionSync.readScript(it) }
                             if (body.isBlank()) {
                                 FetchResult.Failure("下载内容为空")
                             } else {
