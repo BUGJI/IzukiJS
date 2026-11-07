@@ -23,6 +23,27 @@ object SubscriptionSync {
 
     fun isDisabled(minutes: Long): Boolean = minutes <= 0L
 
+    /**
+     * 自动任务只在订阅仍然启用、周期未被设为手动、且已到期时才执行。
+     * [automatic] 为 false 表示用户显式点击同步，不受这些条件限制。
+     */
+    fun canSync(subscription: ScriptSubscription, automatic: Boolean, now: Long): Boolean =
+        !automatic || (subscription.enabled && !isDisabled(subscription.intervalMinutes) &&
+            subscription.nextSyncAtMillis <= now)
+
+    /**
+     * 设置页传上来的可能是排队同步之前的旧快照。同一 URL 时沿用仓库里的同步元数据，
+     * 否则会把 contentHash / etag / lastSyncAtMillis 清空，导致下一次同步误判远端已变。
+     */
+    fun applySettings(incoming: ScriptSubscription, current: ScriptSubscription?): ScriptSubscription {
+        val cleaned = incoming.copy(url = incoming.url.trim())
+        if (current == null || current.url.trim() != cleaned.url) {
+            return cleaned.copy(lastSyncAtMillis = 0L, lastError = "", contentHash = "", etag = "", lastModified = "")
+        }
+        return cleaned.copy(lastSyncAtMillis = current.lastSyncAtMillis, lastError = current.lastError,
+            contentHash = current.contentHash, etag = current.etag, lastModified = current.lastModified)
+    }
+
     fun sha256(text: String): String = MessageDigest.getInstance("SHA-256")
         .digest(text.toByteArray(Charsets.UTF_8))
         .joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }

@@ -190,9 +190,9 @@
     <string name="subscription_interval_minutes">%1$d min</string>
     <string name="subscription_interval_hours">%1$d h</string>
     <string name="subscription_interval_days">%1$d d</string>
-    <string name="subscription_interval_disabled">Disabled</string>
+    <string name="subscription_interval_disabled">Manual only</string>
     <string name="subscription_interval_zero_hint">0 disables automatic syncing</string>
-    <string name="subscription_interval_invalid">Enter 0 (disabled) or at least %1$d minutes</string>
+    <string name="subscription_interval_invalid">Enter 0 (manual only) or at least %1$d minutes</string>
     <string name="subscription_interval_needs_url">Enter a download URL to set a sync interval</string>
     <string name="subscription_min_interval">Minimum %1$d min</string>
     <string name="subscription_sync_now">Sync now</string>
