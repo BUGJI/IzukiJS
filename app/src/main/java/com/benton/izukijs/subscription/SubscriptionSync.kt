@@ -48,11 +48,12 @@ object SubscriptionSync {
     fun readScript(input: InputStream, limit: Int = MAX_SCRIPT_BYTES): String {
         require(limit > 0) { "上限必须为正数" }
         val buffer = ByteArray(8192)
-        val output = ByteArrayOutputStream(minOf(limit, 8192))
+        val output = ByteArrayOutputStream(minOf(limit, 32 * 1024))
         var total = 0
         while (true) {
             val count = input.read(buffer)
             if (count < 0) break
+            if (count == 0) continue
             total += count
             if (total > limit) throw IOException("订阅脚本超过大小上限（$limit 字节）")
             output.write(buffer, 0, count)
