@@ -14,7 +14,7 @@ import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.ocr.OcrConfig
 import com.benton.izukijs.ocr.OcrConfigRepository
-import com.benton.izukijs.runtime.HttpSettings
+import com.benton.izukijs.core.net.HttpSettings
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.LogSettingsRepository
@@ -329,7 +329,7 @@ object ConfigSections {
         key = "virtualScreen",
         current = repository::current,
         save = repository::save,
-        defaultValue = VirtualScreenSettings(),
+        defaultValue = repository.defaultSettings(),
         encode = { c ->
             JSONObject().apply {
                 put(

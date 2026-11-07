@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
@@ -92,9 +93,11 @@ fun ConsolePanel(
 
     val trimmedQuery = query.trim()
     val visible = remember(entries, enabledLevels, trimmedQuery) {
-        entries.filter { entry ->
-            entry.level in enabledLevels &&
-                (trimmedQuery.isEmpty() || entry.message.contains(trimmedQuery, ignoreCase = true))
+        PerfMetrics.measure("console.filter") {
+            entries.filter { entry ->
+                entry.level in enabledLevels &&
+                    (trimmedQuery.isEmpty() || entry.message.contains(trimmedQuery, ignoreCase = true))
+            }
         }
     }
 

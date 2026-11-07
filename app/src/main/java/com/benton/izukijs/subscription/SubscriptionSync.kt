@@ -1,9 +1,7 @@
 package com.benton.izukijs.subscription
 
-import java.io.ByteArrayOutputStream
-import java.io.IOException
+import com.benton.izukijs.core.net.HttpScript
 import java.io.InputStream
-import java.net.URL
 import java.security.MessageDigest
 
 object SubscriptionSync {
@@ -12,14 +10,10 @@ object SubscriptionSync {
     const val DEFAULT_INTERVAL_MINUTES = 24L * 60L
 
     /** 单个订阅脚本的下载上限，防止异常链接或错误配置把整段内容读进内存。 */
-    const val MAX_SCRIPT_BYTES = 1024 * 1024
+    const val MAX_SCRIPT_BYTES = HttpScript.MAX_SCRIPT_BYTES
 
     /** 订阅与扫码导入都只接受带主机的 http/https 链接。 */
-    fun isHttpUrl(raw: String): Boolean = runCatching {
-        val parsed = URL(raw.trim())
-        val scheme = parsed.protocol.lowercase()
-        (scheme == "http" || scheme == "https") && !parsed.host.isNullOrBlank()
-    }.getOrDefault(false)
+    fun isHttpUrl(raw: String): Boolean = HttpScript.isHttpUrl(raw)
 
     fun normalizeInterval(minutes: Long?): Long {
         if (minutes == null) return DEFAULT_INTERVAL_MINUTES
@@ -66,19 +60,6 @@ object SubscriptionSync {
      *
      * 不用 Content-Length 判断：它可能缺失、被压缩后失真，或因为 chunked 编码而不可知。
      */
-    fun readScript(input: InputStream, limit: Int = MAX_SCRIPT_BYTES): String {
-        require(limit > 0) { "上限必须为正数" }
-        val buffer = ByteArray(8192)
-        val output = ByteArrayOutputStream(minOf(limit, 32 * 1024))
-        var total = 0
-        while (true) {
-            val count = input.read(buffer)
-            if (count < 0) break
-            if (count == 0) continue
-            total += count
-            if (total > limit) throw IOException("订阅脚本超过大小上限（$limit 字节）")
-            output.write(buffer, 0, count)
-        }
-        return output.toString("UTF-8")
-    }
+    fun readScript(input: InputStream, limit: Int = MAX_SCRIPT_BYTES): String =
+        HttpScript.readScript(input, limit)
 }

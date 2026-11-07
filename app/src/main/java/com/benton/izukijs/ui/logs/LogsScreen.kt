@@ -18,8 +18,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -42,12 +46,18 @@ import kotlinx.coroutines.withContext
 @Composable
 fun LogsScreen(
     onOpenVirtualScreen: () -> Unit = {},
+    isActivePage: Boolean = true,
 ) {
     val container = rememberAppContainer()
     val context = LocalContext.current
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
-    val logs by container.logBus.entries.collectAsStateWithLifecycle()
+    // 主界面四个标签常驻组合；非当前页时不订阅高频日志，避免脚本输出时后台页反复重组 / 布局。
+    var logs by remember { mutableStateOf(container.logBus.entries.value) }
+    LaunchedEffect(isActivePage) {
+        if (!isActivePage) return@LaunchedEffect
+        container.logBus.entries.collect { logs = it }
+    }
     val virtualScreenState by container.virtualScreenManager.state.collectAsStateWithLifecycle()
 
     IzukiPageScaffold(

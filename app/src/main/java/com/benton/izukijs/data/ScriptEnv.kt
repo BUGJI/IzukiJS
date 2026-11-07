@@ -1,6 +1,4 @@
-package com.benton.izukijs.runtime
-
-import com.benton.izukijs.data.ScriptEnvRepository
+package com.benton.izukijs.data
 
 /**
  * 单次脚本运行的环境：只读输入参数 + 可写运行状态。

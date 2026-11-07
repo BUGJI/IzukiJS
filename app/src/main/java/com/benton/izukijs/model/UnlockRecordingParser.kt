@@ -1,7 +1,4 @@
-package com.benton.izukijs.service
-
-import com.benton.izukijs.model.PatternPoint
-import com.benton.izukijs.model.UnlockStroke
+package com.benton.izukijs.model
 
 /** `getevent -lp` 中识别出的触摸设备。 */
 data class TouchInputDevice(

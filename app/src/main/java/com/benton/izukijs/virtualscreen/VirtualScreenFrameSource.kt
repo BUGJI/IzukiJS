@@ -9,6 +9,7 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Surface
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.perf.PerfMetrics
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -67,17 +68,20 @@ class VirtualScreenFrameSource(
      * 等待比 [afterSeq] 更新的帧；[afterSeq] 为 null 时直接取当前最新帧。
      * 返回的 Bitmap 归调用方所有，调用方负责 recycle。
      */
-    fun capture(afterSeq: Long? = null, timeoutMs: Long = 0L): Bitmap? = lock.withLock {
-        if (afterSeq != null && frameSeq <= afterSeq && timeoutMs > 0L) {
-            val deadline = SystemClock.elapsedRealtime() + timeoutMs
-            while (frameSeq <= afterSeq && !closed) {
-                val remaining = deadline - SystemClock.elapsedRealtime()
-                if (remaining <= 0L) break
-                frameAvailable.await(remaining, TimeUnit.MILLISECONDS)
+    fun capture(afterSeq: Long? = null, timeoutMs: Long = 0L): Bitmap? =
+        PerfMetrics.measure("capture.virtual") {
+            lock.withLock {
+                if (afterSeq != null && frameSeq <= afterSeq && timeoutMs > 0L) {
+                    val deadline = SystemClock.elapsedRealtime() + timeoutMs
+                    while (frameSeq <= afterSeq && !closed) {
+                        val remaining = deadline - SystemClock.elapsedRealtime()
+                        if (remaining <= 0L) break
+                        frameAvailable.await(remaining, TimeUnit.MILLISECONDS)
+                    }
+                }
+                latest?.copy(Bitmap.Config.ARGB_8888, false)
             }
         }
-        latest?.copy(Bitmap.Config.ARGB_8888, false)
-    }
 
     /**
      * 取最新帧；[waitMs] > 0 且尚未收到任何帧时，最多等待这么久。

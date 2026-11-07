@@ -2,24 +2,17 @@ package com.benton.izukijs.privileged
 
 import android.content.ComponentName
 import android.content.Context
-import android.content.ServiceConnection
-import android.content.pm.PackageManager
-import android.os.IBinder
+import android.os.DeadObjectException
 import com.benton.izukijs.BuildConfig
+import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.data.UnlockSettings
 import com.benton.izukijs.model.UnlockMethod
 import com.benton.izukijs.model.UnlockPattern
-import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
-import kotlin.coroutines.resume
 
 /**
  * App 侧到 Shizuku UserService 的连接。
@@ -27,104 +20,30 @@ import kotlin.coroutines.resume
  * 只有 Shizuku 可用时才会尝试；连不上时调用方回退旧的 Shell 实现。
  */
 class PrivilegedUnlockClient(
-    private val context: Context,
+    context: Context,
     private val logBus: LogBus,
 ) {
 
-    private val args = Shizuku.UserServiceArgs(
-        ComponentName(context.packageName, UnlockUserService::class.java.name),
+    private val connector = ShizukuUserServiceConnector<IUnlockService>(
+        args = Shizuku.UserServiceArgs(
+            ComponentName(context.packageName, UnlockUserService::class.java.name),
+        )
+            .daemon(true)
+            .processNameSuffix("unlock")
+            .debuggable(BuildConfig.DEBUG)
+            .version(UnlockProtocol.SERVICE_VERSION),
+        label = "解锁特权服务",
+        logBus = logBus,
+        adapt = { binder -> IUnlockService.Stub.asInterface(binder) },
+        versionOf = { it.version() },
     )
-        .daemon(true)
-        .processNameSuffix("unlock")
-        .debuggable(BuildConfig.DEBUG)
-        .version(UnlockProtocol.SERVICE_VERSION)
 
-    private val connectMutex = Mutex()
-    private val lock = Any()
+    fun isShizukuAvailable(): Boolean = connector.isAvailable()
 
-    @Volatile
-    private var service: IUnlockService? = null
+    fun isConnected(): Boolean = connector.isConnected()
 
-    @Volatile
-    private var pending: ((Boolean) -> Unit)? = null
-
-    private val connection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            val resolved = if (binder != null && binder.pingBinder()) {
-                runCatching { IUnlockService.Stub.asInterface(binder) }.getOrNull()
-            } else {
-                null
-            }
-            if (resolved != null) {
-                service = resolved
-                logBus.info("解锁特权服务已连接（${runCatching { resolved.version() }.getOrDefault("?")}）")
-            } else {
-                logBus.warn("解锁特权服务返回了无效 Binder")
-            }
-            complete(resolved != null)
-        }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            service = null
-            logBus.warn("解锁特权服务已断开")
-            complete(false)
-        }
-    }
-
-    fun isShizukuAvailable(): Boolean = runCatching {
-        Shizuku.pingBinder() && Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    }.getOrDefault(false)
-
-    fun isConnected(): Boolean = serviceOrNull() != null
-
-    private fun serviceOrNull(): IUnlockService? {
-        val current = service ?: return null
-        return if (current.asBinder().pingBinder()) current else {
-            service = null
-            null
-        }
-    }
-
-    suspend fun ensureConnected(timeoutMs: Long = 8_000L): Boolean {
-        serviceOrNull()?.let { return true }
-        if (!isShizukuAvailable()) return false
-        return connectMutex.withLock {
-            serviceOrNull()?.let { return@withLock true }
-            withTimeoutOrNull(timeoutMs) { bindOnce() } ?: run {
-                logBus.warn("解锁特权服务连接超时")
-                false
-            }
-        }
-    }
-
-    private suspend fun bindOnce(): Boolean = suspendCancellableCoroutine { continuation ->
-        val done = { ok: Boolean ->
-            if (continuation.isActive) continuation.resume(ok)
-        }
-        synchronized(lock) { pending = done }
-        val started = runCatching {
-            Shizuku.bindUserService(args, connection)
-            true
-        }.onFailure {
-            logBus.warn("绑定解锁特权服务失败: ${it.message}")
-        }.getOrDefault(false)
-        if (!started) {
-            synchronized(lock) { pending = null }
-            done(false)
-        }
-        continuation.invokeOnCancellation {
-            synchronized(lock) { pending = null }
-        }
-    }
-
-    private fun complete(ok: Boolean) {
-        val callback = synchronized(lock) {
-            val current = pending
-            pending = null
-            current
-        }
-        callback?.invoke(ok)
-    }
+    suspend fun ensureConnected(timeoutMs: Long = 8_000L): Boolean =
+        connector.ensureConnected(timeoutMs)
 
     suspend fun unlock(settings: UnlockSettings): UnlockResult? {
         if (!ensureConnected()) return null
@@ -157,7 +76,7 @@ class PrivilegedUnlockClient(
         if (!ensureConnected()) return false
         return withContext(Dispatchers.IO) {
             runCatching {
-                serviceOrNull()?.startGestureRecord(timeoutMs)
+                connector.serviceOrNull()?.startGestureRecord(timeoutMs)
                 true
             }.onFailure {
                 logBus.warn("启动特权录制失败: ${it.message}")
@@ -172,7 +91,7 @@ class PrivilegedUnlockClient(
 
     /** 取消是 UI/Service 线程发起的，不能阻塞；oneway 调用交给后台线程即可。 */
     fun cancelGestureRecord() {
-        val current = serviceOrNull() ?: return
+        val current = connector.serviceOrNull() ?: return
         Thread {
             runCatching { current.cancelGestureRecord() }
         }.apply {
@@ -184,22 +103,21 @@ class PrivilegedUnlockClient(
     suspend fun isScreenOn(): Boolean? {
         if (!ensureConnected()) return null
         return withContext(Dispatchers.IO) {
-            runCatching { serviceOrNull()?.isScreenOn() }.getOrNull()
+            runCatching { connector.serviceOrNull()?.isScreenOn() }.getOrNull()
         }
     }
 
     private suspend fun callString(block: (IUnlockService) -> String?): String? =
         withContext(Dispatchers.IO) {
-            val current = serviceOrNull() ?: return@withContext null
+            val current = connector.serviceOrNull() ?: return@withContext null
             runCatching { block(current) }.onFailure {
                 logBus.warn("解锁特权服务调用失败: ${it.message}")
-                if (it is android.os.DeadObjectException) service = null
+                if (it is DeadObjectException) connector.invalidate()
             }.getOrNull()
         }
 
     private fun parseResult(raw: String): UnlockResult =
         UnlockResult.entries.firstOrNull { it.name == raw } ?: UnlockResult.UNSUPPORTED
-
 }
 
 /** 特权侧录制状态快照。 */

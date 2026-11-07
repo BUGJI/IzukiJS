@@ -26,7 +26,7 @@ import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.data.UnlockSettingsRepository
 import com.benton.izukijs.i18n.LanguageRepository
-import com.benton.izukijs.mcp.McpAuditLog
+import com.benton.izukijs.mcp.core.McpAuditLog
 import com.benton.izukijs.mcp.McpConfigRepository
 import com.benton.izukijs.mcp.McpServerController
 import com.benton.izukijs.mcp.resources.McpResources
@@ -35,7 +35,9 @@ import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.permission.LocalNetworkPermission
+import com.benton.izukijs.core.runtime.RunControl
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.runtime.RuntimeSettingsRepository
@@ -167,34 +169,7 @@ class AppContainer(private val application: Application) {
         resetOnly = listOf(unlockSettingsRepository::clear),
     )
 
-    val scriptExecutionManager = ScriptExecutionManager(
-        application,
-        controllerManager,
-        screenCapture,
-        ocrProcessor,
-        logBus,
-        aiConfigRepository,
-        captureSettingsRepository,
-        scriptEnvRepository,
-        globalEnvRepository,
-        runHistoryRepository,
-        runtimeSettingsRepository,
-        httpSettingsRepository,
-        wakeLockController,
-        screenUnlockController,
-        virtualScreenManager,
-        virtualScreenSettingsRepository,
-        moduleSourceProvider = { raw ->
-            val id = raw.trim().removePrefix("./").removeSuffix(".js")
-            scriptRepository.find(id)?.let { scriptRepository.read(it) }
-        },
-    )
-
-    val mcpConfigRepository = McpConfigRepository(application)
-
-    val mcpAuditLog = McpAuditLog(application)
-
-    /** 脚本与 MCP 共用的设备 API 集合；懒加载，首次使用时组装。 */
+    /** 脚本与 MCP 共用的设备 API 集合；容器内只组装一次。 */
     val deviceApiBundle: DeviceApiBundle by lazy {
         DeviceApiBundle.create(
             application,
@@ -222,6 +197,37 @@ class AppContainer(private val application: Application) {
             )
         }
     }
+
+    val scriptExecutionManager = ScriptExecutionManager(
+        application,
+        controllerManager,
+        screenCapture,
+        deviceApiBundle,
+        nodeTreeProvider,
+        logBus,
+        aiConfigRepository,
+        captureSettingsRepository,
+        scriptEnvRepository,
+        globalEnvRepository,
+        runHistoryRepository,
+        runtimeSettingsRepository,
+        httpSettingsRepository,
+        wakeLockController,
+        screenUnlockController,
+        virtualScreenManager,
+        virtualScreenSettingsRepository,
+        moduleSourceProvider = { raw ->
+            val id = raw.trim().removePrefix("./").removeSuffix(".js")
+            scriptRepository.find(id)?.let { scriptRepository.read(it) }
+        },
+    )
+
+    /** 面向通知 / 悬浮窗的运行控制端口，避免 service 反向依赖 runtime 实现。 */
+    val runControl: RunControl get() = scriptExecutionManager
+
+    val mcpConfigRepository = McpConfigRepository(application)
+
+    val mcpAuditLog = McpAuditLog(application)
 
     val mcpServerController = McpServerController(
         logBus = logBus,
@@ -306,6 +312,9 @@ class AppContainer(private val application: Application) {
         }
         appScope.launch {
             logSettingsRepository.settings.collect { logBus.minLevel = it.minLevel }
+        }
+        appScope.launch {
+            runtimeSettingsRepository.settings.collect { PerfMetrics.setEnabled(it.perfBaseline) }
         }
         appScope.launch {
             logFileStore.trim()

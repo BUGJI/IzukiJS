@@ -90,11 +90,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.data.ScriptVersion
-import com.benton.izukijs.model.EnvField
-import com.benton.izukijs.model.EnvText
-import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.core.log.LogEntry
+import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.ScriptEnvDialog
@@ -104,20 +102,17 @@ import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiDarkTheme
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val container = rememberAppContainer()
+    val viewModel: EditorViewModel = appViewModel { EditorViewModel(it) }
+    val history by viewModel.history.collectAsStateWithLifecycle()
+    val runPrompt by viewModel.runPrompt.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
@@ -132,16 +127,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var savedCode by rememberSaveable(scriptId) { mutableStateOf("") }
     var loaded by rememberSaveable(scriptId) { mutableStateOf(false) }
     var consoleCollapsed by rememberSaveable(scriptId) { mutableStateOf(true) }
-    var envSource by remember(scriptId) { mutableStateOf<String?>(null) }
-    var envFields by remember(scriptId) { mutableStateOf<List<EnvField>>(emptyList()) }
-    var envInitial by remember(scriptId) { mutableStateOf<Map<String, String>>(emptyMap()) }
 
-    // 版本历史
-    var historyOpen by remember(scriptId) { mutableStateOf(false) }
-    var historyLoading by remember(scriptId) { mutableStateOf(false) }
-    var historyEntries by remember(scriptId) {
-        mutableStateOf<List<Pair<ScriptVersion, String>>>(emptyList())
-    }
+    // 版本历史 / 运行参数由 ViewModel 承载；这里只保留弹窗开关。
     var historyMenuOpen by remember(scriptId) { mutableStateOf(false) }
     var variablesOpen by remember(scriptId) { mutableStateOf(false) }
 
@@ -159,11 +146,6 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var canUndo by remember(scriptId) { mutableStateOf(false) }
     var canRedo by remember(scriptId) { mutableStateOf(false) }
     var lastEditAt by remember(scriptId) { mutableLongStateOf(0L) }
-
-    // 串行化写盘并记录最新写入序号：避免自动保存与「返回 / 运行」保存并发写同一文件，
-    // 以及旧内容覆盖新内容。
-    val writeMutex = remember(scriptId) { Mutex() }
-    val writeVersion = remember(scriptId) { AtomicLong(0L) }
 
     val focusRequester = remember(scriptId) { FocusRequester() }
     val findFocus = remember(scriptId) { FocusRequester() }
@@ -384,50 +366,27 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
-    // 串行写盘，带版本号守卫：旧快照不会覆盖更新的内容。返回是否成功落盘
-    // （被更新版本取代时视为成功，真正的落盘交给更新的那次写入完成）。
-    suspend fun persist(content: String): Boolean = withContext(NonCancellable) {
-        val version = writeVersion.incrementAndGet()
-        writeMutex.withLock {
-            if (version != writeVersion.get()) return@withLock true
-            runCatching { container.scriptRepository.writeAsync(current, content) }
-                .onSuccess { savedCode = content }
-                .isSuccess
-        }
+    // 串行写盘由 ViewModel 负责，这里只同步「已保存内容」用于脏标记。
+    suspend fun persist(content: String): Boolean {
+        val ok = viewModel.persist(current, content)
+        if (ok) savedCode = content
+        return ok
     }
 
     fun openHistory() {
-        historyOpen = true
-        historyLoading = true
-        scope.launch {
-            historyEntries = withContext(Dispatchers.IO) {
-                container.scriptRepository.history.list(current.id).map { version ->
-                    val preview = container.scriptRepository.history.read(version)
-                        .lineSequence()
-                        .firstOrNull()
-                        .orEmpty()
-                        .take(80)
-                    version to preview
-                }
-            }
-            historyLoading = false
-        }
+        viewModel.openHistory(current.id)
     }
 
     fun restoreVersion(version: ScriptVersion) {
         scope.launch {
-            val content = withContext(Dispatchers.IO) {
-                container.scriptRepository.history.read(version)
-            }
+            val content = viewModel.readVersion(version)
             if (content.isBlank()) {
                 snackbar.show(resources.getString(R.string.editor_history_restore_failed))
                 return@launch
             }
             val before = snapshot()
-            withContext(Dispatchers.IO) {
-                // 恢复前强制留档当前内容，避免自动保存节流把当前版本吞掉。
-                container.scriptRepository.history.record(current.id, editorValue.text, force = true)
-            }
+            // 恢复前强制留档当前内容，避免自动保存节流把当前版本吞掉。
+            viewModel.recordCurrent(current.id, editorValue.text)
             editorValue = TextFieldValue(content)
             recordEdit(before, force = true)
             if (persist(content)) {
@@ -435,7 +394,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             } else {
                 snackbar.show(resources.getString(R.string.editor_save_failed))
             }
-            historyOpen = false
+            viewModel.closeHistory()
         }
     }
 
@@ -473,21 +432,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 snackbar.show(resources.getString(R.string.editor_save_failed))
             }
             message?.let { snackbar.show(resources.getString(it)) }
-            val spec = ScriptEnvSpec.parse(runText)
-            val stored = container.scriptEnvRepository.values(current.id)
-            if (spec.isEmpty && stored.isEmpty()) {
-                container.scriptExecutionManager.run(current.id, current.name, runText)
-            } else {
-                envFields = spec.fields
-                envInitial = EnvText.resolve(
-                    defaults = spec.defaults(),
-                    global = container.globalEnvRepository.current(),
-                    script = container.scriptEnvRepository.env(current.id),
-                    runtime = stored,
-                    useGlobal = container.scriptEnvRepository.useGlobalEnv(current.id),
-                )
-                envSource = runText
-            }
+            viewModel.requestRun(current, runText)
         }
     }
 
@@ -758,8 +703,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     if (variablesOpen) {
-        val env = container.scriptEnvRepository.values(current.id)
-        val state = container.scriptEnvRepository.state(current.id)
+        val (env, state) = viewModel.variables(current.id)
         AlertDialog(
             onDismissRequest = { variablesOpen = false },
             title = { Text(stringResource(R.string.editor_variables)) },
@@ -814,16 +758,16 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         )
     }
 
-    if (historyOpen) {
+    if (history.open) {
         AlertDialog(
-            onDismissRequest = { historyOpen = false },
+            onDismissRequest = { viewModel.closeHistory() },
             title = { Text(stringResource(R.string.editor_history)) },
             text = {
                 when {
-                    historyLoading -> Text(stringResource(R.string.editor_history_loading))
-                    historyEntries.isEmpty() -> Text(stringResource(R.string.editor_history_empty))
+                    history.loading -> Text(stringResource(R.string.editor_history_loading))
+                    history.entries.isEmpty() -> Text(stringResource(R.string.editor_history_empty))
                     else -> LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                        items(historyEntries, key = { it.first.timestamp }) { (version, preview) ->
+                        items(history.entries, key = { it.first.timestamp }) { (version, preview) ->
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -851,24 +795,20 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = { historyOpen = false }) {
+                TextButton(onClick = { viewModel.closeHistory() }) {
                     Text(stringResource(R.string.common_close))
                 }
             },
         )
     }
 
-    envSource?.let { source ->
+    runPrompt?.let { prompt ->
         ScriptEnvDialog(
             scriptName = current.name,
-            fields = envFields,
-            initial = envInitial,
-            onDismiss = { envSource = null },
-            onConfirm = { values ->
-                container.scriptEnvRepository.saveValues(current.id, values)
-                container.scriptExecutionManager.run(current.id, current.name, source, values)
-                envSource = null
-            },
+            fields = prompt.fields,
+            initial = prompt.initial,
+            onDismiss = { viewModel.dismissRun() },
+            onConfirm = { values -> viewModel.confirmRun(current, values) },
         )
     }
 }

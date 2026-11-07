@@ -86,7 +86,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.adb.AdbConnectionManager
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.runtime.HttpSettings
+import com.benton.izukijs.core.net.HttpSettings
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.DebugOverlayService
 import com.benton.izukijs.service.FloatingWindowService

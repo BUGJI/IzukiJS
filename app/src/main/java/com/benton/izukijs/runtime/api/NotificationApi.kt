@@ -8,7 +8,7 @@ import android.webkit.JavascriptInterface
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.runtime.notification.ScriptNotificationCenter
+import com.benton.izukijs.core.notification.ScriptNotificationCenter
 import com.benton.izukijs.service.NotificationItem
 import com.benton.izukijs.service.NotificationListener
 import org.json.JSONArray

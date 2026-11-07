@@ -14,6 +14,7 @@ import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.controller.GesturePoint
 import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.accessibility.AccessibilityController
+import com.benton.izukijs.controller.accessibility.AccessibilityServiceHandle
 import com.benton.izukijs.model.ControlMode
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -21,10 +22,10 @@ import java.util.concurrent.TimeUnit
 /**
  * 无障碍控制后端。生效时向 [com.benton.izukijs.controller.ControllerManager] 注册/注销控制器。
  */
-class IzukiAccessibilityService : AccessibilityService() {
+class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHandle {
 
     override fun onServiceConnected() {
-        instance = this
+        setInstance(this)
         (application as? IzukiApp)?.container?.controllerManager?.register(
             AccessibilityController { instance }
         )
@@ -34,7 +35,7 @@ class IzukiAccessibilityService : AccessibilityService() {
         (application as? IzukiApp)?.container?.controllerManager?.unregister(
             ControlMode.ACCESSIBILITY
         )
-        instance = null
+        setInstance(null)
         return super.onUnbind(intent)
     }
 
@@ -42,7 +43,7 @@ class IzukiAccessibilityService : AccessibilityService() {
         (application as? IzukiApp)?.container?.controllerManager?.unregister(
             ControlMode.ACCESSIBILITY
         )
-        instance = null
+        setInstance(null)
         super.onDestroy()
     }
 
@@ -57,7 +58,7 @@ class IzukiAccessibilityService : AccessibilityService() {
 
     // ---- 供控制器调用的能力 ----
 
-    fun performStrokes(strokes: List<GestureStroke>): Boolean {
+    override fun performStrokes(strokes: List<GestureStroke>): Boolean {
         if (strokes.isEmpty()) return false
         val builder = GestureDescription.Builder()
         var strokeCount = 0
@@ -140,7 +141,7 @@ class IzukiAccessibilityService : AccessibilityService() {
         return segments
     }
 
-    fun tapAt(x: Float, y: Float, durationMs: Long): Boolean {
+    override fun tapAt(x: Float, y: Float, durationMs: Long): Boolean {
         val path = Path().apply { moveTo(x, y) }
         val stroke = GestureDescription.StrokeDescription(path, 0L, durationMs.coerceAtLeast(1L))
         return try {
@@ -150,7 +151,7 @@ class IzukiAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun swipeFromTo(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean {
+    override fun swipeFromTo(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean {
         val path = Path().apply {
             moveTo(x1, y1)
             lineTo(x2, y2)
@@ -163,7 +164,7 @@ class IzukiAccessibilityService : AccessibilityService() {
         }
     }
 
-    fun inputText(text: String): Boolean {
+    override fun inputText(text: String): Boolean {
         val root = rootInActiveWindow ?: return false
         val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return false
         val args = Bundle().apply {
@@ -172,11 +173,11 @@ class IzukiAccessibilityService : AccessibilityService() {
         return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
-    fun rootNode(): AccessibilityNodeInfo? = rootInActiveWindow
+    override fun rootNode(): AccessibilityNodeInfo? = rootInActiveWindow
 
     fun currentPackage(): String? = rootInActiveWindow?.packageName?.toString()
 
-    fun screenshotBitmap(): Bitmap? {
+    override fun screenshotBitmap(): Bitmap? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val latch = CountDownLatch(1)
         var result: Bitmap? = null
@@ -213,10 +214,20 @@ class IzukiAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        /**
+         * 用弱引用持有已连接的服务实例，避免静态字段延长 Service（Context）生命周期；
+         * 系统在绑定期间仍持有强引用，因此正常使用不会提前被回收。
+         */
         @Volatile
-        var instance: IzukiAccessibilityService? = null
-            private set
+        private var instanceRef: java.lang.ref.WeakReference<IzukiAccessibilityService>? = null
+
+        val instance: IzukiAccessibilityService?
+            get() = instanceRef?.get()
 
         val isConnected: Boolean get() = instance != null
+
+        private fun setInstance(service: IzukiAccessibilityService?) {
+            instanceRef = service?.let { java.lang.ref.WeakReference(it) }
+        }
     }
 }

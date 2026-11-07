@@ -11,7 +11,10 @@ import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.data.UnlockSettingsRepository
 import com.benton.izukijs.model.Capability
+import com.benton.izukijs.model.TouchInputDevice
 import com.benton.izukijs.model.UnlockPattern
+import com.benton.izukijs.model.UnlockRecordingParser
+import com.benton.izukijs.model.UnlockResult
 import com.benton.izukijs.privileged.PrivilegedUnlockClient
 import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.CancellationException

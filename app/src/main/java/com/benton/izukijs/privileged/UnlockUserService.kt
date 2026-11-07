@@ -6,7 +6,7 @@ import androidx.annotation.Keep
 import com.benton.izukijs.privileged.internal.GestureRecorder
 import com.benton.izukijs.privileged.internal.PrivilegedLog
 import com.benton.izukijs.privileged.internal.WakeUnlockController
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 import kotlin.system.exitProcess
 
 /**

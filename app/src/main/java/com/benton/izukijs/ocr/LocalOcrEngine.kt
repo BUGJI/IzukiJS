@@ -17,6 +17,11 @@ class LocalOcrEngine {
         TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     }
 
+    /** 触发客户端初始化，减少首次识别时的冷启动开销。 */
+    fun prewarm() {
+        runCatching { recognizer }
+    }
+
     fun recognize(bitmap: Bitmap): OcrResult? {
         val visionText = recognizeBlocking(bitmap) ?: return null
         val blocks = ArrayList<OcrBlock>()

@@ -6,36 +6,43 @@ import android.os.Environment
 import androidx.core.app.NotificationManagerCompat
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.controller.NodeTreeResult
+import com.benton.izukijs.core.ScriptExitException
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.log.RunLogRegistry
 import com.benton.izukijs.core.log.RunStatus
+import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.core.runtime.RunControl
 import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
+import com.benton.izukijs.data.ScriptEnv
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.model.ScriptEnvSpec
-import com.benton.izukijs.ocr.OcrProcessor
-import com.benton.izukijs.runtime.notification.ScriptNotificationCenter
+import com.benton.izukijs.runtime.api.DeviceApiBundle
+import com.benton.izukijs.runtime.api.ImageApi
+import com.benton.izukijs.core.notification.ScriptNotificationCenter
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.ScreenUnlockController
 import com.benton.izukijs.service.ScriptForegroundService
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 import com.benton.izukijs.service.WakeLockController
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.virtualscreen.VirtualScreenOptions
+import com.benton.izukijs.virtualscreen.VirtualScreenSettings
 import com.benton.izukijs.virtualscreen.VirtualScreenSettingsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 脚本执行管理器。执行不依赖 UI 生命周期：即使界面退到后台，前台服务也会保活。
@@ -44,7 +51,8 @@ class ScriptExecutionManager(
     private val appContext: Context,
     private val controllers: ControllerManager,
     private val screenCapture: ScreenCapture,
-    private val ocrProcessor: OcrProcessor,
+    private val deviceApiBundle: DeviceApiBundle,
+    private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
     private val logBus: LogBus,
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
@@ -58,15 +66,15 @@ class ScriptExecutionManager(
     private val virtualScreen: VirtualScreenManager,
     private val virtualScreenSettings: VirtualScreenSettingsRepository,
     private val moduleSourceProvider: (String) -> String?,
-) {
+) : RunControl {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val _running = MutableStateFlow(false)
-    val running: StateFlow<Boolean> = _running.asStateFlow()
+    override val running: StateFlow<Boolean> = _running.asStateFlow()
 
     private val _runningScript = MutableStateFlow<String?>(null)
-    val runningScript: StateFlow<String?> = _runningScript.asStateFlow()
+    override val runningScript: StateFlow<String?> = _runningScript.asStateFlow()
 
     private val _runningScriptId = MutableStateFlow<String?>(null)
     val runningScriptId: StateFlow<String?> = _runningScriptId.asStateFlow()
@@ -79,10 +87,11 @@ class ScriptExecutionManager(
 
     fun lastRunId(): String? = lastStartedRunId
 
-    private var job: Job? = null
-
     @Volatile
     private var engine: JsEngine? = null
+
+    @Volatile
+    private var activeSession: RunSession? = null
 
     fun run(
         scriptId: String,
@@ -106,6 +115,45 @@ class ScriptExecutionManager(
         val runId = RunLogRegistry.newRunId()
         lastStartedRunId = runId
         RunLogRegistry.begin(runId, scriptId, scriptName)
+        val session = RunSession(runId)
+        activeSession = session
+
+        // 参数解析、运行历史落盘、通知 / 悬浮窗启动等放到后台，避免从界面点运行时阻塞主线程。
+        // 预启动阶段的任何异常都必须回滚，否则 _running 会永久卡在 true。
+        scope.launch {
+            withContext(RunLogRegistry.asContextElement(runId)) {
+                val prepared = try {
+                    PerfMetrics.measure("script.prepare") {
+                        prepareRun(runId, scriptId, scriptName, source, values, needs)
+                    }
+                } catch (t: Throwable) {
+                    logBus.error("✘ 启动脚本失败: ${t.message}")
+                    rollbackStart(session, t, onFinished)
+                    return@withContext
+                }
+                executeRun(
+                    session = session,
+                    needs = needs,
+                    source = source,
+                    scriptName = scriptName,
+                    plannedRunMode = prepared.plannedRunMode,
+                    virtualSettings = prepared.virtualSettings,
+                    scriptEnv = prepared.scriptEnv,
+                    onFinished = onFinished,
+                )
+            }
+        }
+        return true
+    }
+
+    private fun prepareRun(
+        runId: String,
+        scriptId: String,
+        scriptName: String,
+        source: String,
+        values: Map<String, String>,
+        needs: Set<String>?,
+    ): PreparedRun {
         // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
         val spec = ScriptEnvSpec.parse(source)
         val useGlobal = scriptEnvRepository.useGlobalEnv(scriptId)
@@ -128,15 +176,8 @@ class ScriptExecutionManager(
             // 只记录键名，避免把可能含密钥的变量值写入日志。
             logBus.info("⚙ 运行参数: " + resolved.keys.sorted().joinToString(", "))
         }
-        val requestedRunMode = RunMode.from(resolved[RUN_MODE_KEY])
         val virtualSettings = virtualScreenSettings.current()
-        var effectiveRunMode = requestedRunMode ?: virtualSettings.defaultMode
-        if (effectiveRunMode == RunMode.BACKGROUND &&
-            (!virtualSettings.backgroundAllowed || !virtualScreen.available())
-        ) {
-            logBus.warn("后台虚拟屏不可用或未允许，本次回退前台模式")
-            effectiveRunMode = RunMode.FOREGROUND
-        }
+        val plannedRunMode = resolveRunMode(resolved, virtualSettings)
 
         _runningScript.value = scriptName
         _runningScriptId.value = scriptId
@@ -147,16 +188,51 @@ class ScriptExecutionManager(
             logBus.info("🔒 声明能力: " + needs.sorted().joinToString(", "))
             warnMissingNeeds(needs)
         }
-        ScriptNotificationCenter.begin(scriptName)
-        ScriptForegroundService.start(appContext, scriptName)
-        FloatingWindowService.showForRun(appContext)
 
-        job = scope.launch {
-            RunLogRegistry.enter(runId)
-            try {
-            var jsEngine: JsEngine? = null
-            var failure: Throwable? = null
-            val settings = runtimeSettings.current()
+        ScriptNotificationCenter.begin(scriptName)
+        runCatching { ScriptForegroundService.start(appContext, scriptName) }.onFailure {
+            logBus.warn("前台服务启动失败，脚本将继续运行但可能被系统回收：${it.message}")
+        }
+        runCatching { FloatingWindowService.showForRun(appContext) }.onFailure {
+            logBus.warn("悬浮窗启动失败：${it.message}")
+        }
+        return PreparedRun(scriptEnv, plannedRunMode, virtualSettings)
+    }
+
+    private data class PreparedRun(
+        val scriptEnv: ScriptEnv,
+        val plannedRunMode: RunMode,
+        val virtualSettings: VirtualScreenSettings,
+    )
+
+    private fun resolveRunMode(
+        resolved: Map<String, String>,
+        virtualSettings: VirtualScreenSettings,
+    ): RunMode {
+        val requested = RunMode.from(resolved[RUN_MODE_KEY])
+        var effective = requested ?: virtualSettings.defaultMode
+        if (effective == RunMode.BACKGROUND &&
+            (!virtualSettings.backgroundAllowed || !virtualScreen.available())
+        ) {
+            logBus.warn("后台虚拟屏不可用或未允许，本次回退前台模式")
+            effective = RunMode.FOREGROUND
+        }
+        return effective
+    }
+
+    private suspend fun executeRun(
+        session: RunSession,
+        needs: Set<String>?,
+        source: String,
+        scriptName: String,
+        plannedRunMode: RunMode,
+        virtualSettings: VirtualScreenSettings,
+        scriptEnv: ScriptEnv,
+        onFinished: ((Boolean) -> Unit)?,
+    ) {
+        var failure: Throwable? = null
+        val settings = runtimeSettings.current()
+        try {
             if (screenUnlock.isEnabled()) {
                 val result = screenUnlock.ensureUnlocked()
                 if (result != UnlockResult.OK &&
@@ -166,11 +242,12 @@ class ScriptExecutionManager(
                     logBus.warn("自动解锁未完成: $result")
                 }
             }
-            if (settings.keepAwake) wakeLock.acquire()
+            if (settings.keepAwake) session.acquireWakeLock()
             if (settings.wakeScreen) {
                 runCatching { controllers.controllerFor(Capability.KEY)?.pressKey(KEYCODE_WAKEUP) }
             }
-            val startGenerationBefore = virtualScreen.startGeneration()
+            session.startGenerationBefore = virtualScreen.startGeneration()
+            var effectiveRunMode = plannedRunMode
             if (effectiveRunMode == RunMode.BACKGROUND) {
                 val started = virtualScreen.start(
                     VirtualScreenOptions(virtualSettings.resolution),
@@ -192,37 +269,47 @@ class ScriptExecutionManager(
             if (effectiveRunMode == RunMode.BACKGROUND && needs?.contains("selector") == true) {
                 logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 capture / ocr / 坐标输入")
             }
+            // 并行预热视觉能力，降低脚本首次找图 / OCR 的冷启动延迟。
+            if (needs == null || "images" in needs) ImageApi.prewarm()
+            if (needs == null || "ocr" in needs) deviceApiBundle.ocrApi.prewarm()
+            val jsEngine = JsEngine(
+                appContext,
+                controllers,
+                screenCapture,
+                deviceApiBundle,
+                nodeTreeProvider,
+                logBus,
+                aiConfigRepository,
+                captureSettingsRepository,
+                scriptEnv,
+                runtimeSettings,
+                httpSettingsRepository,
+                moduleSourceProvider,
+                virtualScreen,
+                effectiveRunMode,
+            ).also {
+                session.engine = it
+                engine = it
+            }
+            if (session.stopRequested) {
+                logBus.info("… 收到停止请求，正在终止脚本")
+                jsEngine.requestExit()
+            }
+            jsEngine.execute(
+                source = source,
+                fileName = scriptName,
+                timeoutMs = settings.scriptTimeoutMinutes * 60_000L,
+                needs = needs,
+            )
+        } catch (t: Throwable) {
+            failure = t
+        } finally {
             try {
-                jsEngine = JsEngine(
-                    appContext,
-                    controllers,
-                    screenCapture,
-                    ocrProcessor,
-                    logBus,
-                    aiConfigRepository,
-                    captureSettingsRepository,
-                    scriptEnv,
-                    runtimeSettings,
-                    httpSettingsRepository,
-                    moduleSourceProvider,
-                    virtualScreen,
-                    effectiveRunMode,
-                ).also { engine = it }
-                jsEngine.execute(
-                    source = source,
-                    fileName = scriptName,
-                    timeoutMs = settings.scriptTimeoutMinutes * 60_000L,
-                    needs = needs,
-                )
-            } catch (t: Throwable) {
-                failure = t
-            } finally {
-                if (settings.keepAwake) wakeLock.release()
-                val timedOut = jsEngine?.timedOut == true
-                val exited = jsEngine?.exitRequested == true || isExitThrowable(failure)
-                jsEngine?.let { runCatching { it.close() } }
+                val timedOut = session.engine?.timedOut == true
+                val exited = session.engine?.exitRequested == true || isExitThrowable(failure)
+                session.closeEngine()
                 engine = null
-                val startedThisRun = virtualScreen.startGeneration() > startGenerationBefore
+                val startedThisRun = virtualScreen.startGeneration() > session.startGenerationBefore
                 if (virtualScreen.isActive()) {
                     if (virtualScreenSettings.current().autoStopAfterRun && startedThisRun) {
                         runCatching { virtualScreen.stop(VirtualScreenManager.STOP_RUN_FINISHED) }
@@ -246,21 +333,47 @@ class ScriptExecutionManager(
                     else -> RunStatus.SUCCEEDED
                 }
                 val error = failure?.let { it.stackTraceToString().take(MAX_RUN_ERROR_CHARS) }
-                RunLogRegistry.finish(runId, status, error)
-                _running.value = false
-                _runningScript.value = null
-                _runningScriptId.value = null
-                _runningRunId.value = null
-                ScriptForegroundService.stop(appContext)
-                ScriptNotificationCenter.clear()
+                RunLogRegistry.finish(session.runId, status, error)
                 val success = !timedOut && (failure == null || exited)
-                runCatching { onFinished?.invoke(success) }
-            }
+                runCatching { onFinished?.invoke(success) }.onFailure {
+                    logBus.warn("运行结束回调失败：${it.message}")
+                }
             } finally {
-                RunLogRegistry.exit()
+                // 无论日志 / 停止流程是否抛异常，都必须释放资源与运行标记。
+                session.releaseWakeLock()
+                resetRunningState()
+                runCatching { ScriptForegroundService.stop(appContext) }
+                ScriptNotificationCenter.clear()
             }
         }
-        return true
+    }
+
+    /** 预启动失败时回滚：结束 run 记录、释放锁、重置状态并停掉已拉起的前台服务。 */
+    private fun rollbackStart(
+        session: RunSession,
+        error: Throwable,
+        onFinished: ((Boolean) -> Unit)?,
+    ) {
+        RunLogRegistry.finish(
+            session.runId,
+            RunStatus.FAILED,
+            error.stackTraceToString().take(MAX_RUN_ERROR_CHARS),
+        )
+        session.releaseWakeLock()
+        resetRunningState()
+        runCatching { ScriptForegroundService.stop(appContext) }
+        ScriptNotificationCenter.clear()
+        runCatching { onFinished?.invoke(false) }.onFailure {
+            logBus.warn("运行结束回调失败：${it.message}")
+        }
+    }
+
+    private fun resetRunningState() {
+        _running.value = false
+        _runningScript.value = null
+        _runningScriptId.value = null
+        _runningRunId.value = null
+        activeSession = null
     }
 
     private fun warnMissingNeeds(needs: Set<String>) {
@@ -299,14 +412,21 @@ class ScriptExecutionManager(
     }
 
     /** 请求停止当前脚本；通过 QuickJS 中断回调，纯计算死循环也能被打断。 */
-    fun requestStop() {
+    override fun requestStop() {
         val current = engine
-        if (current == null) {
-            logBus.warn("当前没有正在运行的脚本")
+        if (current != null) {
+            logBus.info("… 正在停止脚本")
+            current.requestExit()
             return
         }
-        logBus.info("… 正在停止脚本")
-        current.requestExit()
+        val session = activeSession
+        if (session != null && _running.value) {
+            // 引擎尚未创建（仍在校验 / 解锁 / 启动虚拟屏），先记下请求，创建后立即中断。
+            session.stopRequested = true
+            logBus.info("… 正在停止脚本（等待启动完成）")
+            return
+        }
+        logBus.warn("当前没有正在运行的脚本")
     }
 
     private fun isExitThrowable(t: Throwable?): Boolean {
@@ -319,6 +439,43 @@ class ScriptExecutionManager(
             guard++
         }
         return false
+    }
+
+    /** 一次运行的资源与状态句柄；所有释放操作都幂等，供异常路径复用。 */
+    private inner class RunSession(val runId: String) {
+
+        @Volatile
+        var stopRequested: Boolean = false
+
+        @Volatile
+        var engine: JsEngine? = null
+
+        @Volatile
+        var startGenerationBefore: Long = 0L
+
+        @Volatile
+        private var wakeLockHeld: Boolean = false
+
+        @Synchronized
+        fun acquireWakeLock() {
+            if (wakeLockHeld) return
+            wakeLock.acquire()
+            wakeLockHeld = true
+        }
+
+        @Synchronized
+        fun releaseWakeLock() {
+            if (!wakeLockHeld) return
+            wakeLockHeld = false
+            wakeLock.release()
+        }
+
+        @Synchronized
+        fun closeEngine() {
+            val current = engine ?: return
+            engine = null
+            runCatching { current.close() }
+        }
     }
 
     private companion object {

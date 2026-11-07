@@ -44,6 +44,11 @@
     <string name="settings_progress_notification_desc">Allow scripts to update the running notification through notify.progress; when disabled the API returns false.</string>
     <string name="settings_notification_permission_denied">Notification permission is not granted, so progress notifications will not appear.</string>
     <string name="settings_notification_permission_action">Grant notification permission</string>
+    <string name="settings_perf_baseline">Performance baseline</string>
+    <string name="settings_perf_baseline_desc">Records frame time, screenshots, image/color matching, OCR and log rendering metrics, reported to logcat every 30 seconds. Read with adb logcat -s IzukiPerf.</string>
+    <string name="settings_perf_baseline_toggle">Enable performance baseline</string>
+    <string name="settings_perf_baseline_toggle_desc">Turn on only when comparing before/after optimizations or investigating jank; keep it off for daily use.</string>
+    <string name="settings_perf_baseline_report_now">Report current window now</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_desc">Choose the interface language; the UI refreshes immediately.</string>
     <string name="language_system">System default</string>
@@ -442,6 +447,8 @@
     <string name="virtual_screen_shizuku_required">Authorize Shizuku first; Android 10+ is required.</string>
     <string name="virtual_screen_default_mode">Default run mode</string>
     <string name="virtual_screen_resolution">Background resolution</string>
+    <string name="virtual_screen_device_preset">Device %1$d×%2$d</string>
+    <string name="virtual_screen_device_preset_desc">Follows the current orientation; when the long side exceeds %4$d it scales down proportionally with dpi (currently %1$d×%2$d@%3$d).</string>
     <string name="virtual_screen_custom_size">Custom size (width / height / dpi)</string>
     <string name="virtual_screen_width">Width</string>
     <string name="virtual_screen_height">Height</string>

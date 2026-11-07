@@ -107,6 +107,7 @@ fun ScriptsScreen(
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
+    val deletion = remember(container) { ScriptDeletion(container) }
     val defaultName = stringResource(R.string.scripts_default_name)
     val pinned by container.scriptListPreferences.pinned.collectAsStateWithLifecycle()
     val tags by container.scriptListPreferences.tags.collectAsStateWithLifecycle()
@@ -481,56 +482,20 @@ fun ScriptsScreen(
                     haptics.reject()
                     deleteTarget = null
                     scope.launch {
-                        // 删除前留档，供 Snackbar 的「撤销」恢复。
-                        val content = container.scriptRepository.readAsync(target)
-                        val values = container.scriptEnvRepository.values(target.id)
-                        val state = container.scriptEnvRepository.state(target.id)
-                        val useGlobalEnv = container.scriptEnvRepository.useGlobalEnv(target.id)
-                        val env = container.scriptEnvRepository.env(target.id)
-                        val envText = container.scriptEnvRepository.envText(target.id)
-                        val savedTags = tags[target.id].orEmpty()
-                        val wasPinned = target.id in pinned
-                        val wasTile = target.id == tileScriptId
-                        val savedSubscription = container.subscriptionRepository.getAsync(target.id)
-                        val savedSchedules = container.scheduleRepository.listAsync()
-                            .filter { it.scriptId == target.id }
-                        container.subscriptionManager.cancelAsync(target.id)
-                        savedSchedules.forEach { container.scheduleManager.cancelAsync(it.id) }
-                        container.scriptRepository.deleteAsync(target)
-                        container.scriptEnvRepository.remove(target.id)
-                        container.scriptListPreferences.removeTags(target.id)
-                        container.scriptListPreferences.setPinned(target.id, false)
-                        if (wasTile) container.tileSettingsRepository.setScriptId(null)
+                        // 删除与撤销的级联逻辑集中在 ScriptDeletion，页面只负责弹窗与 Snackbar。
+                        val backup = deletion.delete(
+                            script = target,
+                            tags = tags[target.id].orEmpty(),
+                            pinned = target.id in pinned,
+                            pinnedToTile = target.id == tileScriptId,
+                        )
                         val result = snackbar.show(
                             message = resources.getString(R.string.scripts_deleted, target.name),
                             actionLabel = resources.getString(R.string.common_undo),
                             duration = SnackbarDuration.Long,
                         )
                         if (result == SnackbarResult.ActionPerformed) {
-                            val restored = container.scriptRepository.createAsync(target.name, content)
-                            if (savedTags.isNotEmpty()) {
-                                container.scriptListPreferences.setTags(restored.id, savedTags)
-                            }
-                            if (values.isNotEmpty()) container.scriptEnvRepository.saveValues(restored.id, values)
-                            state.forEach { (key, value) ->
-                                container.scriptEnvRepository.putState(restored.id, key, value)
-                            }
-                            container.scriptEnvRepository.saveEnvSettings(
-                                restored.id,
-                                useGlobalEnv,
-                                env,
-                                envText,
-                            )
-                            if (wasPinned) container.scriptListPreferences.setPinned(restored.id, true)
-                            if (wasTile) container.tileSettingsRepository.setScriptId(restored.id)
-                            savedSubscription?.let {
-                                container.subscriptionManager.scheduleAsync(it.copy(scriptId = restored.id))
-                            }
-                            savedSchedules.forEach { schedule ->
-                                container.scheduleManager.scheduleAsync(
-                                    schedule.copy(scriptId = restored.id, scriptName = restored.name),
-                                )
-                            }
+                            deletion.restore(backup)
                         }
                     }
                 }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {

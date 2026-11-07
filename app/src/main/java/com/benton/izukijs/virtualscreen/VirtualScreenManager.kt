@@ -26,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /** 虚拟屏生命周期状态，供设置页、运行页与 PiP 武装逻辑订阅。 */
 sealed interface VirtualScreenState {
@@ -246,13 +247,24 @@ class VirtualScreenManager(
     }
 
     fun startBlocking(options: VirtualScreenOptions? = null): Boolean =
-        runBlocking { start(options) }
+        runCatching {
+            runBlocking { withTimeout(START_TIMEOUT_MS) { start(options) } }
+        }.getOrElse {
+            logBus.error("启动虚拟屏超时或失败：${it.message}")
+            false
+        }
 
     suspend fun stop(reason: String = STOP_USER) {
         startMutex.withLock { cleanupInternal(destroyRemote = true, reason = reason) }
     }
 
-    fun stopBlocking(reason: String = STOP_USER) = runBlocking { stop(reason) }
+    fun stopBlocking(reason: String = STOP_USER) {
+        runCatching {
+            runBlocking { withTimeout(STOP_TIMEOUT_MS) { stop(reason) } }
+        }.onFailure {
+            logBus.warn("停止虚拟屏超时或失败：${it.message}")
+        }
+    }
 
     /** 取最新一帧；[waitMs] > 0 时等待首帧。返回的 Bitmap 由调用方负责 recycle。 */
     fun capture(waitMs: Long = 0L): Bitmap? = frameSource?.captureLatest(waitMs)
@@ -277,9 +289,13 @@ class VirtualScreenManager(
     fun frameSeq(): Long = frameSource?.currentSeq() ?: 0L
 
     /** 虚拟屏上当前前台包名；未激活或服务不可用时返回 null。 */
-    fun currentPackageBlocking(): String? = runBlocking {
-        if (!isActive()) null else client.currentPackage()
-    }
+    fun currentPackageBlocking(): String? = runCatching {
+        runBlocking {
+            withTimeout(PACKAGE_QUERY_TIMEOUT_MS) {
+                if (!isActive()) null else client.currentPackage()
+            }
+        }
+    }.getOrNull()
 
     suspend fun currentPackage(): String? =
         if (!isActive()) null else client.currentPackage()
@@ -367,7 +383,9 @@ class VirtualScreenManager(
         return launchIntent(intent, forceStopIfElsewhere = true)
     }
 
-    fun launchBlocking(packageName: String): Boolean = runBlocking { launch(packageName) }
+    fun launchBlocking(packageName: String): Boolean = runCatching {
+        runBlocking { withTimeout(LAUNCH_TIMEOUT_MS) { launch(packageName) } }
+    }.getOrDefault(false)
 
     /** 把任意 Intent 定向到虚拟屏；[forceStopIfElsewhere] 为 false 时尽量迁移而不强停。 */
     suspend fun launchIntent(
@@ -391,7 +409,11 @@ class VirtualScreenManager(
     fun launchIntentBlocking(
         intent: Intent,
         forceStopIfElsewhere: Boolean = true,
-    ): Boolean = runBlocking { launchIntent(intent, forceStopIfElsewhere) }
+    ): Boolean = runCatching {
+        runBlocking {
+            withTimeout(LAUNCH_TIMEOUT_MS) { launchIntent(intent, forceStopIfElsewhere) }
+        }
+    }.getOrDefault(false)
 
     private fun resolveLaunchIntent(packageName: String): Intent? {
         val component = packageName.takeIf { it.contains('/') }
@@ -488,6 +510,12 @@ class VirtualScreenManager(
         private const val DEFAULT_FRAME_WAIT_MS = 1_000L
         private const val MAX_INPUT_DURATION_MS = 60_000L
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
+
+        /** 阻塞桥的硬超时：仅在 JS / MCP 同步入口使用，避免单线程执行器被永久占用。 */
+        private const val START_TIMEOUT_MS = 30_000L
+        private const val STOP_TIMEOUT_MS = 15_000L
+        private const val LAUNCH_TIMEOUT_MS = 15_000L
+        private const val PACKAGE_QUERY_TIMEOUT_MS = 10_000L
 
         const val STOP_USER = "user_stop"
         const val STOP_SERVICE_DISCONNECTED = "service_disconnected"

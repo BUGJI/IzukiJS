@@ -1,4 +1,4 @@
-package com.benton.izukijs.runtime
+package com.benton.izukijs.core
 
 /**
  * 脚本请求退出时抛出。用于中断当前 JS 执行。

@@ -28,7 +28,8 @@ import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.core.log.LogLevel
-import com.benton.izukijs.runtime.ScriptExecutionManager
+import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.core.runtime.RunControl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +43,8 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * 脚本日志悬浮窗。脚本运行时自动显示，默认展示 INFO 及以上级别的日志，
@@ -66,10 +69,24 @@ class FloatingWindowService : android.app.Service() {
     /** 是否已折叠日志区域。 */
     private var minimized = false
 
-    private val executionManager: ScriptExecutionManager
-        get() = (application as IzukiApp).container.scriptExecutionManager
+    private val executionManager: RunControl
+        get() = (application as IzukiApp).container.runControl
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
+    private val renderDate = Date()
+
+    private var latestEntries: List<LogEntry> = emptyList()
+    private var lastRenderedId = -1L
+    private var lastRenderAt = 0L
+    private var renderScheduled = false
+
+    private val renderTick = object : Runnable {
+        override fun run() {
+            renderScheduled = false
+            if (minimized || rootView?.visibility != View.VISIBLE) return
+            renderLogs(latestEntries)
+        }
+    }
 
     private val overlayListener = object : OverlayCoordinator.Listener {
         override fun hide() {
@@ -77,7 +94,32 @@ class FloatingWindowService : android.app.Service() {
         }
 
         override fun show() {
-            mainHandler.post { rootView?.visibility = View.VISIBLE }
+            mainHandler.post {
+                rootView?.visibility = View.VISIBLE
+                scheduleRender()
+            }
+        }
+
+        override fun awaitHidden(timeoutMs: Long) {
+            val view = rootView ?: return
+            // 主线程不能阻塞等待；截图路径都在脚本线程调用。
+            if (Looper.myLooper() == Looper.getMainLooper() || !view.isAttachedToWindow) return
+            val latch = CountDownLatch(1)
+            mainHandler.post {
+                if (!view.isAttachedToWindow) {
+                    latch.countDown()
+                    return@post
+                }
+                // 等两帧：第一帧完成隐藏后的 traversal / draw，第二帧确认画面已更新。
+                view.postOnAnimation {
+                    view.postOnAnimation { latch.countDown() }
+                }
+            }
+            try {
+                latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
         }
     }
 
@@ -106,6 +148,7 @@ class FloatingWindowService : android.app.Service() {
     override fun onDestroy() {
         isActive = false
         OverlayCoordinator.unregister(overlayListener)
+        mainHandler.removeCallbacks(renderTick)
         scope.cancel()
         rootView?.let { runCatching { windowManager.removeView(it) } }
         rootView = null
@@ -247,6 +290,11 @@ class FloatingWindowService : android.app.Service() {
                 if (value) R.string.floating_expand else R.string.floating_collapse,
             )
         }
+        if (!value) {
+            // 折叠期间跳过渲染，展开时补一次全量绘制。
+            lastRenderedId = -1L
+            scheduleRender()
+        }
     }
 
     private fun observeState() {
@@ -270,33 +318,58 @@ class FloatingWindowService : android.app.Service() {
     private fun observeLogs() {
         scope.launch {
             (application as IzukiApp).container.logBus.entries.collectLatest { entries ->
-                renderLogs(entries)
+                latestEntries = entries
+                scheduleRender()
             }
         }
     }
 
+    /**
+     * 节流渲染：日志可达每秒数十条，原先每条都全量重建 200 行 Spannable 会明显卡主线程。
+     * 这里最多每 [RENDER_INTERVAL_MS] 绘制一次；折叠 / 悬浮窗被截图临时隐藏时直接跳过。
+     */
+    private fun scheduleRender() {
+        if (minimized || rootView?.visibility != View.VISIBLE) return
+        if (renderScheduled) return
+        val wait = (RENDER_INTERVAL_MS - (android.os.SystemClock.elapsedRealtime() - lastRenderAt))
+            .coerceAtLeast(0L)
+        renderScheduled = true
+        mainHandler.postDelayed(renderTick, wait)
+    }
+
     private fun renderLogs(entries: List<LogEntry>) {
         val view = logView ?: return
-        val visible = entries.filter { it.level.ordinal >= LogLevel.INFO.ordinal }
-        if (visible.isEmpty()) return
-        val builder = SpannableStringBuilder()
-        visible.takeLast(MAX_LOG_LINES).forEach { entry ->
-            val start = builder.length
-            builder.append(timeFormat.format(Date(entry.timeMillis)))
-                .append(' ')
-                .append(tagOf(entry.level))
-                .append(' ')
-                .append(entry.message)
-            builder.setSpan(
-                ForegroundColorSpan(colorOf(entry.level)),
-                start,
-                builder.length,
-                Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-            )
-            builder.append('\n')
+        val lastId = entries.lastOrNull()?.id ?: -1L
+        if (lastId == lastRenderedId) return
+        lastRenderedId = lastId
+        lastRenderAt = android.os.SystemClock.elapsedRealtime()
+
+        PerfMetrics.measure("floating.logs.render") {
+            val visible = entries.filter { it.level.ordinal >= LogLevel.INFO.ordinal }
+            val builder = SpannableStringBuilder()
+            if (visible.isEmpty()) {
+                builder.append(getString(R.string.floating_waiting_log))
+            } else {
+                visible.takeLast(MAX_LOG_LINES).forEach { entry ->
+                    val start = builder.length
+                    renderDate.time = entry.timeMillis
+                    builder.append(timeFormat.format(renderDate))
+                        .append(' ')
+                        .append(tagOf(entry.level))
+                        .append(' ')
+                        .append(entry.message)
+                    builder.setSpan(
+                        ForegroundColorSpan(colorOf(entry.level)),
+                        start,
+                        builder.length,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    builder.append('\n')
+                }
+            }
+            view.setText(builder, TextView.BufferType.SPANNABLE)
+            scrollView?.post { scrollView?.fullScroll(View.FOCUS_DOWN) }
         }
-        view.setText(builder, TextView.BufferType.SPANNABLE)
-        scrollView?.post { scrollView?.fullScroll(View.FOCUS_DOWN) }
     }
 
     private fun tagOf(level: LogLevel): String = when (level) {
@@ -347,8 +420,9 @@ class FloatingWindowService : android.app.Service() {
 
     companion object {
         private const val CHANNEL_ID = "izuki_floating"
-        private const val NOTIFICATION_ID = 1002
+        private const val NOTIFICATION_ID = NotificationIds.FLOATING_WINDOW
         private const val MAX_LOG_LINES = 200
+        private const val RENDER_INTERVAL_MS = 250L
 
         private val _active = MutableStateFlow(false)
 

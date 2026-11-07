@@ -365,7 +365,7 @@ class DebugOverlayService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "izuki_debug_overlay"
-        private const val NOTIFICATION_ID = 1004
+        private const val NOTIFICATION_ID = NotificationIds.DEBUG_OVERLAY
         private const val HIDE_DELAY_MS = 160L
         private const val BOX_DISPLAY_MS = 6000L
 

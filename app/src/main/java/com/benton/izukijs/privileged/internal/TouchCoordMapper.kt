@@ -1,6 +1,6 @@
 package com.benton.izukijs.privileged.internal
 
-import com.benton.izukijs.service.TouchInputDevice
+import com.benton.izukijs.model.TouchInputDevice
 
 /** 输入设备原始坐标 -> 当前旋转下的逻辑屏幕坐标。 */
 internal object TouchCoordMapper {

@@ -3,7 +3,7 @@ package com.benton.izukijs.data
 import android.content.Context
 import android.net.Uri
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.subscription.SubscriptionSync
+import com.benton.izukijs.core.net.HttpScript
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -41,7 +41,7 @@ class ScriptImporter(
     suspend fun importFromImage(uri: Uri): Result {
         val raw = decodeQrCode(uri)?.trim().orEmpty()
         if (raw.isEmpty()) return Result.NoQrCode
-        if (!SubscriptionSync.isHttpUrl(raw)) return Result.InvalidLink
+        if (!HttpScript.isHttpUrl(raw)) return Result.InvalidLink
         val content = download(raw) ?: return Result.DownloadFailed
         val created = repository.createAsync(nameFromUrl(raw), content)
         return Result.Success(created.name)
@@ -87,7 +87,7 @@ class ScriptImporter(
                     logBus.warn("脚本下载失败 HTTP $code: $url")
                     null
                 } else {
-                    connection.inputStream.use { SubscriptionSync.readScript(it) }
+                    connection.inputStream.use { HttpScript.readScript(it) }
                         .takeIf { it.isNotBlank() }
                 }
             } finally {

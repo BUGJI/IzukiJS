@@ -50,8 +50,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.permission.LocalNetworkPermission
-import com.benton.izukijs.mcp.McpBindMode
-import com.benton.izukijs.mcp.McpConfig
+import com.benton.izukijs.mcp.core.McpBindMode
+import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.mcp.McpHttpHandler
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.service.McpServerService

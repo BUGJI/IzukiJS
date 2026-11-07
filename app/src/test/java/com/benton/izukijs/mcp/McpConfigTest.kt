@@ -1,5 +1,6 @@
 package com.benton.izukijs.mcp
 
+import com.benton.izukijs.mcp.core.McpConfig
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

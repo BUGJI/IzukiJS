@@ -16,9 +16,9 @@ import androidx.core.graphics.drawable.IconCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.MainActivity
 import com.benton.izukijs.R
-import com.benton.izukijs.runtime.notification.ProgressSegment
-import com.benton.izukijs.runtime.notification.ScriptNotificationCenter
-import com.benton.izukijs.runtime.notification.ScriptNotificationState
+import com.benton.izukijs.core.notification.ProgressSegment
+import com.benton.izukijs.core.notification.ScriptNotificationCenter
+import com.benton.izukijs.core.notification.ScriptNotificationState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -248,7 +248,7 @@ class ScriptForegroundService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "izuki_script_running"
-        private const val NOTIFICATION_ID = 1001
+        private const val NOTIFICATION_ID = NotificationIds.SCRIPT
         private const val EXTRA_SCRIPT_NAME = "extra_script_name"
         private const val MIN_UPDATE_INTERVAL_MS = 500L
 

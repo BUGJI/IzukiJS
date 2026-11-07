@@ -1,4 +1,4 @@
-package com.benton.izukijs.service
+package com.benton.izukijs.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

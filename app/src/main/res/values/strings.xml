@@ -44,6 +44,11 @@
     <string name="settings_progress_notification_desc">允许脚本通过 notify.progress 更新运行通知的进度、阶段与颜色；关闭后该 API 返回 false。</string>
     <string name="settings_notification_permission_denied">通知权限未授予，进度通知不会显示。</string>
     <string name="settings_notification_permission_action">授予通知权限</string>
+    <string name="settings_perf_baseline">性能基线</string>
+    <string name="settings_perf_baseline_desc">记录帧耗时、截图、找图找色、OCR 与日志刷新等指标，每 30 秒输出一次到 logcat；用 adb logcat -s IzukiPerf 查看。</string>
+    <string name="settings_perf_baseline_toggle">启用性能基线采集</string>
+    <string name="settings_perf_baseline_toggle_desc">建议仅在对比优化前后、或排查卡顿时开启，日常使用保持关闭。</string>
+    <string name="settings_perf_baseline_report_now">立即输出本次统计</string>
     <string name="settings_language">语言</string>
     <string name="settings_language_desc">选择界面语言；改动后界面会立即刷新。</string>
     <string name="language_system">跟随系统</string>
@@ -442,6 +447,8 @@
     <string name="virtual_screen_shizuku_required">需要先授权 Shizuku，且系统为 Android 10+。</string>
     <string name="virtual_screen_default_mode">默认运行模式</string>
     <string name="virtual_screen_resolution">后台分辨率</string>
+    <string name="virtual_screen_device_preset">设备 %1$d×%2$d</string>
+    <string name="virtual_screen_device_preset_desc">设备档位按当前方向读取；长边超过 %4$d 时等比缩小并同步缩放 dpi（当前 %1$d×%2$d@%3$d）。</string>
     <string name="virtual_screen_custom_size">自定义尺寸（宽 / 高 / dpi）</string>
     <string name="virtual_screen_width">宽度</string>
     <string name="virtual_screen_height">高度</string>

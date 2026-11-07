@@ -3,6 +3,7 @@ package com.benton.izukijs.controller.shizuku
 import android.content.Context
 import android.content.pm.PackageManager
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.core.shizuku.ShizukuAuthorization
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
 import rikka.shizuku.Shizuku
@@ -50,11 +51,9 @@ class ShizukuManager(
         maybeRegister()
     }
 
-    fun isShizukuRunning(): Boolean = runCatching { Shizuku.pingBinder() }.getOrDefault(false)
+    fun isShizukuRunning(): Boolean = ShizukuAuthorization.isRunning()
 
-    fun isPermissionGranted(): Boolean = runCatching {
-        Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
-    }.getOrDefault(false)
+    fun isPermissionGranted(): Boolean = ShizukuAuthorization.isGranted()
 
     fun requestPermission(requestCode: Int) {
         runCatching {

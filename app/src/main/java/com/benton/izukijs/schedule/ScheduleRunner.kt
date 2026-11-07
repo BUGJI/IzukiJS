@@ -11,7 +11,7 @@ import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.service.ScreenUnlockController
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

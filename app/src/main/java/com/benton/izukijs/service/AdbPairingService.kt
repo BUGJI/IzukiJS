@@ -244,7 +244,7 @@ class AdbPairingService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "adb_pairing"
-        private const val NOTIFICATION_ID = 4102
+        private const val NOTIFICATION_ID = NotificationIds.ADB_PAIRING
         private const val KEY_CODE = "pairing_code"
         private const val ACTION_REPLY = "com.benton.izukijs.action.ADB_PAIRING_REPLY"
         private const val ACTION_STOP = "com.benton.izukijs.action.ADB_PAIRING_STOP"

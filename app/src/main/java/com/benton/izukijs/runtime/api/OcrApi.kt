@@ -20,6 +20,9 @@ class OcrApi(
     private val logBus: LogBus,
 ) {
 
+    /** 预热本地 OCR 客户端；不执行识别，供脚本启动时降低首次调用延迟。 */
+    fun prewarm() = ocrProcessor.prewarm()
+
     @JavascriptInterface
     fun recognize(): String? {
         val bitmap = screenshot() ?: run {

@@ -1,6 +1,6 @@
 package com.benton.izukijs.mcp.protocol
 
-import com.benton.izukijs.mcp.McpAuditLog
+import com.benton.izukijs.mcp.core.McpAuditLog
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpContent
 import com.benton.izukijs.mcp.tools.McpToolResult

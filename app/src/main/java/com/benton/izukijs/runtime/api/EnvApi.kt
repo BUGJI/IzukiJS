@@ -1,7 +1,7 @@
 package com.benton.izukijs.runtime.api
 
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.runtime.ScriptEnv
+import com.benton.izukijs.data.ScriptEnv
 import org.json.JSONObject
 
 /**

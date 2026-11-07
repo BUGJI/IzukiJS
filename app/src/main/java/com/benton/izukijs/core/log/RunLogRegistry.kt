@@ -1,5 +1,7 @@
 package com.benton.izukijs.core.log
 
+import kotlinx.coroutines.ThreadContextElement
+import kotlinx.coroutines.asContextElement
 import java.util.concurrent.atomic.AtomicLong
 
 private const val MAX_RUNS = 20
@@ -65,6 +67,18 @@ object RunLogRegistry {
         }
         return record
     }
+
+    /**
+     * 把 [runId] 绑定到协程上下文。
+     *
+     * 直接使用 [ThreadLocal] 时，协程在挂起点被调度到另一线程后 [record] 会丢失 runId，
+     * [exit] 也可能清不掉原线程的标记。用 [asContextElement] 包裹后，线程切换时自动
+     * 恢复该值，脚本运行期间的日志即可稳定归档到对应 run。
+     *
+     * 注意：脚本内部另起线程 / 独立 scope 不会继承此上下文。
+     */
+    fun asContextElement(runId: String): ThreadContextElement<String?> =
+        current.asContextElement(runId)
 
     fun enter(runId: String) {
         current.set(runId)

@@ -30,7 +30,7 @@ import com.benton.izukijs.model.UnlockMethod
 import com.benton.izukijs.security.SecretCipher
 import com.benton.izukijs.service.UnlockRecordingService
 import com.benton.izukijs.service.UnlockRecordingState
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.LocalSnackbarController

@@ -1,9 +1,9 @@
 package com.benton.izukijs.runtime.api
 
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.runtime.HttpSettings
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.runtime.isHttpHostAllowed
+import com.benton.izukijs.core.net.HttpSettings
+import com.benton.izukijs.core.net.isHttpHostAllowed
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection

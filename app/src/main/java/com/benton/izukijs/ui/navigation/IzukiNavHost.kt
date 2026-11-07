@@ -268,6 +268,7 @@ private fun MainTabsHost(
 /**
  * 四个底部标签的可滑动容器。用 [HorizontalPager] 承载，左右滑动或点击底栏即可切换；
  * `beyondViewportPageCount` 设为标签总数，让四个页面常驻组合，避免切走后状态丢失。
+ * 常驻组合下，日志页通过 `isActivePage` 在非当前页时停止订阅高频 LogBus，避免后台页反复重组。
  */
 @Composable
 private fun MainTabs(
@@ -303,7 +304,10 @@ private fun MainTabs(
                 onOpenSchedule = onOpenSchedule,
             )
 
-            BottomItem.LOGS -> LogsScreen(onOpenVirtualScreen = onOpenVirtualScreen)
+            BottomItem.LOGS -> LogsScreen(
+                onOpenVirtualScreen = onOpenVirtualScreen,
+                isActivePage = isMainVisible && pagerState.settledPage == page,
+            )
 
             BottomItem.SETTINGS -> SettingsScreen(
                 onOpenCategory = onOpenCategory,

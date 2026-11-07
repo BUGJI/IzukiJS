@@ -234,6 +234,7 @@ For the full API see [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md).
 | [`docs/TOOLS.md`](docs/TOOLS.md) | Tools and permissions: control modes, continuous capture, debug overlay, scheduled tasks, logs |
 | [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | Bluetooth HID control protocol: GATT services, frame format, coordinate mapping, connection flow |
 | [`docs/MCP.md`](docs/MCP.md) | MCP server: enabling, client setup, tools and resources, security notes |
+| [`docs/PERF.md`](docs/PERF.md) | Performance baseline: metrics, toggle, comparison scenarios, and adb usage |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 
 ## Project Structure

@@ -21,8 +21,11 @@ import com.benton.izukijs.data.UnlockSettingsRepository
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.PatternPoint
+import com.benton.izukijs.model.TouchInputDevice
 import com.benton.izukijs.model.UnlockMethod
 import com.benton.izukijs.model.UnlockPattern
+import com.benton.izukijs.model.UnlockRecordingParser
+import com.benton.izukijs.model.UnlockResult
 import com.benton.izukijs.model.UnlockStroke
 import com.benton.izukijs.privileged.PrivilegedUnlockClient
 import com.benton.izukijs.core.log.LogBus
@@ -31,26 +34,6 @@ import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.Locale
-
-/** 自动解锁结果；不含任何凭据内容。 */
-enum class UnlockResult {
-    OK,
-    ALREADY_UNLOCKED,
-    DISABLED,
-    NO_BACKEND,
-    LOCK_FAILED,
-    WAKE_FAILED,
-    DISMISS_FAILED,
-    CREDENTIAL_REQUIRED,
-    CREDENTIAL_INVALID,
-    CREDENTIAL_REJECTED,
-    PATTERN_SCREEN_MISMATCH,
-    UNSUPPORTED,
-    TIMEOUT,
-    NO_INPUT,
-    RECORDING_TIMEOUT,
-    CANCELLED,
-}
 
 /**
  * 锁屏自主解锁。

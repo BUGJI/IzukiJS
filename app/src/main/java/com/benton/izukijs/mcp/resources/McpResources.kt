@@ -2,7 +2,7 @@ package com.benton.izukijs.mcp.resources
 
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.data.ScriptRepository
-import com.benton.izukijs.mcp.McpAuditLog
+import com.benton.izukijs.mcp.core.McpAuditLog
 import com.benton.izukijs.mcp.tools.ScreenshotEncoder
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager

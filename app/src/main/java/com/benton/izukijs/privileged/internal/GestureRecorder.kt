@@ -5,8 +5,9 @@ import android.content.Context
 import android.os.PowerManager
 import android.os.SystemClock
 import com.benton.izukijs.model.UnlockPattern
-import com.benton.izukijs.service.UnlockRecordingParser
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.TouchInputDevice
+import com.benton.izukijs.model.UnlockRecordingParser
+import com.benton.izukijs.model.UnlockResult
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.CountDownLatch
@@ -213,7 +214,7 @@ internal class GestureRecorder(
         return Outcome(failure = null, screen = screen)
     }
 
-    private fun findTouchDevice(): com.benton.izukijs.service.TouchInputDevice? {
+    private fun findTouchDevice(): TouchInputDevice? {
         val output = runGetevent()
         if (output.isNullOrBlank()) {
             PrivilegedLog.w("GestureRecorder: getevent -lp produced nothing")

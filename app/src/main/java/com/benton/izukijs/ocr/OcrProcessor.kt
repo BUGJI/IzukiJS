@@ -2,6 +2,7 @@ package com.benton.izukijs.ocr
 
 import android.graphics.Bitmap
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.service.CaptureSettings
 import com.benton.izukijs.service.CaptureSettingsRepository
 
@@ -21,8 +22,15 @@ class OcrProcessor(
     private var onlineEngine: OnlineOcrEngine? = null
     private var onlineKey: Pair<OcrConfig, CaptureSettings>? = null
 
-    fun recognize(bitmap: Bitmap): OcrResult? {
-        val result = recognizeRaw(bitmap) ?: return null
+    /** 本地模式预热识别客户端；在线模式无需预热。 */
+    fun prewarm() {
+        if (configRepository.current().mode == OcrMode.LOCAL) {
+            PerfMetrics.measure("ocr.prewarm") { local.prewarm() }
+        }
+    }
+
+    fun recognize(bitmap: Bitmap): OcrResult? = PerfMetrics.measure("ocr.recognize") {
+        val result = recognizeRaw(bitmap) ?: return@measure null
         val sanitized = OcrGeometry.sanitize(result.blocks, bitmap.width, bitmap.height)
         if (sanitized.clamped > 0 || sanitized.dropped > 0) {
             logBus.warn(
@@ -30,7 +38,7 @@ class OcrProcessor(
                     "（图像 ${bitmap.width}×${bitmap.height}）",
             )
         }
-        return result.copy(blocks = sanitized.blocks)
+        result.copy(blocks = sanitized.blocks)
     }
 
     private fun recognizeRaw(bitmap: Bitmap): OcrResult? {

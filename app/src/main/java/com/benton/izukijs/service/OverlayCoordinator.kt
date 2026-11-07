@@ -2,6 +2,7 @@ package com.benton.izukijs.service
 
 import android.os.Handler
 import android.os.Looper
+import com.benton.izukijs.core.perf.PerfMetrics
 
 /**
  * 截图时临时隐藏悬浮层的中枢。
@@ -17,7 +18,21 @@ object OverlayCoordinator {
 
     interface Listener {
         fun hide()
+
         fun show()
+
+        /**
+         * 在 [hide] 之后等待悬浮层真正从画面消失。
+         *
+         * 默认退化为固定睡眠；悬浮窗实现可改为等待一帧绘制完成，通常比固定睡眠更快。
+         */
+        fun awaitHidden(timeoutMs: Long) {
+            try {
+                Thread.sleep(timeoutMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     private val LOCK = Any()
@@ -67,8 +82,12 @@ object OverlayCoordinator {
                 target.hide()
             }
         }
-        if (current == null) return block()
-        if (needWait) Thread.sleep(HIDE_DELAY_MS)
+        val target = current ?: return block()
+        if (needWait) {
+            PerfMetrics.measure("overlay.hideWait") {
+                target.awaitHidden(HIDE_TIMEOUT_MS)
+            }
+        }
         return try {
             block()
         } finally {
@@ -81,8 +100,8 @@ object OverlayCoordinator {
         }
     }
 
-    /** 隐藏后等待主线程完成一帧绘制再截图。 */
-    private const val HIDE_DELAY_MS = 80L
+    /** 隐藏后等待一帧绘制的最长时间；实现方通常在一帧内返回。 */
+    private const val HIDE_TIMEOUT_MS = 100L
 
     /** 连续截图结束后延迟恢复显示，避免高频截图时反复闪烁。 */
     private const val SHOW_DELAY_MS = 300L

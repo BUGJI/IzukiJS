@@ -11,6 +11,7 @@ import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
 import com.benton.izukijs.virtualscreen.VirtualScreenState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** 运行页的完整 UI 状态。 */
 data class RunUiState(
@@ -121,7 +123,7 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
     fun requestRun(script: ScriptInfo) {
         viewModelScope.launch {
             val source = scriptRepository.readAsync(script)
-            val spec = ScriptEnvSpec.parse(source)
+            val spec = withContext(Dispatchers.Default) { ScriptEnvSpec.parse(source) }
             val stored = scriptEnvRepository.values(script.id)
             if (spec.isEmpty && stored.isEmpty()) {
                 execution.run(script.id, script.name, source)

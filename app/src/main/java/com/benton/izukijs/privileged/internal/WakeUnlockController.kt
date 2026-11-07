@@ -6,7 +6,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.view.KeyEvent
 import com.benton.izukijs.model.UnlockPattern
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 
 /**
  * 特权进程内的亮屏/锁屏/解锁。所有 hidden API 都只在这个进程里使用。

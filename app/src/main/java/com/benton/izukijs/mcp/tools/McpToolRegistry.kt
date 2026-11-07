@@ -4,19 +4,19 @@ import android.graphics.Bitmap
 import android.graphics.Rect
 import android.view.KeyEvent
 import com.benton.izukijs.ai.AgentTools
-import com.benton.izukijs.ai.ShellGuard
+import com.benton.izukijs.ai.ToolPolicy
 import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.log.RunLogRegistry
 import com.benton.izukijs.core.log.RunStatus
 import com.benton.izukijs.data.ScriptRepository
-import com.benton.izukijs.mcp.McpConfig
+import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.service.ScreenUnlockController
-import com.benton.izukijs.service.UnlockResult
+import com.benton.izukijs.model.UnlockResult
 import com.benton.izukijs.virtualscreen.ScreenTarget
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.virtualscreen.VirtualScreenOptions
@@ -25,6 +25,7 @@ import com.benton.izukijs.virtualscreen.VirtualScreenState
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -87,10 +88,14 @@ class McpToolRegistry(
             notificationApi = bundle.notificationApi,
             screenshotPathProvider = { null },
             nodeTreeProvider = nodeTreeProvider,
-            allowShell = config.allowShell,
+            policy = ToolPolicy(
+                allowShell = config.allowShell,
+                allowDangerousShell = config.allowDangerousShell,
+                blockedPackages = config.blockedPackages,
+            ),
         )
         val catalog = buildList {
-            addAll(sharedTools(agentTools, config))
+            addAll(sharedTools(agentTools))
             add(screenshotTool())
             virtualScreen?.let { manager ->
                 add(virtualScreenTool(manager, config))
@@ -111,7 +116,7 @@ class McpToolRegistry(
 
     // ---- 复用 AgentTools 的工具 ----
 
-    private fun sharedTools(agentTools: AgentTools, config: McpConfig): List<McpTool> =
+    private fun sharedTools(agentTools: AgentTools): List<McpTool> =
         agentTools.specs()
             .filter { it.name != "screenshot" }
             .map { spec ->
@@ -124,7 +129,7 @@ class McpToolRegistry(
                         spec.parameters
                     },
                     readOnly = spec.name in READ_ONLY_SHARED,
-                ) { args -> runShared(agentTools, config, spec.name, args) }
+                ) { args -> runShared(agentTools, spec.name, args) }
             }
 
     /** MCP 侧额外支持 per-call `target=main|virtual` 的共用工具。 */
@@ -137,10 +142,9 @@ class McpToolRegistry(
         return copy
     }
 
-    /** 共用工具的执行入口，叠加安全护栏（危险 shell / 敏感 App 启动）。 */
+    /** 共用工具的执行入口；安全护栏（危险 shell / 敏感 App）已在 [AgentTools] 内部统一处理。 */
     private fun runShared(
         agentTools: AgentTools,
-        config: McpConfig,
         name: String,
         args: JSONObject,
     ): McpToolResult {
@@ -153,23 +157,6 @@ class McpToolRegistry(
                 "find" -> return McpToolResult.error(
                     "虚拟屏暂不支持 find，请先用 ocr(target=virtual) 获取文字坐标，再按坐标输入",
                 )
-            }
-        }
-        when (name) {
-            "shell" -> {
-                if (!config.allowDangerousShell) {
-                    val reason = ShellGuard.reason(args.optString("command"))
-                    if (reason != null) return blocked("命令被安全策略拦截（$reason）")
-                }
-            }
-
-            "app" -> {
-                if (args.optString("action") == "launch") {
-                    val pkg = args.optString("package")
-                    if (pkg.isNotBlank() && config.isPackageBlocked(pkg)) {
-                        return blocked("目标应用 $pkg 在敏感应用黑名单中，已拒绝启动")
-                    }
-                }
             }
         }
         return McpToolResult.text(agentTools.execute(name, args.toString()))
@@ -204,7 +191,10 @@ class McpToolRegistry(
     ) {
         val controller = screenUnlock
             ?: return@McpTool unlockResultJson(UnlockResult.UNSUPPORTED)
-        unlockResultJson(runBlocking { controller.ensureUnlocked() })
+        val result = runCatching {
+            runBlocking { withTimeout(UNLOCK_TIMEOUT_MS) { controller.ensureUnlocked() } }
+        }.getOrElse { UnlockResult.TIMEOUT }
+        unlockResultJson(result)
     }
 
     private fun unlockResultJson(result: UnlockResult): McpToolResult {
@@ -261,7 +251,9 @@ class McpToolRegistry(
             shouldAutoUnlock(tool.name, args) &&
             (controller.isLocked() || !controller.isInteractive())
         ) {
-            val result = runBlocking { controller.ensureUnlocked() }
+            val result = runCatching {
+                runBlocking { withTimeout(UNLOCK_TIMEOUT_MS) { controller.ensureUnlocked() } }
+            }.getOrElse { UnlockResult.TIMEOUT }
             when (result) {
                 UnlockResult.OK, UnlockResult.ALREADY_UNLOCKED -> Unit
                 UnlockResult.DISABLED -> {
@@ -633,13 +625,17 @@ class McpToolRegistry(
                 val py = (y * size.height).toFloat()
                 val duration = args.optInt("duration_ms", if (action == "tap") 300 else 600)
                 val baseline = manager.frameSeq()
-                val ok = runBlocking {
-                    if (action == "tap") {
-                        manager.tap(px, py)
-                    } else {
-                        manager.longPress(px, py, duration.toLong())
+                val ok = runCatching {
+                    runBlocking {
+                        withTimeout(INPUT_TIMEOUT_MS) {
+                            if (action == "tap") {
+                                manager.tap(px, py)
+                            } else {
+                                manager.longPress(px, py, duration.toLong())
+                            }
+                        }
                     }
-                }
+                }.getOrDefault(false)
                 finishInput(action, ok, baseline) {
                     put("x", px.toInt())
                     put("y", py.toInt())
@@ -656,15 +652,19 @@ class McpToolRegistry(
                 }
                 val duration = args.optInt("duration_ms", 300)
                 val baseline = manager.frameSeq()
-                val ok = runBlocking {
-                    manager.swipe(
-                        (x1 * size.width).toFloat(),
-                        (y1 * size.height).toFloat(),
-                        (x2 * size.width).toFloat(),
-                        (y2 * size.height).toFloat(),
-                        duration.toLong(),
-                    )
-                }
+                val ok = runCatching {
+                    runBlocking {
+                        withTimeout(INPUT_TIMEOUT_MS) {
+                            manager.swipe(
+                                (x1 * size.width).toFloat(),
+                                (y1 * size.height).toFloat(),
+                                (x2 * size.width).toFloat(),
+                                (y2 * size.height).toFloat(),
+                                duration.toLong(),
+                            )
+                        }
+                    }
+                }.getOrDefault(false)
                 finishInput("swipe", ok, baseline) {
                     put("duration_ms", duration)
                 }
@@ -680,7 +680,9 @@ class McpToolRegistry(
                     )
                 }
                 val baseline = manager.frameSeq()
-                val ok = runBlocking { manager.key(keyCode) }
+                val ok = runCatching {
+                    runBlocking { withTimeout(INPUT_TIMEOUT_MS) { manager.key(keyCode) } }
+                }.getOrDefault(false)
                 finishInput("key", ok, baseline) {
                     put("key_code", keyCode)
                 }
@@ -998,6 +1000,10 @@ class McpToolRegistry(
         const val MAX_INPUT_FRAME_WAIT_MS = 3_000
         const val DEFAULT_CAPTURE_FRAME_WAIT_MS = 1_000
         const val MAX_CAPTURE_FRAME_WAIT_MS = 3_000
+
+        /** MCP 工具在单线程执行器上运行，所有阻塞桥都必须有硬超时。 */
+        const val UNLOCK_TIMEOUT_MS = 60_000L
+        const val INPUT_TIMEOUT_MS = 15_000L
 
         val READ_ONLY_SHARED = setOf(
             "ocr",

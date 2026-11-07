@@ -35,6 +35,9 @@ data class VirtualScreenResolution(
         const val DEFAULT_DPI = 240
         const val DEFAULT_ASPECT_RATIO = 16f / 9f
 
+        /** 设备档位的长边上限，控制 ImageReader 内存与截图开销。 */
+        const val DEVICE_MAX_LONG_SIDE = 1920
+
         val P720 = VirtualScreenResolution(1280, 720, 240)
         val P1080 = VirtualScreenResolution(1920, 1080, 280)
 
@@ -91,13 +94,25 @@ data class VirtualScreenRuntimeState(
 )
 
 /** SharedPreferences 持久化 + 内存缓存。 */
-class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<VirtualScreenSettings>(
+class VirtualScreenSettingsRepository private constructor(
+    context: Context,
+    private val deviceResolution: VirtualScreenResolution,
+) : PrefsStateStore<VirtualScreenSettings>(
     context = context,
     prefsName = PREFS,
-    defaultValue = VirtualScreenSettings(),
+    defaultValue = VirtualScreenSettings(resolution = deviceResolution),
 ) {
 
+    constructor(context: Context) : this(
+        context = context,
+        deviceResolution = DeviceScreenResolution.read(context),
+    )
+
     val settings: StateFlow<VirtualScreenSettings> get() = state
+
+    /** 全新安装 / 恢复默认时使用的配置。 */
+    fun defaultSettings(): VirtualScreenSettings =
+        VirtualScreenSettings(resolution = deviceResolution)
 
     fun runtimeState(): VirtualScreenRuntimeState = VirtualScreenRuntimeState(
         wasActive = prefs.getBoolean(KEY_WAS_ACTIVE, false),
@@ -130,9 +145,9 @@ class VirtualScreenSettingsRepository(context: Context) : PrefsStateStore<Virtua
             .toSet() + RunMode.FOREGROUND
         val default = RunMode.from(prefs.getString(KEY_DEFAULT_MODE, null)) ?: RunMode.FOREGROUND
         val resolution = VirtualScreenResolution(
-            width = prefs.getInt(KEY_WIDTH, VirtualScreenResolution.DEFAULT_WIDTH),
-            height = prefs.getInt(KEY_HEIGHT, VirtualScreenResolution.DEFAULT_HEIGHT),
-            dpi = prefs.getInt(KEY_DPI, VirtualScreenResolution.DEFAULT_DPI),
+            width = prefs.getInt(KEY_WIDTH, deviceResolution.width),
+            height = prefs.getInt(KEY_HEIGHT, deviceResolution.height),
+            dpi = prefs.getInt(KEY_DPI, deviceResolution.dpi),
         )
         return VirtualScreenSettings(
             allowedModes = modes,

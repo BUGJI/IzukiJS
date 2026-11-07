@@ -1,4 +1,4 @@
-package com.benton.izukijs.runtime.notification
+package com.benton.izukijs.core.notification
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

@@ -20,6 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.ui.pip.PipController
@@ -39,6 +40,37 @@ internal fun RunSettings(onOpenSetup: () -> Unit = {}) {
 
     Spacer(Modifier.height(SectionGap))
     NotificationSettingsSection()
+
+    Spacer(Modifier.height(SectionGap))
+    PerfBaselineSettingsSection()
+}
+
+@Composable
+private fun PerfBaselineSettingsSection() {
+    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+    SectionCard(stringResource(R.string.settings_perf_baseline)) {
+        Text(
+            stringResource(R.string.settings_perf_baseline_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            label = stringResource(R.string.settings_perf_baseline_toggle),
+            description = stringResource(R.string.settings_perf_baseline_toggle_desc),
+            checked = ui.runtimeSettings.perfBaseline,
+            onChange = {
+                viewModel.saveRuntimeSettings(ui.runtimeSettings.copy(perfBaseline = it))
+            },
+        )
+        if (ui.runtimeSettings.perfBaseline) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { PerfMetrics.reportNow() }) {
+                Text(stringResource(R.string.settings_perf_baseline_report_now))
+            }
+        }
+    }
 }
 
 @Composable

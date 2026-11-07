@@ -81,7 +81,7 @@ class ScreenCaptureService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "izuki_screen_capture"
-        private const val NOTIFICATION_ID = 1003
+        private const val NOTIFICATION_ID = NotificationIds.SCREEN_CAPTURE
         private const val EXTRA_RESULT_CODE = "result_code"
         private const val EXTRA_DATA = "result_data"
 

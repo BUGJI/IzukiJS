@@ -64,11 +64,82 @@ data class NodeSnapshot(
     val children: List<NodeSnapshot>,
 )
 
+/** 坐标点击与滑动能力。 */
+interface PointerController {
+    fun click(x: Float, y: Float): Boolean = false
+
+    fun longClick(x: Float, y: Float, durationMs: Long = 600L): Boolean = false
+
+    fun swipe(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        durationMs: Long = 300L,
+    ): Boolean = false
+}
+
+/**
+ * 带时间戳的复杂轨迹（曲线 / 多段 / 多指 / 按住停顿）。
+ * 目前仅无障碍后端支持；其余后端 [gesture] 恒为 false。
+ */
+interface GestureController {
+    fun supportsGesture(): Boolean = false
+
+    fun gesture(strokes: List<GestureStroke>): Boolean = false
+}
+
+/** 按键输入。 */
+interface KeyController {
+    fun pressKey(keyCode: Int): Boolean = false
+}
+
+/** 文本输入与无障碍全局动作。 */
+interface TextController {
+    fun inputText(text: String): Boolean = false
+
+    /** 按指定方式输入文本；默认忽略 [method]，等价于 [inputText]。 */
+    fun inputText(text: String, method: TextInputMethod): Boolean = inputText(text)
+
+    /** 执行无障碍全局动作（返回/主页/最近任务等）。 */
+    fun globalAction(action: Int): Boolean = false
+}
+
+/** 截图能力。 */
+interface ScreenshotController {
+    fun screenshot(): Bitmap? = null
+
+    /** 截取指定 display；null 表示主屏。默认实现忽略参数。 */
+    fun screenshotForDisplay(displayId: Int?): Bitmap? = screenshot()
+}
+
+/** 控件树读取。 */
+interface NodeTreeController {
+    fun nodeTree(): NodeSnapshot? = null
+}
+
+/** Shell 命令执行。 */
+interface ShellController {
+    fun shell(cmd: String): ShellResult? = null
+}
+
 /**
  * 控制抽象层的核心接口。三种（Root 为四种）模式各自实现该接口，
  * 上层脚本 API 通过 [ControllerManager] 按能力选取具体实现，从而感知不到底层差异。
+ *
+ * 具体操作按能力拆到 [PointerController] / [GestureController] / [KeyController] /
+ * [TextController] / [ScreenshotController] / [NodeTreeController] / [ShellController]，
+ * 新代码可只依赖需要的能力接口；现有调用点仍可直接使用本接口。
  */
-interface DeviceController {
+interface DeviceController :
+    PointerController,
+    GestureController,
+    KeyController,
+    TextController,
+    ScreenshotController,
+    NodeTreeController,
+    ShellController {
+
     val mode: ControlMode
 
     /** 该模式当前可提供的能力集合。 */
@@ -82,43 +153,4 @@ interface DeviceController {
      * 目前只有 Shizuku / 无线调试 / Root 这类 Shell 后端支持；无障碍与 HID 固定操作主屏。
      */
     fun supportsDisplayTarget(): Boolean = false
-
-    fun click(x: Float, y: Float): Boolean = false
-
-    fun longClick(x: Float, y: Float, durationMs: Long = 600L): Boolean = false
-
-    fun swipe(
-        x1: Float,
-        y1: Float,
-        x2: Float,
-        y2: Float,
-        durationMs: Long = 300L,
-    ): Boolean = false
-
-    /**
-     * 是否支持带时间戳的复杂轨迹（曲线 / 多段 / 多指 / 按住停顿）。
-     * 目前仅无障碍后端支持；其余后端 [gesture] 恒为 false。
-     */
-    fun supportsGesture(): Boolean = false
-
-    fun gesture(strokes: List<GestureStroke>): Boolean = false
-
-    fun pressKey(keyCode: Int): Boolean = false
-
-    fun inputText(text: String): Boolean = false
-
-    /** 按指定方式输入文本；默认忽略 [method]，等价于 [inputText]。 */
-    fun inputText(text: String, method: TextInputMethod): Boolean = inputText(text)
-
-    /** 执行无障碍全局动作（返回/主页/最近任务等）。 */
-    fun globalAction(action: Int): Boolean = false
-
-    fun screenshot(): Bitmap? = null
-
-    /** 截取指定 display；null 表示主屏。默认实现忽略参数。 */
-    fun screenshotForDisplay(displayId: Int?): Bitmap? = screenshot()
-
-    fun nodeTree(): NodeSnapshot? = null
-
-    fun shell(cmd: String): ShellResult? = null
 }

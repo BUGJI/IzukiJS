@@ -7,6 +7,7 @@ import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.service.OverlayCoordinator
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.virtualscreen.ScreenTarget
@@ -29,7 +30,28 @@ class DeviceApiBundle(
     val ocrApi: OcrApi,
     val selectorApi: SelectorApi,
     val notificationApi: NotificationApi,
+    private val selectorFactory: (isExitRequested: () -> Boolean) -> SelectorApi,
 ) {
+
+    /**
+     * 复用电量/截图/输入等重对象，只替换 [SelectorApi] 的退出回调。
+     *
+     * 脚本每次运行都需要独立的「是否请求退出」判断，但其余 API 无状态，
+     * 因此不必每次重新组装整个 bundle。
+     */
+    fun withExitRequested(isExitRequested: () -> Boolean): DeviceApiBundle = DeviceApiBundle(
+        screenshotProvider = screenshotProvider,
+        captureProvider = captureProvider,
+        inputApi = inputApi,
+        deviceApi = deviceApi,
+        appApi = appApi,
+        shellApi = shellApi,
+        ocrApi = ocrApi,
+        selectorApi = selectorFactory(isExitRequested),
+        notificationApi = notificationApi,
+        selectorFactory = selectorFactory,
+    )
+
     companion object {
         private const val DEFAULT_CAPTURE_WAIT_MS = 1_000L
 
@@ -51,6 +73,7 @@ class DeviceApiBundle(
                         logBus.debug("捕获屏幕 ${projected.width}×${projected.height} → 持续录屏")
                         projected
                     } else {
+                        PerfMetrics.count("capture.screen.fallback")
                         // 主屏捕获不受虚拟屏 display 定向限制，必要时绕过 controllerFor 的过滤。
                         val controller = controllers.controllerFor(Capability.SCREENSHOT)
                             ?: controllers.all().firstOrNull {
@@ -102,6 +125,16 @@ class DeviceApiBundle(
             val shellExec: (String) -> String? = { cmd ->
                 controllers.controllerFor(Capability.SHELL)?.shell(cmd)?.stdout
             }
+            val controllerProvider: () -> AccessibilityController? = {
+                controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
+            }
+            val selectorFactory: (() -> Boolean) -> SelectorApi = { exitRequested ->
+                SelectorApi(
+                    logBus = logBus,
+                    controllerProvider = controllerProvider,
+                    isExitRequested = exitRequested,
+                )
+            }
             return DeviceApiBundle(
                 screenshotProvider = screenshotProvider,
                 captureProvider = captureProvider,
@@ -110,18 +143,13 @@ class DeviceApiBundle(
                 appApi = AppApi(context, logBus, shellExec, appListEnabled, virtualScreen),
                 shellApi = ShellApi(controllers, logBus),
                 ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus),
-                selectorApi = SelectorApi(
-                    logBus = logBus,
-                    controllerProvider = {
-                        controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
-                    },
-                    isExitRequested = isExitRequested,
-                ),
+                selectorApi = selectorFactory(isExitRequested),
                 notificationApi = NotificationApi(
                     context = context,
                     logBus = logBus,
                     progressSettingEnabled = progressNotificationEnabled,
                 ),
+                selectorFactory = selectorFactory,
             )
         }
     }

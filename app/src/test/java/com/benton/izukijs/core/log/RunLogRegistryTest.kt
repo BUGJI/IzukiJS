@@ -1,5 +1,8 @@
 package com.benton.izukijs.core.log
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -23,6 +26,22 @@ class RunLogRegistryTest {
         val record = RunLogRegistry.find(runId)
         assertNotNull(record)
         assertEquals(1, record!!.snapshot().size)
+    }
+
+    @Test
+    fun contextElementKeepsRunIdAcrossThreadSwitch() = runBlocking {
+        val runId = RunLogRegistry.newRunId()
+        RunLogRegistry.begin(runId, "script", "测试")
+        withContext(RunLogRegistry.asContextElement(runId) + Dispatchers.Default) {
+            RunLogRegistry.record(entry(1, LogLevel.INFO, "before"))
+            // 切到另一个调度器，模拟挂起点恢复后线程变化。
+            withContext(Dispatchers.IO) {
+                RunLogRegistry.record(entry(2, LogLevel.INFO, "after"))
+            }
+        }
+        val record = RunLogRegistry.find(runId)
+        assertNotNull(record)
+        assertEquals(listOf("before", "after"), record!!.snapshot().map { it.message })
     }
 
     @Test

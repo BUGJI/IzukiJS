@@ -1,4 +1,4 @@
-package com.benton.izukijs.runtime
+package com.benton.izukijs.core.net
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

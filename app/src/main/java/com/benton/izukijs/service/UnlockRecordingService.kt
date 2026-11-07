@@ -107,7 +107,7 @@ class UnlockRecordingService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "izuki_unlock_record"
-        private const val NOTIFICATION_ID = 1002
+        private const val NOTIFICATION_ID = NotificationIds.UNLOCK_RECORDING
         private const val ACTION_START = "com.benton.izukijs.action.START_UNLOCK_RECORD"
         private const val ACTION_CANCEL = "com.benton.izukijs.action.CANCEL_UNLOCK_RECORD"
 

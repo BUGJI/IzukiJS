@@ -1,4 +1,4 @@
-package com.benton.izukijs.mcp
+package com.benton.izukijs.mcp.core
 
 import android.util.Base64
 import java.security.SecureRandom

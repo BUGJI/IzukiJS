@@ -136,7 +136,7 @@ class McpServerService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "izuki_mcp_server"
-        private const val NOTIFICATION_ID = 1002
+        private const val NOTIFICATION_ID = NotificationIds.MCP_SERVER
 
         const val ACTION_START = "com.benton.izukijs.action.START_MCP"
         const val ACTION_STOP = "com.benton.izukijs.action.STOP_MCP"

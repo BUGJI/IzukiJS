@@ -1,13 +1,16 @@
-package com.benton.izukijs.runtime.api
+package com.benton.izukijs.ai
 
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.ai.AiAgent
-import com.benton.izukijs.ai.AiClient
-import com.benton.izukijs.ai.AiConfigRepository
-import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.controller.NodeTreeResult
+import com.benton.izukijs.core.ScriptExitException
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.runtime.ScriptExitException
+import com.benton.izukijs.runtime.api.AppApi
+import com.benton.izukijs.runtime.api.DeviceApi
+import com.benton.izukijs.runtime.api.InputApi
+import com.benton.izukijs.runtime.api.NotificationApi
+import com.benton.izukijs.runtime.api.OcrApi
+import com.benton.izukijs.runtime.api.SelectorApi
+import com.benton.izukijs.runtime.api.ShellApi
 import com.quickjs.JSArray
 import com.quickjs.JSFunction
 import com.quickjs.JSObject
@@ -85,7 +88,7 @@ class AiApi(
             notificationApi = notificationApi,
             screenshotPathProvider = screenshotPathProvider,
             nodeTreeProvider = nodeTreeProvider,
-            allowShell = effective.allowShell,
+            policy = ToolPolicy(allowShell = effective.allowShell),
         )
         val agent = AiAgent(
             config = effective,

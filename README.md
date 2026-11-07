@@ -209,6 +209,7 @@ if (ai.available()) {
 | [`docs/TOOLS.md`](docs/TOOLS.md) | 工具与权限说明：控制模式、持续录屏、调试悬浮窗、定时任务、日志 |
 | [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | 蓝牙 HID 控制协议：GATT 服务、帧格式、坐标映射、连接流程 |
 | [`docs/MCP.md`](docs/MCP.md) | MCP 服务器：启用、客户端配置、工具与资源、安全说明 |
+| [`docs/PERF.md`](docs/PERF.md) | 性能基线：指标含义、采集开关、对比场景与 adb 查看方式 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录 |
 
 ## 项目结构

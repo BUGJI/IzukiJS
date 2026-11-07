@@ -8,18 +8,17 @@ import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.service.IzukiAccessibilityService
 
 /**
  * 无障碍模式的控制实现。能力：手势、文本、控件树，以及（API30+）截图。
  */
 class AccessibilityController(
-    private val serviceProvider: () -> IzukiAccessibilityService?,
+    private val serviceProvider: () -> AccessibilityServiceHandle?,
 ) : DeviceController {
 
     override val mode: ControlMode = ControlMode.ACCESSIBILITY
 
-    private val service: IzukiAccessibilityService? get() = serviceProvider()
+    private val service: AccessibilityServiceHandle? get() = serviceProvider()
 
     override fun isReady(): Boolean = service != null
 

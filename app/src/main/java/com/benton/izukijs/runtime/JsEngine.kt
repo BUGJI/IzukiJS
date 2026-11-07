@@ -1,12 +1,12 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
+import com.benton.izukijs.ai.AiApi
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
-import com.benton.izukijs.controller.UiautomatorDumper
+import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.ocr.OcrProcessor
-import com.benton.izukijs.runtime.api.AiApi
+import com.benton.izukijs.data.ScriptEnv
 import com.benton.izukijs.runtime.api.ClipboardApi
 import com.benton.izukijs.runtime.api.ConsoleApi
 import com.benton.izukijs.runtime.api.DeviceApiBundle
@@ -35,7 +35,8 @@ class JsEngine(
     private val context: Context,
     private val controllers: ControllerManager,
     private val screenCapture: ScreenCapture,
-    private val ocrProcessor: OcrProcessor,
+    private val deviceApiBundle: DeviceApiBundle,
+    private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
     private val logBus: LogBus,
     private val aiConfigRepository: AiConfigRepository,
     private val captureSettingsRepository: CaptureSettingsRepository,
@@ -127,17 +128,8 @@ class JsEngine(
     }
 
     private fun bindApis(ctx: JSContext, needs: Set<String>?) {
-        val bundle = DeviceApiBundle.create(
-            context = context,
-            controllers = controllers,
-            screenCapture = screenCapture,
-            ocrProcessor = ocrProcessor,
-            logBus = logBus,
-            appListEnabled = { runtimeSettings.current().appList },
-            progressNotificationEnabled = { runtimeSettings.current().progressNotification },
-            virtualScreen = virtualScreen,
-            isExitRequested = { exitRequested },
-        )
+        // 复用容器级 bundle，只替换 SelectorApi 的退出回调，避免每次运行重复组装。
+        val bundle = deviceApiBundle.withExitRequested { exitRequested }
         val screenshotStore = ScreenshotStore(
             context = context,
             settingsProvider = { captureSettingsRepository.current() },
@@ -221,13 +213,7 @@ class JsEngine(
                     deviceApi = deviceApi,
                     notificationApi = bundle.notificationApi,
                     screenshotPathProvider = { globalApi.captureScreen("") },
-                    nodeTreeProvider = { timeoutMs ->
-                        UiautomatorDumper.read(controllers, logBus, timeoutMs) {
-                            com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
-                                capture = { screenCapture.capture() },
-                            )
-                        }
-                    },
+                    nodeTreeProvider = nodeTreeProvider,
                     logBus = logBus,
                     isExitRequested = { exitRequested },
                 ),

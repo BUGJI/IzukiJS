@@ -3,6 +3,8 @@ package com.benton.izukijs.mcp
 import android.content.Context
 import android.content.SharedPreferences
 import com.benton.izukijs.core.prefs.PrefsStateStore
+import com.benton.izukijs.mcp.core.McpBindMode
+import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.security.SecretCipher
 import kotlinx.coroutines.flow.StateFlow
 

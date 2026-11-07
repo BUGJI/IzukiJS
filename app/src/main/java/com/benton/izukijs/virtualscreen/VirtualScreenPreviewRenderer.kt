@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.view.Surface
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.perf.PerfMetrics
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -32,6 +33,9 @@ class VirtualScreenPreviewRenderer(
     @Volatile
     private var running = false
 
+    @Volatile
+    private var lastDrawnSeq = -1L
+
     private val drawTask = object : Runnable {
         override fun run() {
             if (!running) return
@@ -46,6 +50,8 @@ class VirtualScreenPreviewRenderer(
             surfaces.remove(owner)
         } else {
             surfaces[owner] = surface
+            // 新预览面需要立即补画一帧，即使帧序号没有变化。
+            lastDrawnSeq = -1L
         }
         if (surfaces.isEmpty()) {
             stop()
@@ -68,6 +74,7 @@ class VirtualScreenPreviewRenderer(
 
     fun setFrameSource(source: VirtualScreenFrameSource?) {
         frameSource = source
+        lastDrawnSeq = -1L
     }
 
     fun stop() {
@@ -98,16 +105,26 @@ class VirtualScreenPreviewRenderer(
 
     private fun drawOnce() {
         if (surfaces.isEmpty()) return
-        val bitmap = frameSource?.capture() ?: return
-        try {
-            surfaces.values.forEach { target ->
-                drawFitted(target, bitmap)
+        val source = frameSource ?: return
+        val seq = source.currentSeq()
+        // 画面没有新帧时不做整帧拷贝与绘制；静态界面下可省掉大部分预览开销。
+        if (seq == lastDrawnSeq) {
+            PerfMetrics.count("preview.skip")
+            return
+        }
+        PerfMetrics.measure("preview.draw") {
+            val bitmap = source.capture() ?: return@measure
+            lastDrawnSeq = seq
+            try {
+                surfaces.values.forEach { target ->
+                    drawFitted(target, bitmap)
+                }
+            } catch (t: Throwable) {
+                logBus.debug("虚拟屏预览绘制失败: ${t.message}")
+                stop()
+            } finally {
+                bitmap.recycle()
             }
-        } catch (t: Throwable) {
-            logBus.debug("虚拟屏预览绘制失败: ${t.message}")
-            stop()
-        } finally {
-            bitmap.recycle()
         }
     }
 

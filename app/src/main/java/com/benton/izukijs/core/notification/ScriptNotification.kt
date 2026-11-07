@@ -1,4 +1,4 @@
-package com.benton.izukijs.runtime.notification
+package com.benton.izukijs.core.notification
 
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.flow.MutableStateFlow

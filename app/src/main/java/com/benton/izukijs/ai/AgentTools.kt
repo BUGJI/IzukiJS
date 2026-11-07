@@ -36,10 +36,10 @@ class AgentTools(
     private val notificationApi: NotificationApi,
     private val screenshotPathProvider: () -> String?,
     private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
-    private val allowShell: Boolean,
+    private val policy: ToolPolicy = ToolPolicy(),
 ) {
 
-    private val shellAvailable: Boolean get() = allowShell && shellApi.available()
+    private val shellAvailable: Boolean get() = policy.allowShell && shellApi.available()
 
     private var cachedShellAvailable: Boolean? = null
     private var cachedSpecs: List<ToolSpec> = emptyList()
@@ -282,50 +282,88 @@ class AgentTools(
         dispatch(name, args)
     }.getOrElse { "[错误] ${it.message}" }
 
-    private fun dispatch(name: String, args: JSONObject): String = when (name) {
-        "ocr" -> ocrApi.recognizeBlocksJson()
-            ?: jsonOf { put("ok", false); put("message", "未识别到文字，或截图权限不可用") }
+    private fun dispatch(name: String, args: JSONObject): String {
+        // 安全策略必须放在 dispatch 层：batch 内嵌动作也经由这里，无法绕过。
+        policyViolation(name, args)?.let { return it }
+        return when (name) {
+            "ocr" -> ocrApi.recognizeBlocksJson()
+                ?: jsonOf { put("ok", false); put("message", "未识别到文字，或截图权限不可用") }
 
-        "ui_dump" -> doUiDump()
+            "ui_dump" -> doUiDump()
 
-        "find" -> doFind(args)
+            "find" -> doFind(args)
 
-        "screenshot" -> screenshotPathProvider()?.let { "截图已保存：$it" } ?: "截图失败"
+            "screenshot" -> screenshotPathProvider()?.let { "截图已保存：$it" } ?: "截图失败"
 
-        "info" -> doInfo(args)
+            "info" -> doInfo(args)
 
-        "notifications" -> doNotifications(args)
+            "notifications" -> doNotifications(args)
 
-        "click" -> doClick(args)
+            "click" -> doClick(args)
 
-        "swipe" -> doSwipe(args)
+            "swipe" -> doSwipe(args)
 
-        "gesture" -> {
-            val strokes = args.optJSONArray("strokes")
-            if (args.optBoolean("dry_run", false)) {
-                jsonOf {
-                    put("ok", true)
-                    put("dry_run", true)
-                    put("strokes", strokes ?: JSONArray())
+            "gesture" -> {
+                val strokes = args.optJSONArray("strokes")
+                if (args.optBoolean("dry_run", false)) {
+                    jsonOf {
+                        put("ok", true)
+                        put("dry_run", true)
+                        put("strokes", strokes ?: JSONArray())
+                    }
+                } else {
+                    okResult(inputApi.gestureRaw(strokes?.toString() ?: "[]"), "手势")
                 }
+            }
+
+            "text" -> doText(args)
+
+            "press" -> doPress(args)
+
+            "wait" -> doWait(args)
+
+            "app" -> doApp(args)
+
+            "batch" -> doBatch(args)
+
+            "shell" -> doShell(args)
+
+            else -> "[错误] 未知工具：$name"
+        }
+    }
+
+    /** 命中安全策略时返回拒绝结果，否则返回 null。 */
+    private fun policyViolation(name: String, args: JSONObject): String? = when (name) {
+        "shell" -> {
+            if (policy.allowDangerousShell) {
+                null
             } else {
-                okResult(inputApi.gestureRaw(strokes?.toString() ?: "[]"), "手势")
+                ShellGuard.reason(args.optString("command"))?.let { reason ->
+                    blockedJson("命令被安全策略拦截（$reason）")
+                }
             }
         }
 
-        "text" -> doText(args)
+        "app" -> {
+            if (args.optString("action") != "launch") {
+                null
+            } else {
+                val pkg = args.optString("package")
+                if (policy.isPackageBlocked(pkg)) {
+                    blockedJson("目标应用 $pkg 在敏感应用黑名单中，已拒绝启动")
+                } else {
+                    null
+                }
+            }
+        }
 
-        "press" -> doPress(args)
+        else -> null
+    }
 
-        "wait" -> doWait(args)
-
-        "app" -> doApp(args)
-
-        "batch" -> doBatch(args)
-
-        "shell" -> doShell(args)
-
-        else -> "[错误] 未知工具：$name"
+    private fun blockedJson(message: String): String = jsonOf {
+        put("ok", false)
+        put("blocked", true)
+        put("message", message)
     }
 
     // ---- click ----

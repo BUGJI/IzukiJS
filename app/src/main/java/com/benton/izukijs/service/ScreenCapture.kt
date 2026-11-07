@@ -15,6 +15,7 @@ import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.Display
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.perf.PerfMetrics
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -47,6 +48,12 @@ class ScreenCapture(private val logBus: LogBus) {
 
     @Volatile
     private var density = 0
+
+    /** 最近一帧的副本：画面静止时 ImageReader 不会再产出帧，用它兜底避免重试 + 慢速回退。 */
+    private var lastFrame: Bitmap? = null
+
+    @Volatile
+    private var frameSeqValue = 0L
 
     private val captureLock = Any()
 
@@ -118,17 +125,47 @@ class ScreenCapture(private val logBus: LogBus) {
     }
 
     /** 抓取最近一帧屏幕位图（调用方负责 recycle）。 */
-    fun capture(): Bitmap? = synchronized(captureLock) {
-        val reader = imageReader ?: return@synchronized null
-        val image = acquireLatest(reader) ?: return@synchronized null
-        try {
-            imageToBitmap(image)
-        } catch (t: Throwable) {
-            null
-        } finally {
-            runCatching { image.close() }
+    fun capture(): Bitmap? = PerfMetrics.measure("capture.screen") {
+        synchronized(captureLock) {
+            val reader = imageReader ?: return@synchronized null
+            // 已有缓存时不再为等新帧阻塞：有新帧就取，没有就立刻返回上一帧。
+            val image = acquireLatest(reader, if (lastFrame == null) FIRST_CAPTURE_RETRY else 1)
+            if (image == null) {
+                PerfMetrics.count("capture.screen.cached")
+                return@synchronized cachedCopy()
+            }
+            try {
+                val bitmap = imageToBitmap(image)
+                if (bitmap == null) {
+                    PerfMetrics.count("capture.screen.cached")
+                    cachedCopy()
+                } else {
+                    frameSeqValue++
+                    // 调用方会 recycle 返回值，这里保留一份副本供静态画面兜底。
+                    updateCache(bitmap)
+                    bitmap
+                }
+            } catch (t: Throwable) {
+                PerfMetrics.count("capture.screen.error")
+                cachedCopy()
+            } finally {
+                runCatching { image.close() }
+            }
         }
     }
+
+    /** 最近一帧的序号；每成功抓取一帧自增，可用于判断画面是否更新。 */
+    fun frameSeq(): Long = frameSeqValue
+
+    private fun updateCache(bitmap: Bitmap) {
+        lastFrame?.recycle()
+        lastFrame = runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
+    }
+
+    private fun cachedCopy(): Bitmap? =
+        lastFrame?.takeIf { !it.isRecycled }?.let { frame ->
+            runCatching { frame.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
+        }
 
     fun stop() {
         synchronized(captureLock) {
@@ -145,6 +182,9 @@ class ScreenCapture(private val logBus: LogBus) {
             width = 0
             height = 0
             density = 0
+            lastFrame?.recycle()
+            lastFrame = null
+            frameSeqValue = 0L
         }
     }
 
@@ -167,6 +207,8 @@ class ScreenCapture(private val logBus: LogBus) {
         width = size[0]
         height = size[1]
         density = size[2]
+        lastFrame?.recycle()
+        lastFrame = null
         val oldReader = imageReader
         val display = virtualDisplay
         if (display != null) {
@@ -186,11 +228,11 @@ class ScreenCapture(private val logBus: LogBus) {
         logBus.info("录屏尺寸已更新为 ${width} x ${height}")
     }
 
-    private fun acquireLatest(reader: ImageReader): Image? {
-        repeat(CAPTURE_RETRY) {
+    private fun acquireLatest(reader: ImageReader, retries: Int): Image? {
+        repeat(retries) { attempt ->
             val image = runCatching { reader.acquireLatestImage() }.getOrNull()
             if (image != null) return image
-            runCatching { Thread.sleep(CAPTURE_RETRY_DELAY_MS) }
+            if (attempt < retries - 1) runCatching { Thread.sleep(CAPTURE_RETRY_DELAY_MS) }
         }
         return null
     }
@@ -225,7 +267,11 @@ class ScreenCapture(private val logBus: LogBus) {
     }
 
     private companion object {
-        const val CAPTURE_RETRY = 4
-        const val CAPTURE_RETRY_DELAY_MS = 15L
+        /**
+         * 首次取帧（尚无缓存）最多等约 50ms，给刚启动的虚拟显示器一点出帧时间；
+         * 之后只要没有新帧就立即复用缓存，避免静态画面每次截图都白等。
+         */
+        const val FIRST_CAPTURE_RETRY = 6
+        const val CAPTURE_RETRY_DELAY_MS = 10L
     }
 }
