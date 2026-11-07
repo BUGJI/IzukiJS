@@ -1,5 +1,7 @@
 package com.benton.izukijs.subscription
 
+import java.io.ByteArrayInputStream
+import java.io.IOException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -51,5 +53,23 @@ class SubscriptionSyncTest {
         val previous = SubscriptionSync.sha256("old remote")
         assertTrue(SubscriptionSync.shouldOverwrite("local edit", "new remote", previous))
         assertTrue(SubscriptionSync.shouldOverwrite("local edit", "new remote", ""))
+    }
+
+    @Test
+    fun scriptDownloadReadsBodyWithinLimit() {
+        val text = "toast(1)\n" + "// 中文注释\n".repeat(100)
+        val bytes = text.toByteArray(Charsets.UTF_8)
+        assertEquals(text, SubscriptionSync.readScript(ByteArrayInputStream(bytes), bytes.size))
+    }
+
+    @Test(expected = IOException::class)
+    fun scriptDownloadRejectsOversizedBody() {
+        SubscriptionSync.readScript(ByteArrayInputStream(ByteArray(17)), 16)
+    }
+
+    @Test(expected = IOException::class)
+    fun scriptDownloadStopsAtDefaultLimit() {
+        val oversized = ByteArray(SubscriptionSync.MAX_SCRIPT_BYTES + 1)
+        SubscriptionSync.readScript(ByteArrayInputStream(oversized))
     }
 }
