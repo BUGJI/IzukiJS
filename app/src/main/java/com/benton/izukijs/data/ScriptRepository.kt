@@ -22,6 +22,9 @@ class ScriptRepository(
     /** 脚本集合 / 内容的变更信号。界面可借此在增删改（含编辑器保存）后重新拉取列表。 */
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
+    /** 串行化对脚本文件的读写，避免订阅同步与编辑器保存互相踩踏。 */
+    private val fileLock = Any()
+
     private fun bumpRevision() {
         _revision.value++
     }
@@ -67,19 +70,22 @@ class ScriptRepository(
         return file.toScriptInfo()
     }
 
-    fun read(script: ScriptInfo): String =
+    fun read(script: ScriptInfo): String = synchronized(fileLock) {
         if (script.file.exists()) script.file.readText() else ""
+    }
 
     fun write(script: ScriptInfo, content: String, forceHistory: Boolean = false) {
-        if (!script.file.exists()) return
-        val previous = runCatching {
-            if (script.file.exists()) script.file.readText() else null
-        }.getOrNull()
-        if (!previous.isNullOrEmpty() && previous != content) {
-            history.record(script.id, previous, force = forceHistory)
+        synchronized(fileLock) {
+            if (!script.file.exists()) return
+            val previous = runCatching {
+                if (script.file.exists()) script.file.readText() else null
+            }.getOrNull()
+            if (!previous.isNullOrEmpty() && previous != content) {
+                history.record(script.id, previous, force = forceHistory)
+            }
+            script.file.writeText(content)
+            bumpRevision()
         }
-        script.file.writeText(content)
-        bumpRevision()
     }
 
     fun delete(script: ScriptInfo) {
