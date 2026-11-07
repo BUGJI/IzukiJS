@@ -190,9 +190,9 @@
     <string name="subscription_interval_minutes">%1$d 分钟</string>
     <string name="subscription_interval_hours">%1$d 小时</string>
     <string name="subscription_interval_days">%1$d 天</string>
-    <string name="subscription_interval_disabled">已禁用</string>
+    <string name="subscription_interval_disabled">仅手动同步</string>
     <string name="subscription_interval_zero_hint">0 表示不自动同步</string>
-    <string name="subscription_interval_invalid">请输入 0（禁用）或不小于 %1$d 的分钟数</string>
+    <string name="subscription_interval_invalid">请输入 0（仅手动）或不小于 %1$d 的分钟数</string>
     <string name="subscription_interval_needs_url">填写下载链接后可设置同步间隔</string>
     <string name="subscription_min_interval">最短 %1$d 分钟</string>
     <string name="subscription_sync_now">立即同步</string>
