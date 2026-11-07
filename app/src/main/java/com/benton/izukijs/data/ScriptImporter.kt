@@ -87,7 +87,7 @@ class ScriptImporter(
                     logBus.warn("脚本下载失败 HTTP $code: $url")
                     null
                 } else {
-                    connection.inputStream.bufferedReader().use { it.readText() }
+                    connection.inputStream.use { SubscriptionSync.readScript(it) }
                         .takeIf { it.isNotBlank() }
                 }
             } finally {
