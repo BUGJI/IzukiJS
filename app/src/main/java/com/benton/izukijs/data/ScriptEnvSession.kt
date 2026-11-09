@@ -5,7 +5,7 @@ package com.benton.izukijs.data
  *
  * 状态经 [ScriptEnvRepository] 持久化，可跨次运行保留。
  */
-class ScriptEnv(
+class ScriptEnvSession(
     val scriptId: String,
     private val values: Map<String, String>,
     private val repository: ScriptEnvRepository,

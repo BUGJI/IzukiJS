@@ -51,7 +51,11 @@ data class SettingsUiState(
     val editorSettings: EditorSettings = EditorSettings(),
 )
 
-/** 设置页的状态持有者：聚合各配置仓库与控制器状态，并集中保存动作。 */
+/**
+ * 设置页的状态持有者：聚合各配置仓库与控制器状态，并集中保存动作。
+ *
+ * 设置标签与所有二级页共享 Activity 作用域的同一实例，避免每个页面各订阅一遍配置。
+ */
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())

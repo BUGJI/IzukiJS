@@ -704,101 +704,18 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     if (variablesOpen) {
         val (env, state) = viewModel.variables(current.id)
-        AlertDialog(
-            onDismissRequest = { variablesOpen = false },
-            title = { Text(stringResource(R.string.editor_variables)) },
-            text = {
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                    item {
-                        Text(
-                            stringResource(R.string.editor_variables_env),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
-                    if (env.isEmpty()) {
-                        item {
-                            Text(
-                                stringResource(R.string.editor_variables_empty),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        items(env.entries.toList()) { entry ->
-                            KeyValueRow(entry.key, entry.value)
-                        }
-                    }
-                    item { Spacer(Modifier.height(12.dp)) }
-                    item {
-                        Text(
-                            stringResource(R.string.editor_variables_state),
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    }
-                    if (state.isEmpty()) {
-                        item {
-                            Text(
-                                stringResource(R.string.editor_variables_empty),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        items(state.entries.toList()) { entry ->
-                            KeyValueRow(entry.key, entry.value)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { variablesOpen = false }) {
-                    Text(stringResource(R.string.common_close))
-                }
-            },
+        EditorVariablesDialog(
+            env = env,
+            state = state,
+            onDismiss = { variablesOpen = false },
         )
     }
 
     if (history.open) {
-        AlertDialog(
-            onDismissRequest = { viewModel.closeHistory() },
-            title = { Text(stringResource(R.string.editor_history)) },
-            text = {
-                when {
-                    history.loading -> Text(stringResource(R.string.editor_history_loading))
-                    history.entries.isEmpty() -> Text(stringResource(R.string.editor_history_empty))
-                    else -> LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
-                        items(history.entries, key = { it.first.timestamp }) { (version, preview) ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        formatDateTime(version.timestamp),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    Text(
-                                        preview.ifBlank { stringResource(R.string.editor_history_blank) },
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                TextButton(onClick = { restoreVersion(version) }) {
-                                    Text(stringResource(R.string.editor_history_restore))
-                                }
-                            }
-                            HorizontalDivider()
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.closeHistory() }) {
-                    Text(stringResource(R.string.common_close))
-                }
-            },
+        EditorHistoryDialog(
+            history = history,
+            onDismiss = { viewModel.closeHistory() },
+            onRestore = { restoreVersion(it) },
         )
     }
 
@@ -809,31 +726,6 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             initial = prompt.initial,
             onDismiss = { viewModel.dismissRun() },
             onConfirm = { values -> viewModel.confirmRun(current, values) },
-        )
-    }
-}
-
-@Composable
-private fun KeyValueRow(key: String, value: String) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.Top,
-    ) {
-        Text(
-            key,
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            modifier = Modifier.width(120.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 3,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -849,101 +741,3 @@ private const val MAX_HISTORY = 200
 
 /** 一次可撤销的编辑快照。 */
 private data class EditorSnapshot(val text: String, val selection: TextRange)
-
-@Composable
-private fun FindReplacePanel(
-    query: String,
-    queryFocus: FocusRequester,
-    onQueryChange: (String) -> Unit,
-    replacement: String,
-    onReplacementChange: (String) -> Unit,
-    matchCount: Int,
-    activePosition: Int,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onReplace: () -> Unit,
-    onReplaceAll: () -> Unit,
-    onClose: () -> Unit,
-) {
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, tonalElevation = 3.dp) {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = onQueryChange,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).focusRequester(queryFocus),
-                    label = { Text(stringResource(R.string.editor_find)) },
-                    placeholder = { Text(stringResource(R.string.editor_find_placeholder)) },
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (matchCount == 0) {
-                        stringResource(R.string.editor_match_none)
-                    } else {
-                        stringResource(R.string.editor_match_of, activePosition, matchCount)
-                    },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                IconButton(onClick = onPrev, enabled = matchCount > 0) {
-                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = stringResource(R.string.editor_prev_match))
-                }
-                IconButton(onClick = onNext, enabled = matchCount > 0) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = stringResource(R.string.editor_next_match))
-                }
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.editor_close_find))
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = replacement,
-                    onValueChange = onReplacementChange,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f),
-                    label = { Text(stringResource(R.string.editor_replace)) },
-                )
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onReplace, enabled = matchCount > 0) {
-                    Text(stringResource(R.string.editor_replace_one))
-                }
-                TextButton(onClick = onReplaceAll, enabled = matchCount > 0) {
-                    Text(stringResource(R.string.editor_replace_all))
-                }
-            }
-        }
-    }
-}
-
-/** 单独读取日志条数，使日志刷新只重组这个徽标，不牵连编辑器本体。 */
-@Composable
-private fun LogCountBadge(logsState: State<List<LogEntry>>) {
-    val count = logsState.value.size
-    if (count > 0) {
-        Spacer(Modifier.width(6.dp))
-        Text(
-            stringResource(R.string.editor_console_count, count),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/** 在子作用域内解包日志列表，同样把重组范围限制在控制台面板内。 */
-@Composable
-private fun EditorConsolePanel(
-    logsState: State<List<LogEntry>>,
-    onClear: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    ConsolePanel(
-        entries = logsState.value,
-        onClear = onClear,
-        showHeader = false,
-        modifier = modifier,
-    )
-}

@@ -1,6 +1,7 @@
 package com.benton.izukijs.subscription
 
 import android.content.Context
+import com.benton.izukijs.core.storage.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,7 +56,7 @@ class SubscriptionRepository(context: Context) {
     private fun write(list: List<ScriptSubscription>) {
         val array = JSONArray()
         list.sortedBy { it.scriptId }.forEach { array.put(it.toJson()) }
-        file.writeText(array.toString())
+        AtomicFile.writeText(file, array.toString())
     }
 
     suspend fun listAsync(): List<ScriptSubscription> = withContext(Dispatchers.IO) { list() }

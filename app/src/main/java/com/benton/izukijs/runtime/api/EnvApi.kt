@@ -1,7 +1,7 @@
 package com.benton.izukijs.runtime.api
 
 import android.webkit.JavascriptInterface
-import com.benton.izukijs.data.ScriptEnv
+import com.benton.izukijs.data.ScriptEnvSession
 import org.json.JSONObject
 
 /**
@@ -10,7 +10,7 @@ import org.json.JSONObject
  * QuickJS 的接口方法要求参数个数与调用完全一致，因此带可选参数的 `env.get` / `env.all`
  * 在 prelude 中基于下面的 Raw 方法包装。
  */
-class EnvApi(private val env: ScriptEnv) {
+class EnvApi(private val env: ScriptEnvSession) {
 
     @JavascriptInterface
     fun getRaw(key: String): String? = env.value(key)

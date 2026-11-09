@@ -1,6 +1,7 @@
 package com.benton.izukijs.data
 
 import android.content.Context
+import com.benton.izukijs.core.storage.AtomicFile
 import com.benton.izukijs.model.ScriptInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -65,7 +66,7 @@ class ScriptRepository(
     fun create(name: String, content: String = DEFAULT_SCRIPT): ScriptInfo {
         val id = uniqueId(sanitize(name))
         val file = File(scriptsDir, id + EXTENSION)
-        file.writeText(content)
+        AtomicFile.writeText(file, content)
         bumpRevision()
         return file.toScriptInfo()
     }
@@ -83,7 +84,7 @@ class ScriptRepository(
             if (!previous.isNullOrEmpty() && previous != content) {
                 history.record(script.id, previous, force = forceHistory)
             }
-            script.file.writeText(content)
+            AtomicFile.writeText(script.file, content)
             bumpRevision()
         }
     }

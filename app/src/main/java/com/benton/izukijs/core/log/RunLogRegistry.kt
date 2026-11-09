@@ -13,7 +13,7 @@ private const val MAX_TAIL = 2_000
 enum class RunStatus { RUNNING, SUCCEEDED, FAILED, TIMEOUT, STOPPED }
 
 /** 一次脚本运行的内存记录（含该次运行的日志尾部）。 */
-class RunRecord(
+class RunLogRecord(
     val runId: String,
     val scriptId: String,
     val scriptName: String,
@@ -49,15 +49,15 @@ class RunRecord(
  */
 object RunLogRegistry {
 
-    private val runs = LinkedHashMap<String, RunRecord>()
+    private val runs = LinkedHashMap<String, RunLogRecord>()
     private val current = ThreadLocal<String?>()
     private val sequence = AtomicLong(0)
 
     fun newRunId(): String =
         "run-${System.currentTimeMillis().toString(36)}-${sequence.incrementAndGet().toString(36)}"
 
-    fun begin(runId: String, scriptId: String, scriptName: String): RunRecord {
-        val record = RunRecord(runId, scriptId, scriptName, System.currentTimeMillis())
+    fun begin(runId: String, scriptId: String, scriptName: String): RunLogRecord {
+        val record = RunLogRecord(runId, scriptId, scriptName, System.currentTimeMillis())
         synchronized(runs) {
             runs[runId] = record
             while (runs.size > MAX_RUNS) {
@@ -101,13 +101,13 @@ object RunLogRegistry {
         record.finishedAt = System.currentTimeMillis()
     }
 
-    fun find(runId: String): RunRecord? = synchronized(runs) { runs[runId] }
+    fun find(runId: String): RunLogRecord? = synchronized(runs) { runs[runId] }
 
-    fun recent(limit: Int = 10): List<RunRecord> =
+    fun recent(limit: Int = 10): List<RunLogRecord> =
         synchronized(runs) { runs.values.toList().takeLast(limit.coerceAtLeast(1)) }
 
     fun filter(
-        record: RunRecord,
+        record: RunLogRecord,
         tail: Int,
         level: LogLevel?,
         grep: String?,

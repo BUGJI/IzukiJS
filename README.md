@@ -14,7 +14,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/BUGJI/IzukiJS?sort=semver&label=Release)](https://github.com/BUGJI/IzukiJS/releases)
 [![Platform](https://img.shields.io/badge/Platform-Android%2028%2B-green.svg)]()
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg)]()
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-purple.svg)]()
 
 ## 界面预览
 
@@ -239,7 +239,7 @@ app/src/main/cpp/  # QuickJS 中断回调 JNI 垫片
 
 ## 技术栈
 
-- Kotlin 2.2.10 · Jetpack Compose（Material 3）· Navigation Compose
+- Kotlin 2.4.21 · Jetpack Compose（Material 3）· Navigation Compose
 - [QuickJS-Android](https://github.com/taoweiji/quickjs-android)（`com.github.hjhrq1991:quickjs-android`，采用 16KB 页大小兼容的修复分支，经 JitPack 分发）
 - [Shizuku](https://shizuku.rikka.app/) · OpenCV · MLKit 中文文字识别
 - Kotlin Coroutines · Timber

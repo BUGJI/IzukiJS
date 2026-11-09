@@ -7,6 +7,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("13").toInt()
+val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.1.11")
+
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
@@ -25,8 +28,8 @@ android {
         applicationId = "com.benton.izukijs"
         minSdk = 28
         targetSdk = 37
-        versionCode = 13
-        versionName = "1.1.11"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

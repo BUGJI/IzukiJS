@@ -84,8 +84,10 @@ class AppApi(
     /** 主屏前台包名（无障碍 → dumpsys → 使用记录）。 */
     fun mainPackage(): String? {
         IzukiAccessibilityService.instance?.currentPackage()?.let { return it }
-        val output = shellExec("dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp'")
-        FOCUS_REGEX.find(output.orEmpty())?.groupValues?.get(1)?.let { return it }
+        for (cmd in FOREGROUND_COMMANDS) {
+            val output = shellExec(cmd) ?: continue
+            FOCUS_REGEX.find(output)?.groupValues?.get(1)?.let { return it }
+        }
         return usageForeground()
     }
 
@@ -231,6 +233,17 @@ class AppApi(
     }
 
     private companion object {
+        /**
+         * 主屏前台包名的探测命令，按可靠性排序。
+         * 使用 `dumpsys window displays` 而非无参数 `dumpsys window`：
+         * 后者会先输出 "Last ANR" 的窗口快照，`grep -m1` 可能命中历史记录。
+         */
+        val FOREGROUND_COMMANDS = listOf(
+            "dumpsys activity activities 2>/dev/null | grep -m1 'mResumedActivity'",
+            "dumpsys window displays 2>/dev/null | grep -m1 'mFocusedApp='",
+            "dumpsys window displays 2>/dev/null | grep -m1 'mCurrentFocus='",
+        )
+
         /** 从 `mCurrentFocus=... u0 com.pkg/.Activity` 中提取包名。 */
         val FOCUS_REGEX = Regex("""([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)/[A-Za-z0-9_.$]+""")
 

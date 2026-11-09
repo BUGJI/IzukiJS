@@ -2,7 +2,6 @@ package com.benton.izukijs.di
 
 import android.app.Application
 import android.content.Context
-import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
@@ -26,20 +25,15 @@ import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.data.UnlockSettingsRepository
 import com.benton.izukijs.i18n.LanguageRepository
-import com.benton.izukijs.mcp.core.McpAuditLog
-import com.benton.izukijs.mcp.McpConfigRepository
-import com.benton.izukijs.mcp.McpServerController
-import com.benton.izukijs.mcp.resources.McpResources
-import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
-import com.benton.izukijs.core.permission.LocalNetworkPermission
 import com.benton.izukijs.core.runtime.RunControl
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
+import com.benton.izukijs.runtime.RunPreparer
 import com.benton.izukijs.runtime.RuntimeSettingsRepository
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
@@ -198,6 +192,19 @@ class AppContainer(private val application: Application) {
         }
     }
 
+    private val runPreparer = RunPreparer(
+        appContext = application,
+        controllers = controllerManager,
+        logBus = logBus,
+        aiConfigRepository = aiConfigRepository,
+        httpSettingsRepository = httpSettingsRepository,
+        scriptEnvRepository = scriptEnvRepository,
+        globalEnvRepository = globalEnvRepository,
+        runHistoryRepository = runHistoryRepository,
+        virtualScreen = virtualScreenManager,
+        virtualScreenSettings = virtualScreenSettingsRepository,
+    )
+
     val scriptExecutionManager = ScriptExecutionManager(
         application,
         controllerManager,
@@ -207,15 +214,13 @@ class AppContainer(private val application: Application) {
         logBus,
         aiConfigRepository,
         captureSettingsRepository,
-        scriptEnvRepository,
-        globalEnvRepository,
-        runHistoryRepository,
         runtimeSettingsRepository,
         httpSettingsRepository,
         wakeLockController,
         screenUnlockController,
         virtualScreenManager,
         virtualScreenSettingsRepository,
+        runPreparer,
         moduleSourceProvider = { raw ->
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
             scriptRepository.find(id)?.let { scriptRepository.read(it) }
@@ -225,40 +230,22 @@ class AppContainer(private val application: Application) {
     /** 面向通知 / 悬浮窗的运行控制端口，避免 service 反向依赖 runtime 实现。 */
     val runControl: RunControl get() = scriptExecutionManager
 
-    val mcpConfigRepository = McpConfigRepository(application)
-
-    val mcpAuditLog = McpAuditLog(application)
-
-    val mcpServerController = McpServerController(
+    private val mcp = McpContainer(
+        application = application,
+        controllerManager = controllerManager,
         logBus = logBus,
-        auditLog = mcpAuditLog,
-        configProvider = { mcpConfigRepository.current() },
-        registryFactory = { operations ->
-            McpToolRegistry(
-                bundle = deviceApiBundle,
-                nodeTreeProvider = nodeTreeProvider,
-                scriptRepository = scriptRepository,
-                executionManager = scriptExecutionManager,
-                operations = operations,
-                logFileStore = logFileStore,
-                configProvider = { mcpConfigRepository.current() },
-                virtualScreen = virtualScreenManager,
-                screenUnlock = screenUnlockController,
-            )
-        },
-        resourcesFactory = {
-            McpResources(
-                bundle = deviceApiBundle,
-                controllers = controllerManager,
-                scriptRepository = scriptRepository,
-                executionManager = scriptExecutionManager,
-                logFileStore = logFileStore,
-                auditLog = mcpAuditLog,
-            )
-        },
-        serverVersion = BuildConfig.VERSION_NAME,
-        localNetworkPermissionGranted = { LocalNetworkPermission.isGranted(application) },
+        deviceApiBundle = deviceApiBundle,
+        nodeTreeProvider = nodeTreeProvider,
+        scriptRepository = scriptRepository,
+        scriptExecutionManager = scriptExecutionManager,
+        logFileStore = logFileStore,
+        virtualScreenManager = virtualScreenManager,
+        screenUnlockController = screenUnlockController,
     )
+
+    val mcpConfigRepository get() = mcp.configRepository
+    val mcpAuditLog get() = mcp.auditLog
+    val mcpServerController get() = mcp.serverController
 
     val shizukuManager = ShizukuManager(application, controllerManager, logBus)
 

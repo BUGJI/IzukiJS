@@ -41,9 +41,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -56,6 +59,7 @@ import com.benton.izukijs.ui.adb.AdbSetupScreen
 import com.benton.izukijs.ui.ai.AiAgentScreen
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SnackbarController
+import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.editor.EditorScreen
 import com.benton.izukijs.ui.hid.HidSetupScreen
 import com.benton.izukijs.ui.logs.LogsScreen
@@ -380,16 +384,34 @@ private fun DetailNavHost(
                 navArgument(Routes.ARG_SETTINGS_CATEGORY) { type = NavType.StringType },
             ),
         ) { entry ->
-            SettingsDetailScreen(
-                categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
-                onBack = { navController.popBackStack() },
-                onOpenSetup = {
-                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
-                },
-                onOpenMcp = {
-                    navController.navigate(Routes.MCP) { launchSingleTop = true }
-                },
-            )
+            // 设置标签页在 NavHost 之外，使用的是 Activity 的 ViewModelStore；
+            // 二级页也切到同一个 owner，避免每个设置页各创建一份 SettingsViewModel。
+            val context = LocalContext.current
+            val settingsOwner = remember(context) {
+                context.findActivity() as? ViewModelStoreOwner
+            }
+
+            @Composable
+            fun SettingsContent() {
+                SettingsDetailScreen(
+                    categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onOpenSetup = {
+                        navController.navigate(Routes.SETUP) { launchSingleTop = true }
+                    },
+                    onOpenMcp = {
+                        navController.navigate(Routes.MCP) { launchSingleTop = true }
+                    },
+                )
+            }
+
+            if (settingsOwner != null) {
+                CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
+                    SettingsContent()
+                }
+            } else {
+                SettingsContent()
+            }
         }
         composable(
             route = Routes.EDITOR,
