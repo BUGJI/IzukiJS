@@ -77,10 +77,14 @@ fun AiAgentScreen(onBack: () -> Unit) {
         if (!promptDirty) promptText = config.systemPrompt
     }
     // 离开页面时兜底提交聚焦状态下未失焦的改动。
+    // config 也必须取最新值，否则会把页面打开后修改的其它字段回滚成旧值。
     val latestPrompt by rememberUpdatedState(promptText)
     val latestPromptDirty by rememberUpdatedState(promptDirty)
+    val latestConfig by rememberUpdatedState(config)
     DisposableEffect(Unit) {
-        onDispose { if (latestPromptDirty) update(config.copy(systemPrompt = latestPrompt)) }
+        onDispose {
+            if (latestPromptDirty) update(latestConfig.copy(systemPrompt = latestPrompt))
+        }
     }
 
     IzukiPageScaffold(

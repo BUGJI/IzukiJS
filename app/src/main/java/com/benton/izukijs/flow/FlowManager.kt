@@ -6,14 +6,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.time.formatMonthDayTime
 import com.benton.izukijs.schedule.CronExpression
 import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 脚本编排调度。时间 / 间隔 / Cron 使用 AlarmManager；事件触发由现有系统事件接收器
@@ -187,8 +185,7 @@ class FlowManager(
         )
     }
 
-    private fun formatTime(millis: Long): String =
-        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(millis))
+    private fun formatTime(millis: Long): String = formatMonthDayTime(millis)
 
     private fun eventLabel(event: ScheduleEvent?): String = when (event) {
         ScheduleEvent.CHARGING -> "充电"

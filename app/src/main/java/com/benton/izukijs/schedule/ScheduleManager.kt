@@ -12,11 +12,9 @@ import android.net.NetworkCapabilities
 import android.os.Build
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.time.formatMonthDayTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 定时任务调度。时间 / 间隔 / Cron 使用 AlarmManager；事件触发由 [ScheduleEventReceiver]
@@ -261,8 +259,7 @@ class ScheduleManager(
         )
     }
 
-    private fun formatTime(millis: Long): String =
-        SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(millis))
+    private fun formatTime(millis: Long): String = formatMonthDayTime(millis)
 
     private fun eventLabel(event: ScheduleEvent?): String = when (event) {
         ScheduleEvent.CHARGING -> "充电"

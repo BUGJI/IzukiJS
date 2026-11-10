@@ -84,6 +84,13 @@ class ScriptExecutionManager(
     @Volatile
     private var activeSession: RunSession? = null
 
+    /**
+     * 保护 [engine] / [activeSession] / [_running] 之间的状态转换。
+     * 启动、停止与结束清理都可能来自不同线程，必须在同一把锁下完成「判断 + 更新」，
+     * 否则会出现停止请求丢失或旧 run 清空新 run 状态的 ABA 问题。
+     */
+    private val runLock = Any()
+
     fun run(
         scriptId: String,
         scriptName: String,
@@ -99,15 +106,17 @@ class ScriptExecutionManager(
                 return false
             }
         }
-        if (!_running.compareAndSet(expect = false, update = true)) {
-            logBus.warn("已有脚本正在运行，请先停止")
-            return false
-        }
         val runId = RunLogRegistry.newRunId()
-        lastStartedRunId = runId
-        RunLogRegistry.begin(runId, scriptId, scriptName)
         val session = RunSession(runId)
-        activeSession = session
+        synchronized(runLock) {
+            if (!_running.compareAndSet(expect = false, update = true)) {
+                logBus.warn("已有脚本正在运行，请先停止")
+                return false
+            }
+            lastStartedRunId = runId
+            RunLogRegistry.begin(runId, scriptId, scriptName)
+            activeSession = session
+        }
 
         // 参数解析、运行历史落盘、通知 / 悬浮窗启动等放到后台，避免从界面点运行时阻塞主线程。
         // 预启动阶段的任何异常都必须回滚，否则 _running 会永久卡在 true。
@@ -242,11 +251,15 @@ class ScriptExecutionManager(
                 moduleSourceProvider,
                 virtualScreen,
                 effectiveRunMode,
-            ).also {
-                session.engine = it
-                engine = it
+            )
+            // 发布引擎与检查停止请求必须在同一把锁下完成：否则 requestStop 可能看到
+            // engine 仍为 null 只置了 stopRequested，而这里已经检查过该标志，导致停止丢失。
+            val stopAlreadyRequested = synchronized(runLock) {
+                session.engine = jsEngine
+                engine = jsEngine
+                session.stopRequested
             }
-            if (session.stopRequested) {
+            if (stopAlreadyRequested) {
                 logBus.info("… 收到停止请求，正在终止脚本")
                 jsEngine.requestExit()
             }
@@ -262,8 +275,7 @@ class ScriptExecutionManager(
             try {
                 val timedOut = session.engine?.timedOut == true
                 val exited = session.engine?.exitRequested == true || isExitThrowable(failure)
-                session.closeEngine()
-                engine = null
+                clearEngine(session)
                 val startedThisRun = virtualScreen.startGeneration() > session.startGenerationBefore
                 if (virtualScreen.isActive()) {
                     if (virtualScreenSettings.current().autoStopAfterRun && startedThisRun) {
@@ -296,7 +308,7 @@ class ScriptExecutionManager(
             } finally {
                 // 无论日志 / 停止流程是否抛异常，都必须释放资源与运行标记。
                 session.releaseWakeLock()
-                resetRunningState()
+                resetRunningState(session)
                 runCatching { ScriptForegroundService.stop(appContext) }
                 ScriptNotificationCenter.clear()
             }
@@ -315,7 +327,7 @@ class ScriptExecutionManager(
             error.stackTraceToString().take(MAX_RUN_ERROR_CHARS),
         )
         session.releaseWakeLock()
-        resetRunningState()
+        resetRunningState(session)
         runCatching { ScriptForegroundService.stop(appContext) }
         ScriptNotificationCenter.clear()
         runCatching { onFinished?.invoke(false) }.onFailure {
@@ -323,30 +335,67 @@ class ScriptExecutionManager(
         }
     }
 
-    private fun resetRunningState() {
-        _running.value = false
-        _runningScript.value = null
-        _runningScriptId.value = null
-        _runningRunId.value = null
-        activeSession = null
+    /**
+     * 关闭本次 run 的引擎。仅当 [session] 仍是当前活动 run 时才清除共享字段，
+     * 避免旧 run 的收尾把新 run 的引擎置空（ABA）。
+     */
+    private fun clearEngine(session: RunSession) {
+        val toClose = synchronized(runLock) {
+            val current = session.engine
+            session.engine = null
+            if (engine === current) engine = null
+            current
+        }
+        toClose?.let { runCatching { it.close() } }
     }
 
-    /** 请求停止当前脚本；通过 QuickJS 中断回调，纯计算死循环也能被打断。 */
-    override fun requestStop() {
-        val current = engine
-        if (current != null) {
-            logBus.info("… 正在停止脚本")
-            current.requestExit()
-            return
+    /**
+     * 重置运行状态；只有仍然是当前 [session] 时才清空共享字段，
+     * 防止旧 run 结束早于新 run 启动的竞态。
+     */
+    private fun resetRunningState(session: RunSession) {
+        synchronized(runLock) {
+            if (activeSession !== session) return
+            _running.value = false
+            _runningScript.value = null
+            _runningScriptId.value = null
+            _runningRunId.value = null
+            activeSession = null
         }
+    }
+
+    private sealed interface StopAction {
+        data class StopEngine(val engine: JsEngine) : StopAction
+        data object WaitStart : StopAction
+        data object None : StopAction
+    }
+
+    /** 在锁内解析出本次停止动作，避免锁外做判断导致请求丢失。 */
+    private fun resolveStopAction(): StopAction = synchronized(runLock) {
+        val current = engine
+        if (current != null) return@synchronized StopAction.StopEngine(current)
         val session = activeSession
         if (session != null && _running.value) {
             // 引擎尚未创建（仍在校验 / 解锁 / 启动虚拟屏），先记下请求，创建后立即中断。
             session.stopRequested = true
-            logBus.info("… 正在停止脚本（等待启动完成）")
-            return
+            StopAction.WaitStart
+        } else {
+            StopAction.None
         }
-        logBus.warn("当前没有正在运行的脚本")
+    }
+
+    /** 请求停止当前脚本；通过 QuickJS 中断回调，纯计算死循环也能被打断。 */
+    override fun requestStop() {
+        when (val action = resolveStopAction()) {
+            is StopAction.StopEngine -> {
+                logBus.info("… 正在停止脚本")
+                action.engine.requestExit()
+            }
+
+            StopAction.WaitStart -> logBus.info("… 正在停止脚本（等待启动完成）")
+
+            StopAction.None -> logBus.warn("当前没有正在运行的脚本")
+        }
     }
 
     private fun isExitThrowable(t: Throwable?): Boolean {
@@ -390,12 +439,6 @@ class ScriptExecutionManager(
             wakeLock.release()
         }
 
-        @Synchronized
-        fun closeEngine() {
-            val current = engine ?: return
-            engine = null
-            runCatching { current.close() }
-        }
     }
 
     private companion object {

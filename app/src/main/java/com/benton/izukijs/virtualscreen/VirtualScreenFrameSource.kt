@@ -2,12 +2,12 @@ package com.benton.izukijs.virtualscreen
 
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
-import android.media.Image
 import android.media.ImageReader
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.view.Surface
+import com.benton.izukijs.core.image.ImageToBitmapConverter
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
 import java.util.concurrent.TimeUnit
@@ -28,6 +28,7 @@ class VirtualScreenFrameSource(
     private val handler = Handler(thread.looper)
     private val lock = ReentrantLock()
     private val frameAvailable = lock.newCondition()
+    private val imageConverter = ImageToBitmapConverter()
 
     private var reader: ImageReader? = null
     private var latest: Bitmap? = null
@@ -52,7 +53,7 @@ class VirtualScreenFrameSource(
                 if (now - lastPublishedAtMs < MIN_FRAME_INTERVAL_MS) {
                     return@setOnImageAvailableListener
                 }
-                val bitmap = runCatching { imageToBitmap(image) }.getOrNull()
+                val bitmap = runCatching { imageConverter.toBitmap(image) }.getOrNull()
                 if (bitmap != null) {
                     lastPublishedAtMs = now
                     publish(bitmap)
@@ -137,6 +138,7 @@ class VirtualScreenFrameSource(
         runCatching { reader?.setOnImageAvailableListener(null, null) }
         runCatching { reader?.close() }
         reader = null
+        imageConverter.clear()
         runCatching { thread.quitSafely() }
     }
 
@@ -152,20 +154,6 @@ class VirtualScreenFrameSource(
             old?.recycle()
             frameAvailable.signalAll()
         }
-    }
-
-    private fun imageToBitmap(image: Image): Bitmap? {
-        val plane = image.planes.firstOrNull() ?: return null
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * image.width
-        val widthWithPadding = image.width + rowPadding / pixelStride
-        val full = Bitmap.createBitmap(widthWithPadding, image.height, Bitmap.Config.ARGB_8888)
-        full.copyPixelsFromBuffer(plane.buffer)
-        if (widthWithPadding == image.width) return full
-        val cropped = Bitmap.createBitmap(full, 0, 0, image.width, image.height)
-        full.recycle()
-        return cropped
     }
 
     private companion object {

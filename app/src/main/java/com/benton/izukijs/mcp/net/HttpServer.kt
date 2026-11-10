@@ -14,6 +14,7 @@ import java.util.concurrent.SynchronousQueue
 import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.ReentrantLock
 import org.json.JSONObject
 
 /** 一个已解析的 HTTP 请求。 */
@@ -85,6 +86,10 @@ class HttpServer(
     /** 正在执行 [handler] 的请求数。停止时据此做有界优雅关闭——只等在途请求，不等空闲连接。 */
     private val inFlight = AtomicInteger(0)
 
+    /** 在途请求归零时唤醒 [stop] 的等待，避免轮询 sleep。 */
+    private val inFlightLock = ReentrantLock()
+    private val inFlightIdle = inFlightLock.newCondition()
+
     val localPort: Int get() = serverSocket?.localPort ?: port
 
     fun start() {
@@ -110,8 +115,15 @@ class HttpServer(
         // 优雅关闭：给正在处理中的请求一个短宽限期完成并写回响应，避免「改配置的一瞬间掐断在途调用」。
         // 只统计 handler 执行中的请求（空闲 keep-alive 连接不计入），因此无在途请求时会立即返回。
         val deadline = System.currentTimeMillis() + SHUTDOWN_GRACE_MS
-        while (inFlight.get() > 0 && System.currentTimeMillis() < deadline) {
-            runCatching { Thread.sleep(SHUTDOWN_POLL_MS) }
+        inFlightLock.lock()
+        try {
+            while (inFlight.get() > 0) {
+                val remaining = deadline - System.currentTimeMillis()
+                if (remaining <= 0L) break
+                runCatching { inFlightIdle.await(remaining, TimeUnit.MILLISECONDS) }
+            }
+        } finally {
+            inFlightLock.unlock()
         }
         // 宽限期结束后，强制关闭所有残留连接（含空闲 keep-alive）并终止工作线程。
         activeClients.forEach { runCatching { it.close() } }
@@ -120,11 +132,23 @@ class HttpServer(
     }
 
     private fun acceptLoop(socket: ServerSocket) {
+        var consecutiveFailures = 0
         while (running) {
             val client = try {
-                socket.accept()
+                socket.accept().also { consecutiveFailures = 0 }
             } catch (t: Throwable) {
-                if (running) continue else break
+                if (!running) break
+                consecutiveFailures++
+                // 连续失败（如 FD 耗尽）时短暂退避，避免 accept 空转打满 CPU。
+                if (consecutiveFailures > ACCEPT_BACKOFF_THRESHOLD) {
+                    try {
+                        Thread.sleep(ACCEPT_BACKOFF_MS)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        break
+                    }
+                }
+                continue
             }
             activeClients.add(client)
             try {
@@ -175,7 +199,14 @@ class HttpServer(
                             )
                         }
                 } finally {
-                    inFlight.decrementAndGet()
+                    if (inFlight.decrementAndGet() == 0) {
+                        inFlightLock.lock()
+                        try {
+                            inFlightIdle.signalAll()
+                        } finally {
+                            inFlightLock.unlock()
+                        }
+                    }
                 }
                 val keepAlive = shouldKeepAlive(request, response)
                 if (!runCatching { writeResponse(output, response, keepAlive) }.isSuccess) return
@@ -334,7 +365,10 @@ class HttpServer(
          */
         const val SHUTDOWN_GRACE_MS = 1_000L
 
-        /** 优雅关闭轮询间隔。 */
-        const val SHUTDOWN_POLL_MS = 20L
+        /** accept 连续失败达到该次数后开始退避。 */
+        const val ACCEPT_BACKOFF_THRESHOLD = 8
+
+        /** accept 退避时长。 */
+        const val ACCEPT_BACKOFF_MS = 50L
     }
 }

@@ -271,8 +271,9 @@ fun PermissionScreen(
             runCatching { capturePermissionLauncher.launch(manager.createScreenCaptureIntent()) }
         },
         stopScreenCapture = {
+            // 停服务会走 onDestroy() -> ScreenCapture.stop()，这里不再重复调用，
+            // 也避免在主线程做投影/ImageReader 清理。
             ScreenCaptureService.stop(context)
-            container.screenCapture.stop()
         },
         openHid = onOpenHid,
         revokeHid = { container.hidManager.revoke() },

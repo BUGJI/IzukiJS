@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.fileProviderAuthority
 import com.benton.izukijs.data.ScriptGroupMode
 import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptNameResolver
@@ -218,7 +219,7 @@ fun ScriptsScreen(
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
             val result = container.scriptImporter.importFromImage(uri)
             file.delete()
             val message = when (result) {
@@ -239,7 +240,7 @@ fun ScriptsScreen(
             val dir = File(context.cacheDir, "captures").apply { mkdirs() }
             val file = File.createTempFile("scan_", ".jpg", dir)
             pendingScanFile = file
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
             scanLauncher.launch(uri)
         }.onFailure {
             pendingScanFile?.delete()
@@ -545,10 +546,14 @@ private fun ScriptRow(
         },
         headlineContent = { Text(script.name) },
         supportingContent = {
-            val parts = buildList {
-                add(formatDateTime(script.updatedAt))
+            // 日期格式化与标签拼串只在数据变化时计算一次，避免每次重组重复做。
+            val dateText = remember(script.updatedAt) { formatDateTime(script.updatedAt) }
+            val tagText = remember(tags) {
                 val shown = tags.take(3).joinToString("  ") { "#$it" }
-                val tagText = shown + if (tags.size > 3) " +${tags.size - 3}" else ""
+                shown + if (tags.size > 3) " +${tags.size - 3}" else ""
+            }
+            val parts = buildList {
+                add(dateText)
                 if (tagText.isNotEmpty()) add(tagText)
                 if (subscription != null) {
                     val badge = if (!subscription.enabled || subscription.intervalMinutes <= 0L) {

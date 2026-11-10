@@ -150,9 +150,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     suspend fun exportLogs(file: File): Boolean =
         withContext(Dispatchers.IO) { container.logFileStore.exportTo(file) }
 
-    fun trimLogs() = container.logFileStore.trim()
+    suspend fun trimLogs() = withContext(Dispatchers.IO) { container.logFileStore.trim() }
 
-    fun clearLogs() {
+    suspend fun clearLogs() = withContext(Dispatchers.IO) {
         container.logBus.clear()
         container.logFileStore.clear()
     }

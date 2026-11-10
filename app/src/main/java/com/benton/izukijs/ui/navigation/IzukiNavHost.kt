@@ -168,16 +168,7 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                         enter = fadeIn(tween(NAV_ANIM_MS)) + expandHorizontally(tween(NAV_ANIM_MS)),
                         exit = fadeOut(tween(NAV_ANIM_MS)) + shrinkHorizontally(tween(NAV_ANIM_MS)),
                     ) {
-                        NavigationRail {
-                            BottomItem.entries.forEachIndexed { index, item ->
-                                NavigationRailItem(
-                                    selected = pagerState.currentPage == index,
-                                    onClick = { selectTab(index) },
-                                    icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
-                                    label = { Text(stringResource(item.labelRes)) },
-                                )
-                            }
-                        }
+                        MainNavigationRail(pagerState = pagerState, onSelectTab = ::selectTab)
                     }
                     Box(modifier = Modifier.weight(1f)) {
                         MainTabsHost(
@@ -211,16 +202,7 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                             enter = slideInVertically(tween(NAV_ANIM_MS)) { it } + fadeIn(tween(NAV_ANIM_MS)),
                             exit = slideOutVertically(tween(NAV_ANIM_MS)) { it } + fadeOut(tween(NAV_ANIM_MS)),
                         ) {
-                            NavigationBar {
-                                BottomItem.entries.forEachIndexed { index, item ->
-                                    NavigationBarItem(
-                                        selected = pagerState.currentPage == index,
-                                        onClick = { selectTab(index) },
-                                        icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
-                                        label = { Text(stringResource(item.labelRes)) },
-                                    )
-                                }
-                            }
+                            MainNavigationBar(pagerState = pagerState, onSelectTab = ::selectTab)
                         }
                     },
                     snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -246,6 +228,39 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * 侧边导航栏。单独抽出，让 [PagerState.currentPage] 的读取只落在这一小块重组范围内，
+ * 滑动切换标签时不再波及整个导航树。
+ */
+@Composable
+private fun MainNavigationRail(pagerState: PagerState, onSelectTab: (Int) -> Unit) {
+    NavigationRail {
+        BottomItem.entries.forEachIndexed { index, item ->
+            NavigationRailItem(
+                selected = pagerState.currentPage == index,
+                onClick = { onSelectTab(index) },
+                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                label = { Text(stringResource(item.labelRes)) },
+            )
+        }
+    }
+}
+
+/** 底部导航栏，抽出的原因同 [MainNavigationRail]。 */
+@Composable
+private fun MainNavigationBar(pagerState: PagerState, onSelectTab: (Int) -> Unit) {
+    NavigationBar {
+        BottomItem.entries.forEachIndexed { index, item ->
+            NavigationBarItem(
+                selected = pagerState.currentPage == index,
+                onClick = { onSelectTab(index) },
+                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                label = { Text(stringResource(item.labelRes)) },
+            )
         }
     }
 }

@@ -10,6 +10,7 @@ import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
 import com.benton.izukijs.schedule.TriggerConditions
 import com.benton.izukijs.service.ScreenUnlockController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -169,13 +170,16 @@ class FlowRunner(
             return StepResult(step, success = false, elapsedMs = 0L)
         }
         logBus.info("▶ 编排步骤 $index/$total: ${script.name}")
-        val outcome = runCatching {
+        val outcome = try {
             executionManager.runToCompletion(
                 scriptId = script.id,
                 scriptName = script.name,
                 source = scriptRepository.read(script),
             )
-        }.getOrElse { error ->
+        } catch (c: CancellationException) {
+            // 取消必须向上传播，否则编排停止后仍会继续执行后续步骤。
+            throw c
+        } catch (error: Throwable) {
             logBus.error("✘ 编排步骤 $index/$total 异常: ${error.message}")
             return StepResult(
                 step,

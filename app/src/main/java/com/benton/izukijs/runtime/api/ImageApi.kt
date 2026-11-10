@@ -353,26 +353,30 @@ class ImageApi(
             logBus.warn("找图失败：模板不存在或无法读取 $templatePath")
             return emptyList()
         }
-        val cropped = if (region.left == 0 &&
-            region.top == 0 &&
-            region.width() == screen.width &&
-            region.height() == screen.height
-        ) {
-            screen
-        } else {
-            Bitmap.createBitmap(screen, region.left, region.top, region.width(), region.height())
-        }
         var screenMat: Mat? = null
+        var regionMat: Mat? = null
         var result: Mat? = null
         try {
-            if (template.cols() > cropped.width || template.rows() > cropped.height) {
+            if (template.cols() > region.width() || template.rows() > region.height()) {
                 logBus.debug("找图 ${File(templatePath).name} → 跳过：模板大于查找区域 ✗")
                 return emptyList()
             }
             screenMat = Mat()
-            Utils.bitmapToMat(cropped, screenMat)
+            Utils.bitmapToMat(screen, screenMat)
+            // 用 Mat ROI 代替先裁剪 Bitmap：省掉一次整图/区域位图分配与拷贝。
+            regionMat = if (region.left == 0 &&
+                region.top == 0 &&
+                region.width() == screen.width &&
+                region.height() == screen.height
+            ) {
+                screenMat
+            } else {
+                screenMat.submat(
+                    org.opencv.core.Rect(region.left, region.top, region.width(), region.height()),
+                )
+            }
             result = Mat()
-            Imgproc.matchTemplate(screenMat, template, result, Imgproc.TM_CCOEFF_NORMED)
+            Imgproc.matchTemplate(regionMat, template, result, Imgproc.TM_CCOEFF_NORMED)
             val max = limit.coerceIn(1, MAX_MATCHES)
             val templateWidth = template.cols()
             val templateHeight = template.rows()
@@ -394,9 +398,10 @@ class ImageApi(
             logBus.error("图像匹配失败: ${t.message}")
             emptyList()
         } finally {
-            screenMat?.release()
             result?.release()
-            if (cropped !== screen) cropped.recycle()
+            // submat 与 screenMat 共享数据，先释放子矩阵再释放父矩阵。
+            if (regionMat !== screenMat) regionMat?.release()
+            screenMat?.release()
         }
     }
 

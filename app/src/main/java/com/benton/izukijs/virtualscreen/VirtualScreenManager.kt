@@ -113,7 +113,15 @@ class VirtualScreenManager(
             client.connected.collect { connected ->
                 if (!connected && _state.value is VirtualScreenState.Active) {
                     logBus.warn("虚拟屏特权服务断开，正在清理虚拟屏")
-                    cleanupInternal(destroyRemote = false, reason = STOP_SERVICE_DISCONNECTED)
+                    // 与 start()/stop() 共用 startMutex，避免断连清理和正在进行的启停互相踩踏。
+                    startMutex.withLock {
+                        if (_state.value is VirtualScreenState.Active) {
+                            cleanupInternal(
+                                destroyRemote = false,
+                                reason = STOP_SERVICE_DISCONNECTED,
+                            )
+                        }
+                    }
                 }
             }
         }

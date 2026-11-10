@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.benton.izukijs.BuildConfig
+import com.benton.izukijs.core.fileProviderAuthority
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -70,7 +71,7 @@ object ApkInstaller {
             }
             return false
         }
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, MIME_APK)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

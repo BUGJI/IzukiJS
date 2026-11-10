@@ -14,11 +14,18 @@ import androidx.core.content.IntentCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.MainActivity
 import com.benton.izukijs.R
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * 持续录屏前台服务。授权一次后长期运行，为图片匹配 / OCR / 截图提供无限量的屏幕帧。
  */
 class ScreenCaptureService : Service() {
+
+    /** 投影创建 / 销毁涉及 binder 与 ImageReader，放到单线程避免占用主线程。 */
+    private val worker: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "izuki-capture-ctl").apply { isDaemon = true }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -32,13 +39,16 @@ class ScreenCaptureService : Service() {
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_DATA, Intent::class.java) }
         if (data != null) {
-            (application as IzukiApp).container.screenCapture.start(this, resultCode, data)
+            val capture = (application as IzukiApp).container.screenCapture
+            worker.execute { runCatching { capture.start(this, resultCode, data) } }
         }
         return START_STICKY
     }
 
     override fun onDestroy() {
-        (application as IzukiApp).container.screenCapture.stop()
+        val capture = (application as IzukiApp).container.screenCapture
+        worker.execute { runCatching { capture.stop() } }
+        worker.shutdown()
         super.onDestroy()
     }
 

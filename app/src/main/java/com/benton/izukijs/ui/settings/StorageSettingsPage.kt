@@ -54,6 +54,14 @@ internal fun StorageSettings() {
         }
     }
 
+    /** 裁剪日志是磁盘 I/O，放到后台并在完成后刷新大小，避免阻塞主线程。 */
+    fun trimLogsAndRefresh() {
+        scope.launch {
+            viewModel.trimLogs()
+            logFileSize = viewModel.logFileSizeBytes()
+        }
+    }
+
     LaunchedEffect(Unit) { refreshLogSize() }
 
     SectionCard(stringResource(R.string.storage_log_title)) {
@@ -62,8 +70,7 @@ internal fun StorageSettings() {
             checked = logSettings.autoClean,
         ) {
             viewModel.saveLogSettings(logSettings.copy(autoClean = it))
-            viewModel.trimLogs()
-            refreshLogSize()
+            trimLogsAndRefresh()
         }
         Spacer(Modifier.height(SectionGap))
 
@@ -95,8 +102,7 @@ internal fun StorageSettings() {
                     selected = logSettings.maxSizeMb == size,
                     onClick = {
                         viewModel.saveLogSettings(logSettings.copy(maxSizeMb = size))
-                        viewModel.trimLogs()
-                        refreshLogSize()
+                        trimLogsAndRefresh()
                     },
                     label = { Text("$size MB") },
                 )
@@ -112,8 +118,7 @@ internal fun StorageSettings() {
                     selected = logSettings.retentionDays == days,
                     onClick = {
                         viewModel.saveLogSettings(logSettings.copy(retentionDays = days))
-                        viewModel.trimLogs()
-                        refreshLogSize()
+                        trimLogsAndRefresh()
                     },
                     label = { Text(stringResource(R.string.storage_days, days)) },
                 )
@@ -157,8 +162,10 @@ internal fun StorageSettings() {
             destructive = true,
             onDismiss = { confirmClearLog = false },
             onConfirm = {
-                viewModel.clearLogs()
-                refreshLogSize()
+                scope.launch {
+                    viewModel.clearLogs()
+                    logFileSize = viewModel.logFileSizeBytes()
+                }
                 confirmClearLog = false
             },
         )

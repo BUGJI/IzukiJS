@@ -255,8 +255,10 @@ fun ConsolePanel(
                     modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
                 ) {
                     items(visible, key = { it.id }) { entry ->
+                        // 时间格式化 + 拼串只在该条目 / 时间戳开关变化时做一次。
+                        val line = remember(entry, showTimestamp) { entry.toLine(showTimestamp) }
                         Text(
-                            text = entry.toLine(showTimestamp),
+                            text = line,
                             color = entry.level.displayColor(),
                             fontFamily = FontFamily.Monospace,
                             fontSize = 12.sp,
