@@ -1,12 +1,14 @@
 package com.benton.izukijs.ui.scripts
 
 import com.benton.izukijs.di.AppContainer
+import com.benton.izukijs.flow.ScriptFlow
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.schedule.Schedule
 import com.benton.izukijs.subscription.ScriptSubscription
 
 /** 删除脚本时保留的完整快照，供 Snackbar「撤销」恢复。 */
 data class ScriptDeletionBackup(
+    val scriptId: String,
     val name: String,
     val content: String,
     val values: Map<String, String>,
@@ -19,6 +21,7 @@ data class ScriptDeletionBackup(
     val pinnedToTile: Boolean,
     val subscription: ScriptSubscription?,
     val schedules: List<Schedule>,
+    val flows: List<ScriptFlow>,
 )
 
 /**
@@ -37,6 +40,7 @@ class ScriptDeletion(private val container: AppContainer) {
         pinnedToTile: Boolean,
     ): ScriptDeletionBackup {
         val backup = ScriptDeletionBackup(
+            scriptId = script.id,
             name = script.name,
             content = container.scriptRepository.readAsync(script),
             values = container.scriptEnvRepository.values(script.id),
@@ -50,9 +54,15 @@ class ScriptDeletion(private val container: AppContainer) {
             subscription = container.subscriptionRepository.getAsync(script.id),
             schedules = container.scheduleRepository.listAsync()
                 .filter { it.scriptId == script.id },
+            flows = container.flowRepository.listAsync(),
         )
         container.subscriptionManager.cancelAsync(script.id)
         backup.schedules.forEach { container.scheduleManager.cancelAsync(it.id) }
+        backup.flows
+            .filter { flow -> flow.steps.any { it.scriptId == script.id } }
+            .filter { flow -> flow.steps.all { it.scriptId == script.id } }
+            .forEach { flow -> container.flowManager.cancelAsync(flow.id) }
+        container.flowRepository.removeScriptAsync(script.id)
         container.scriptRepository.deleteAsync(script)
         container.scriptEnvRepository.remove(script.id)
         container.scriptListPreferences.removeTags(script.id)
@@ -88,6 +98,30 @@ class ScriptDeletion(private val container: AppContainer) {
                 schedule.copy(scriptId = restored.id, scriptName = restored.name),
             )
         }
+        backup.flows
+            .filter { flow -> flow.steps.any { it.scriptId == backup.scriptId } }
+            .forEach { original ->
+                val restoredSteps = original.steps.map { step ->
+                    if (step.scriptId == backup.scriptId) {
+                        step.copy(scriptId = restored.id, scriptName = restored.name)
+                    } else {
+                        step
+                    }
+                }
+                val current = container.flowRepository.getAsync(original.id)
+                if (current == null) {
+                    container.flowManager.scheduleAsync(original.copy(steps = restoredSteps))
+                } else {
+                    var merged = current.steps
+                    restoredSteps.withIndex().forEach { (index, step) ->
+                        if (step.scriptId == restored.id && merged.none { it.id == step.id }) {
+                            val insertAt = index.coerceIn(0, merged.size)
+                            merged = merged.toMutableList().apply { add(insertAt, step) }
+                        }
+                    }
+                    container.flowRepository.upsertAsync(current.copy(steps = merged))
+                }
+            }
         return restored
     }
 }

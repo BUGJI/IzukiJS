@@ -101,6 +101,7 @@ fun ScriptsScreen(
     onOpenScript: (String) -> Unit,
     onEditScript: (String) -> Unit,
     onOpenSchedule: () -> Unit,
+    onOpenFlows: () -> Unit,
 ) {
     val container = rememberAppContainer()
     val context = LocalContext.current
@@ -299,6 +300,10 @@ fun ScriptsScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.scripts_schedule)) },
                                 onClick = { showOverflow = false; onOpenSchedule() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.scripts_flows)) },
+                                onClick = { showOverflow = false; onOpenFlows() },
                             )
                             HorizontalDivider()
                             CheckedMenuItem(

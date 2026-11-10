@@ -24,6 +24,9 @@ import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.data.UnlockSettingsRepository
+import com.benton.izukijs.flow.FlowManager
+import com.benton.izukijs.flow.FlowRepository
+import com.benton.izukijs.flow.FlowRunner
 import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
@@ -259,6 +262,10 @@ class AppContainer(private val application: Application) {
 
     val scheduleManager = ScheduleManager(application, scheduleRepository, logBus)
 
+    val flowRepository = FlowRepository(application)
+
+    val flowManager = FlowManager(application, flowRepository, logBus)
+
     val subscriptionRepository = SubscriptionRepository(application)
 
     val subscriptionManager = SubscriptionManager(
@@ -273,6 +280,17 @@ class AppContainer(private val application: Application) {
         repository = scheduleRepository,
         scriptRepository = scriptRepository,
         scheduleManager = scheduleManager,
+        executionManager = scriptExecutionManager,
+        screenUnlock = screenUnlockController,
+        foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
+        logBus = logBus,
+    )
+
+    val flowRunner = FlowRunner(
+        context = application,
+        repository = flowRepository,
+        scriptRepository = scriptRepository,
+        flowManager = flowManager,
         executionManager = scriptExecutionManager,
         screenUnlock = screenUnlockController,
         foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
@@ -306,6 +324,7 @@ class AppContainer(private val application: Application) {
         appScope.launch {
             logFileStore.trim()
             scheduleManager.rescheduleAll()
+            flowManager.rescheduleAll()
             subscriptionManager.rescheduleAll()
         }
         appScope.launch { updateManager.startIfAutoCheckEnabled() }

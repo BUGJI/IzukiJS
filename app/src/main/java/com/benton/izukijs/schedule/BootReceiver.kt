@@ -14,6 +14,7 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val container = (context.applicationContext as IzukiApp).container
         container.scheduleManager.rescheduleAll()
+        container.flowManager.rescheduleAll()
         container.subscriptionManager.rescheduleAll()
     }
 }

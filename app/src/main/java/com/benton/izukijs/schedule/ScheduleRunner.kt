@@ -1,12 +1,6 @@
 package com.benton.izukijs.schedule
 
-import android.app.KeyguardManager
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.BatteryManager
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.runtime.ScriptExecutionManager
@@ -37,6 +31,7 @@ class ScheduleRunner(
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val eventMutex = Mutex()
+    private val triggerConditions = TriggerConditions(appContext, foregroundProvider)
 
     fun run(schedule: Schedule) {
         scope.launch { runInternal(schedule) }
@@ -74,7 +69,7 @@ class ScheduleRunner(
                 logBus.warn("定时任务自动解锁未完成: $result")
             }
         }
-        if (!conditionsMet(schedule)) {
+        if (!triggerConditions.met(schedule.conditions)) {
             logBus.info("定时条件未满足，跳过本次: ${schedule.scriptName}")
             scheduleManager.onSkipped(schedule)
             return
@@ -100,39 +95,6 @@ class ScheduleRunner(
             scheduleManager.onSkipped(schedule)
         }
     }
-
-    private fun conditionsMet(schedule: Schedule): Boolean {
-        val conditions = schedule.conditions
-        if (conditions.charging && !isCharging()) return false
-        if (conditions.wifi && !isOnWifi()) return false
-        if (conditions.unlocked && isLocked()) return false
-        if (conditions.foregroundPackage.isNotBlank() &&
-            foregroundProvider() != conditions.foregroundPackage
-        ) {
-            return false
-        }
-        return true
-    }
-
-    private fun isCharging(): Boolean = runCatching {
-        val status = appContext.registerReceiver(
-            null,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
-        )?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
-        status == BatteryManager.BATTERY_STATUS_CHARGING ||
-            status == BatteryManager.BATTERY_STATUS_FULL
-    }.getOrDefault(false)
-
-    private fun isOnWifi(): Boolean = runCatching {
-        val manager = appContext.getSystemService(ConnectivityManager::class.java) ?: return false
-        val capabilities = manager.getNetworkCapabilities(manager.activeNetwork) ?: return false
-        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-    }.getOrDefault(false)
-
-    private fun isLocked(): Boolean = runCatching {
-        val manager = appContext.getSystemService(KeyguardManager::class.java) ?: return true
-        manager.isKeyguardLocked
-    }.getOrDefault(true)
 
     private companion object {
         /** 事件触发去抖：同一任务 60 秒内只执行一次。 */

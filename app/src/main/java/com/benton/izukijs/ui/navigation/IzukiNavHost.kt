@@ -61,6 +61,8 @@ import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SnackbarController
 import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.editor.EditorScreen
+import com.benton.izukijs.ui.flow.FlowEditScreen
+import com.benton.izukijs.ui.flow.FlowScreen
 import com.benton.izukijs.ui.hid.HidSetupScreen
 import com.benton.izukijs.ui.logs.LogsScreen
 import com.benton.izukijs.ui.mcp.McpServerScreen
@@ -79,6 +81,7 @@ import kotlinx.coroutines.launch
 object Routes {
     const val ARG_SCRIPT_ID = "scriptId"
     const val ARG_SETTINGS_CATEGORY = "category"
+    const val ARG_FLOW_ID = "flowId"
 
     /** 主界面占位路由：四个底部标签由 [HorizontalPager] 承载，此路由只作为详情页的返回落点。 */
     const val MAIN = "main"
@@ -88,6 +91,9 @@ object Routes {
     const val SCRIPT_EDIT = "script_edit/{$ARG_SCRIPT_ID}"
     const val SETUP = "setup"
     const val SCHEDULE = "schedule"
+    const val FLOWS = "flows"
+    const val FLOW_NEW = "flow_new"
+    const val FLOW_EDIT = "flow_edit/{$ARG_FLOW_ID}"
     const val HID = "hid"
     const val ADB = "adb"
     const val AI = "ai"
@@ -97,6 +103,8 @@ object Routes {
     fun editor(scriptId: String) = "editor/$scriptId"
 
     fun scriptEdit(scriptId: String) = "script_edit/$scriptId"
+
+    fun flowEdit(flowId: String) = "flow_edit/$flowId"
 
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
 }
@@ -260,6 +268,7 @@ private fun MainTabsHost(
         onOpenScript = { id -> open(Routes.editor(id)) },
         onOpenScriptEdit = { id -> open(Routes.scriptEdit(id)) },
         onOpenSchedule = { open(Routes.SCHEDULE) },
+        onOpenFlows = { open(Routes.FLOWS) },
         onOpenCategory = { category -> open(Routes.settingsDetail(category)) },
         onOpenAi = { open(Routes.AI) },
         onOpenMcp = { open(Routes.MCP) },
@@ -282,6 +291,7 @@ private fun MainTabs(
     onOpenScript: (String) -> Unit,
     onOpenScriptEdit: (String) -> Unit,
     onOpenSchedule: () -> Unit,
+    onOpenFlows: () -> Unit,
     onOpenCategory: (SettingsCategory) -> Unit,
     onOpenAi: () -> Unit,
     onOpenMcp: () -> Unit,
@@ -306,6 +316,7 @@ private fun MainTabs(
                 onOpenScript = onOpenScript,
                 onEditScript = onOpenScriptEdit,
                 onOpenSchedule = onOpenSchedule,
+                onOpenFlows = onOpenFlows,
             )
 
             BottomItem.LOGS -> LogsScreen(
@@ -445,6 +456,31 @@ private fun DetailNavHost(
         }
         composable(Routes.SCHEDULE) {
             ScheduleScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.FLOWS) {
+            FlowScreen(
+                onBack = { navController.popBackStack() },
+                onOpenFlowEdit = { flowId ->
+                    navController.navigate(
+                        if (flowId == null) Routes.FLOW_NEW else Routes.flowEdit(flowId),
+                    ) { launchSingleTop = true }
+                },
+            )
+        }
+        composable(Routes.FLOW_NEW) {
+            FlowEditScreen(
+                flowId = null,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = Routes.FLOW_EDIT,
+            arguments = listOf(navArgument(Routes.ARG_FLOW_ID) { type = NavType.StringType }),
+        ) { entry ->
+            FlowEditScreen(
+                flowId = entry.arguments?.getString(Routes.ARG_FLOW_ID),
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(Routes.HID) {
             HidSetupScreen(onBack = { navController.popBackStack() })

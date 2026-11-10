@@ -131,6 +131,7 @@
     <string name="scripts_title">脚本中心</string>
     <string name="scripts_import">导入脚本</string>
     <string name="scripts_schedule">定时任务</string>
+    <string name="scripts_flows">脚本编排</string>
     <string name="scripts_new">新建脚本</string>
     <string name="scripts_default_name">新脚本</string>
     <string name="scripts_search">搜索名称或标签</string>
@@ -701,6 +702,40 @@
     <string name="schedule_retry_suffix"> · 重试 %1$d 次 / %2$d 分钟</string>
     <string name="schedule_delete_title">删除定时任务</string>
     <string name="schedule_delete_confirm">确定删除「%1$s」的定时任务吗？</string>
+
+    <!-- 脚本编排 -->
+    <string name="flow_title">脚本编排</string>
+    <string name="flow_new">新建编排</string>
+    <string name="flow_edit_title">编辑编排</string>
+    <string name="flow_empty">还没有脚本编排。点击右下角新建，把多个脚本按顺序串起来执行。</string>
+    <string name="flow_name">编排名称</string>
+    <string name="flow_name_hint">例如：每日签到</string>
+    <string name="flow_trigger">触发方式</string>
+    <string name="flow_steps">执行步骤</string>
+    <string name="flow_add_step">添加脚本</string>
+    <string name="flow_no_scripts">还没有脚本，请先创建脚本</string>
+    <string name="flow_step_empty">还没有步骤，请添加至少一个脚本。</string>
+    <string name="flow_step_count">步骤：%1$d</string>
+    <string name="flow_order">执行顺序</string>
+    <string name="flow_order_sequential">按顺序</string>
+    <string name="flow_order_random">随机顺序</string>
+    <string name="flow_continue_on_error">失败后继续执行后续步骤</string>
+    <string name="flow_continue_on_error_desc">关闭后，任一步骤失败将停止整条编排</string>
+    <string name="flow_enabled">启用编排</string>
+    <string name="flow_run_now">立即执行</string>
+    <string name="flow_delete_title">删除编排</string>
+    <string name="flow_delete_confirm">确定删除「%1$s」吗？</string>
+    <string name="flow_next_once">仅一次 · %1$s</string>
+    <string name="flow_next_interval">下次 %1$s · 每 %2$d 分钟</string>
+    <string name="flow_next_cron">Cron %1$s · 下次 %2$s</string>
+    <string name="flow_event_desc">事件：%1$s</string>
+    <string name="flow_disabled">已停用</string>
+    <string name="flow_not_found">编排不存在</string>
+    <string name="flow_move_up">上移</string>
+    <string name="flow_move_down">下移</string>
+    <string name="flow_remove_step">移除步骤</string>
+    <string name="flow_save">保存</string>
+    <string name="flow_started">已开始执行编排：%1$s</string>
 
     <!-- 控制台 -->
     <string name="console_empty">暂无输出</string>

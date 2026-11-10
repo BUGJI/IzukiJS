@@ -238,6 +238,7 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
                     container.scriptListPreferences.movePinned(current.id, target.id)
                     container.tileSettingsRepository.moveScriptId(current.id, target.id)
                     container.scheduleRepository.moveScriptAsync(current.id, target.id, target.name)
+                    container.flowRepository.moveScriptAsync(current.id, target.id, target.name)
                     container.subscriptionManager.moveAsync(current.id, target.id)
                     script = target
                     renamedId = target.id

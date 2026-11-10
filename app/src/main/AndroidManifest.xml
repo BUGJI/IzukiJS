@@ -171,6 +171,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".flow.FlowReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".subscription.SubscriptionReceiver"
             android:exported="false" />
 

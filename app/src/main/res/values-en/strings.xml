@@ -131,6 +131,7 @@
     <string name="scripts_title">Scripts</string>
     <string name="scripts_import">Import script</string>
     <string name="scripts_schedule">Scheduled tasks</string>
+    <string name="scripts_flows">Script flows</string>
     <string name="scripts_new">New script</string>
     <string name="scripts_default_name">New script</string>
     <string name="scripts_search">Search names or tags</string>
@@ -701,6 +702,40 @@
     <string name="schedule_retry_suffix"> · retry %1$d× / %2$d min</string>
     <string name="schedule_delete_title">Delete schedule</string>
     <string name="schedule_delete_confirm">Delete the scheduled task for \"%1$s\"?</string>
+
+    <!-- Script flows -->
+    <string name="flow_title">Script flows</string>
+    <string name="flow_new">New flow</string>
+    <string name="flow_edit_title">Edit flow</string>
+    <string name="flow_empty">No script flows yet. Tap + in the corner to run several scripts one after another.</string>
+    <string name="flow_name">Flow name</string>
+    <string name="flow_name_hint">e.g. Daily check-in</string>
+    <string name="flow_trigger">Trigger</string>
+    <string name="flow_steps">Steps</string>
+    <string name="flow_add_step">Add script</string>
+    <string name="flow_no_scripts">No scripts yet. Create a script first.</string>
+    <string name="flow_step_empty">No steps yet. Add at least one script.</string>
+    <string name="flow_step_count">Steps: %1$d</string>
+    <string name="flow_order">Execution order</string>
+    <string name="flow_order_sequential">In order</string>
+    <string name="flow_order_random">Random order</string>
+    <string name="flow_continue_on_error">Continue after a failed step</string>
+    <string name="flow_continue_on_error_desc">When off, the first failure stops the whole flow</string>
+    <string name="flow_enabled">Enable flow</string>
+    <string name="flow_run_now">Run now</string>
+    <string name="flow_delete_title">Delete flow</string>
+    <string name="flow_delete_confirm">Delete \"%1$s\"?</string>
+    <string name="flow_next_once">Once · %1$s</string>
+    <string name="flow_next_interval">Next %1$s · every %2$d min</string>
+    <string name="flow_next_cron">Cron %1$s · next %2$s</string>
+    <string name="flow_event_desc">Event: %1$s</string>
+    <string name="flow_disabled">disabled</string>
+    <string name="flow_not_found">Flow not found</string>
+    <string name="flow_move_up">Move up</string>
+    <string name="flow_move_down">Move down</string>
+    <string name="flow_remove_step">Remove step</string>
+    <string name="flow_save">Save</string>
+    <string name="flow_started">Flow started: %1$s</string>
 
     <!-- Console -->
     <string name="console_empty">No output</string>

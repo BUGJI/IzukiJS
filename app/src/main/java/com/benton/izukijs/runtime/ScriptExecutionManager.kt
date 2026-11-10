@@ -26,12 +26,14 @@ import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.virtualscreen.VirtualScreenOptions
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
 import com.benton.izukijs.virtualscreen.VirtualScreenSettingsRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -145,6 +147,32 @@ class ScriptExecutionManager(
             }
         }
         return true
+    }
+
+    /**
+     * 启动脚本并等待其真正结束。供脚本编排等需要「完成一步再执行下一步」的调用方使用。
+     *
+     * [run] 的 onFinished 回调发生在重置运行状态之前，因此这里在收到结果后再等待
+     * [running] 变为 false，避免下一步立即启动时被全局单例锁拒绝。
+     */
+    suspend fun runToCompletion(
+        scriptId: String,
+        scriptName: String,
+        source: String,
+        values: Map<String, String> = emptyMap(),
+    ): ScriptRunOutcome {
+        val finished = CompletableDeferred<Boolean>()
+        val started = run(
+            scriptId = scriptId,
+            scriptName = scriptName,
+            source = source,
+            values = values,
+            onFinished = { success -> finished.complete(success) },
+        )
+        if (!started) return ScriptRunOutcome.Busy
+        val success = finished.await()
+        running.first { !it }
+        return ScriptRunOutcome.Finished(success)
     }
 
     private suspend fun executeRun(
