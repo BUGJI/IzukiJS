@@ -75,6 +75,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.data.ScriptGroupMode
 import com.benton.izukijs.data.ScriptImporter
+import com.benton.izukijs.data.ScriptNameResolver
 import com.benton.izukijs.data.ScriptSort
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.subscription.ScriptSubscription
@@ -191,14 +192,13 @@ fun ScriptsScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val text = withContext(Dispatchers.IO) { readTextFromUri(context, uri) }
-                if (text != null) {
-                    val name = uri.lastPathSegment
-                        ?.substringAfterLast('/')
-                        ?.substringBeforeLast('.')
-                        .orEmpty()
-                        .ifBlank { "imported" }
-                    val created = container.scriptRepository.createAsync(name, text)
+                val created = withContext(Dispatchers.IO) {
+                    val text = readTextFromUri(context, uri) ?: return@withContext null
+                    val displayName = ScriptNameResolver.queryDisplayName(context.contentResolver, uri)
+                    val name = ScriptNameResolver.fromDocument(displayName, uri.lastPathSegment)
+                    container.scriptRepository.create(name, text)
+                }
+                if (created != null) {
                     snackbar.show(resources.getString(R.string.scripts_imported, created.name))
                 } else {
                     snackbar.show(resources.getString(R.string.scripts_import_failed))
