@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
@@ -19,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.model.EnvParseResult
@@ -40,7 +40,12 @@ fun GlobalEnvSettings() {
     val scope = rememberCoroutineScope()
     val stored by container.globalEnvRepository.values.collectAsStateWithLifecycle()
     var text by rememberSaveable { mutableStateOf(EnvText.format(stored)) }
+    var dirty by rememberSaveable { mutableStateOf(false) }
     var errorLine by rememberSaveable { mutableStateOf<Int?>(null) }
+    // 备份导入 / 重置会改写仓库值；未编辑时跟随刷新，避免旧文本在保存时覆盖新配置。
+    LaunchedEffect(stored) {
+        if (!dirty) text = EnvText.format(stored)
+    }
 
     SectionCard(stringResource(R.string.settings_env)) {
         Text(
@@ -53,6 +58,7 @@ fun GlobalEnvSettings() {
             value = text,
             onValueChange = {
                 text = it
+                dirty = true
                 errorLine = null
             },
             label = { Text(stringResource(R.string.settings_env_placeholder)) },
@@ -72,12 +78,14 @@ fun GlobalEnvSettings() {
         )
         Spacer(Modifier.height(SectionGap))
         Button(
+            enabled = dirty,
             onClick = {
                 when (val result = EnvText.parse(text)) {
                     is EnvParseResult.Failure -> errorLine = result.lineNumber
                     is EnvParseResult.Success -> {
                         container.globalEnvRepository.save(result.values)
                         errorLine = null
+                        dirty = false
                         scope.launch { snackbar.show(resources.getString(R.string.settings_env_saved)) }
                     }
                 }

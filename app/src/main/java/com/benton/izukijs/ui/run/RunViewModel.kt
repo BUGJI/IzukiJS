@@ -6,7 +6,7 @@ import com.benton.izukijs.di.AppContainer
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.EnvField
 import com.benton.izukijs.model.EnvText
-import com.benton.izukijs.model.RunRecord
+import com.benton.izukijs.model.RecentRun
 import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
@@ -170,7 +170,7 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     private fun buildRecentItems(
-        recent: List<RunRecord>,
+        recent: List<RecentRun>,
         scripts: List<ScriptInfo>,
     ): List<RunItem> {
         val byId = scripts.associateBy { it.id }

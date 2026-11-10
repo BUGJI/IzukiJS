@@ -19,8 +19,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // QuickJS 16KB 页大小兼容版（taoweiji/quickjs-android 的分支修复）。
-        maven(url = "https://jitpack.io")
+        // QuickJS 16KB 页大小兼容版（taoweiji/quickjs-android 的分支修复）与 libadb。
+        maven(url = "https://jitpack.io") {
+            content {
+                includeGroupByRegex("com\\.github\\.hjhrq1991.*")
+                includeGroupByRegex("com\\.github\\.MuntashirAkon.*")
+            }
+        }
     }
 }
 

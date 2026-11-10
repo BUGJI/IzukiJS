@@ -14,7 +14,7 @@ OCR and AI-Agent recovery.
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/BUGJI/IzukiJS?sort=semver&label=Release)](https://github.com/BUGJI/IzukiJS/releases)
 [![Platform](https://img.shields.io/badge/Platform-Android%2028%2B-green.svg)]()
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg)]()
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-purple.svg)]()
 
 ## Screenshots
 
@@ -22,6 +22,7 @@ OCR and AI-Agent recovery.
   <img src="docs/images/run.png" width="22%" alt="Run page" />
   <img src="docs/images/editor.png" width="22%" alt="Script editor" />
   <img src="docs/images/logs.png" width="22%" alt="Logs page" />
+  <!-- TODO: settings page was reorganized; this screenshot is an outdated placeholder -->
   <img src="docs/images/settings.png" width="22%" alt="Settings page" />
 </p>
 
@@ -173,15 +174,17 @@ Artifacts are split per ABI: `arm64-v8a` / `armeabi-v7a` / `x86_64`.
 ### First Run
 
 1. Open the app and, under "Run → Permissions & Capabilities", enable the backends you need within
-   the "Read / Operate / Other" groups:
+   the "Read / Operate / Extra capabilities" groups:
    - **Accessibility**: jump to the system accessibility settings and enable it (view tree,
      API30+ screenshots, basic gestures).
    - **Shizuku**: install and start Shizuku first, then authorize in the app (input injection,
      screenshots, Shell).
    - **Root**: detect Root and authorize through `su`.
    - **Bluetooth HID**: scan for and connect an external HID dongle.
-   - **Other capabilities** (switch-based): notification listening, usage access, app list, full
-     file access, keep-awake / wake screen, automatic lock-screen unlock, Quick Settings tile.
+   - **Extra capabilities** (switch-based): notification listening, usage access, app list, full
+     file access.
+   - Runtime timeout, keep-awake, Quick Settings tile, automatic unlock and floating window now
+     live under "Settings".
 
 2. For unlimited screenshots, authorize "Screen capture" once under "Permissions & Capabilities" and
    start it.
@@ -263,7 +266,7 @@ app/src/main/cpp/  # JNI shim for QuickJS interrupt callbacks
 
 ## Tech Stack
 
-- Kotlin 2.2.10 · Jetpack Compose (Material 3) · Navigation Compose
+- Kotlin 2.4.21 · Jetpack Compose (Material 3) · Navigation Compose
 - [QuickJS-Android](https://github.com/taoweiji/quickjs-android) (`com.github.hjhrq1991:quickjs-android`,
   using a 16KB-page-size-compatible fork distributed via JitPack)
 - [Shizuku](https://shizuku.rikka.app/) · OpenCV · MLKit Chinese text recognition

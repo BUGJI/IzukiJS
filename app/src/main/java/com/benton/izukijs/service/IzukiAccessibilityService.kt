@@ -201,8 +201,13 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
                 override fun onSuccess(screenshot: ScreenshotResult) {
                     val hardwareBuffer = screenshot.hardwareBuffer
                     val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, screenshot.colorSpace)
-                    val copy = bitmap?.copy(Bitmap.Config.ARGB_8888, false)
-                    hardwareBuffer.close()
+                    // 硬件位图只是包装，复制成 ARGB 后及时回收包装，避免每次截图都遗留一张。
+                    val copy = try {
+                        bitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                    } finally {
+                        bitmap?.recycle()
+                        hardwareBuffer.close()
+                    }
                     onResult(copy)
                 }
 

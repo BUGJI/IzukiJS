@@ -342,6 +342,21 @@ fun ChipFlow(
     )
 }
 
+/** 自动换行的操作按钮行：窄屏上把按钮折到下一行，避免挤压文字。 */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ActionButtons(
+    modifier: Modifier = Modifier,
+    content: @Composable FlowRowScope.() -> Unit,
+) {
+    FlowRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        content = content,
+    )
+}
+
 /** 列表 / 控制台统一的空状态提示，可选图标与直接操作入口。 */
 @Composable
 fun EmptyState(

@@ -73,8 +73,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.fileProviderAuthority
 import com.benton.izukijs.data.ScriptGroupMode
 import com.benton.izukijs.data.ScriptImporter
+import com.benton.izukijs.data.ScriptNameResolver
 import com.benton.izukijs.data.ScriptSort
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.subscription.ScriptSubscription
@@ -100,6 +102,7 @@ fun ScriptsScreen(
     onOpenScript: (String) -> Unit,
     onEditScript: (String) -> Unit,
     onOpenSchedule: () -> Unit,
+    onOpenFlows: () -> Unit,
 ) {
     val container = rememberAppContainer()
     val context = LocalContext.current
@@ -191,14 +194,13 @@ fun ScriptsScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val text = withContext(Dispatchers.IO) { readTextFromUri(context, uri) }
-                if (text != null) {
-                    val name = uri.lastPathSegment
-                        ?.substringAfterLast('/')
-                        ?.substringBeforeLast('.')
-                        .orEmpty()
-                        .ifBlank { "imported" }
-                    val created = container.scriptRepository.createAsync(name, text)
+                val created = withContext(Dispatchers.IO) {
+                    val text = readTextFromUri(context, uri) ?: return@withContext null
+                    val displayName = ScriptNameResolver.queryDisplayName(context.contentResolver, uri)
+                    val name = ScriptNameResolver.fromDocument(displayName, uri.lastPathSegment)
+                    container.scriptRepository.create(name, text)
+                }
+                if (created != null) {
                     snackbar.show(resources.getString(R.string.scripts_imported, created.name))
                 } else {
                     snackbar.show(resources.getString(R.string.scripts_import_failed))
@@ -217,7 +219,7 @@ fun ScriptsScreen(
             return@rememberLauncherForActivityResult
         }
         scope.launch {
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
             val result = container.scriptImporter.importFromImage(uri)
             file.delete()
             val message = when (result) {
@@ -238,7 +240,7 @@ fun ScriptsScreen(
             val dir = File(context.cacheDir, "captures").apply { mkdirs() }
             val file = File.createTempFile("scan_", ".jpg", dir)
             pendingScanFile = file
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
             scanLauncher.launch(uri)
         }.onFailure {
             pendingScanFile?.delete()
@@ -299,6 +301,10 @@ fun ScriptsScreen(
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.scripts_schedule)) },
                                 onClick = { showOverflow = false; onOpenSchedule() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.scripts_flows)) },
+                                onClick = { showOverflow = false; onOpenFlows() },
                             )
                             HorizontalDivider()
                             CheckedMenuItem(
@@ -540,10 +546,14 @@ private fun ScriptRow(
         },
         headlineContent = { Text(script.name) },
         supportingContent = {
-            val parts = buildList {
-                add(formatDateTime(script.updatedAt))
+            // 日期格式化与标签拼串只在数据变化时计算一次，避免每次重组重复做。
+            val dateText = remember(script.updatedAt) { formatDateTime(script.updatedAt) }
+            val tagText = remember(tags) {
                 val shown = tags.take(3).joinToString("  ") { "#$it" }
-                val tagText = shown + if (tags.size > 3) " +${tags.size - 3}" else ""
+                shown + if (tags.size > 3) " +${tags.size - 3}" else ""
+            }
+            val parts = buildList {
+                add(dateText)
                 if (tagText.isNotEmpty()) add(tagText)
                 if (subscription != null) {
                     val badge = if (!subscription.enabled || subscription.intervalMinutes <= 0L) {

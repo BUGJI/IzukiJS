@@ -1,16 +1,13 @@
 package com.benton.izukijs.ui.settings
 
 import com.benton.izukijs.ui.common.SectionGap
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,7 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -27,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.SectionCard
@@ -54,6 +52,14 @@ internal fun StorageSettings() {
         }
     }
 
+    /** 裁剪日志是磁盘 I/O，放到后台并在完成后刷新大小，避免阻塞主线程。 */
+    fun trimLogsAndRefresh() {
+        scope.launch {
+            viewModel.trimLogs()
+            logFileSize = viewModel.logFileSizeBytes()
+        }
+    }
+
     LaunchedEffect(Unit) { refreshLogSize() }
 
     SectionCard(stringResource(R.string.storage_log_title)) {
@@ -62,8 +68,7 @@ internal fun StorageSettings() {
             checked = logSettings.autoClean,
         ) {
             viewModel.saveLogSettings(logSettings.copy(autoClean = it))
-            viewModel.trimLogs()
-            refreshLogSize()
+            trimLogsAndRefresh()
         }
         Spacer(Modifier.height(SectionGap))
 
@@ -95,8 +100,7 @@ internal fun StorageSettings() {
                     selected = logSettings.maxSizeMb == size,
                     onClick = {
                         viewModel.saveLogSettings(logSettings.copy(maxSizeMb = size))
-                        viewModel.trimLogs()
-                        refreshLogSize()
+                        trimLogsAndRefresh()
                     },
                     label = { Text("$size MB") },
                 )
@@ -112,28 +116,23 @@ internal fun StorageSettings() {
                     selected = logSettings.retentionDays == days,
                     onClick = {
                         viewModel.saveLogSettings(logSettings.copy(retentionDays = days))
-                        viewModel.trimLogs()
-                        refreshLogSize()
+                        trimLogsAndRefresh()
                     },
                     label = { Text(stringResource(R.string.storage_days, days)) },
                 )
             }
         }
         Spacer(Modifier.height(SectionGap))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.storage_usage, formatFileSize(logFileSize)),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Text(
+            stringResource(R.string.storage_usage, formatFileSize(logFileSize)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ActionButtons {
             OutlinedButton(onClick = { confirmClearLog = true }) {
                 Text(stringResource(R.string.storage_clear_now))
             }
-            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
                 scope.launch {
                     val file = newCacheExportFile(context, "izukijs_log", "log")
@@ -150,6 +149,29 @@ internal fun StorageSettings() {
         }
     }
 
+    Spacer(Modifier.height(SectionGap))
+    SectionCard(stringResource(R.string.settings_perf_baseline)) {
+        Text(
+            stringResource(R.string.settings_perf_baseline_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            label = stringResource(R.string.settings_perf_baseline_toggle),
+            description = stringResource(R.string.settings_perf_baseline_toggle_desc),
+            checked = ui.runtimeSettings.perfBaseline,
+        ) {
+            viewModel.saveRuntimeSettings(ui.runtimeSettings.copy(perfBaseline = it))
+        }
+        if (ui.runtimeSettings.perfBaseline) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { PerfMetrics.reportNow() }) {
+                Text(stringResource(R.string.settings_perf_baseline_report_now))
+            }
+        }
+    }
+
     if (confirmClearLog) {
         ConfirmDialog(
             title = stringResource(R.string.storage_clear_now),
@@ -157,8 +179,10 @@ internal fun StorageSettings() {
             destructive = true,
             onDismiss = { confirmClearLog = false },
             onConfirm = {
-                viewModel.clearLogs()
-                refreshLogSize()
+                scope.launch {
+                    viewModel.clearLogs()
+                    logFileSize = viewModel.logFileSizeBytes()
+                }
                 confirmClearLog = false
             },
         )

@@ -30,13 +30,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 
 /** 预设主题种子色（Material 3 常用种子的近似值）。 */
@@ -146,6 +149,7 @@ fun HexColorField(
     var text by remember { mutableStateOf(value?.toHexString().orEmpty()) }
     var editing by remember { mutableStateOf(false) }
     var invalid by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
 
     LaunchedEffect(value) { if (!editing) text = value?.toHexString().orEmpty() }
 
@@ -191,7 +195,16 @@ fun HexColorField(
             } else {
                 null
             },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Ascii,
+                imeAction = ImeAction.Done,
+            ),
+            keyboardActions = KeyboardActions(
+                onDone = {
+                    commit()
+                    focusManager.clearFocus()
+                },
+            ),
             modifier = Modifier
                 .weight(1f)
                 .onFocusChanged { state ->

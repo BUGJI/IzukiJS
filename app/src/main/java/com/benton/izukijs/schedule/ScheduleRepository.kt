@@ -1,6 +1,7 @@
 package com.benton.izukijs.schedule
 
 import android.content.Context
+import com.benton.izukijs.core.storage.AtomicFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -50,7 +51,7 @@ class ScheduleRepository(context: Context) {
         val array = JSONArray()
         list.sortedWith(compareBy({ it.kind == ScheduleKind.EVENT }, { it.triggerAtMillis }))
             .forEach { array.put(it.toJson()) }
-        file.writeText(array.toString())
+        AtomicFile.writeText(file, array.toString())
     }
 
     /** 后台线程版本，避免磁盘 IO 阻塞主线程 / 组合。 */

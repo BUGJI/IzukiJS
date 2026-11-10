@@ -3,6 +3,7 @@ package com.benton.izukijs.ui.common
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
+import com.benton.izukijs.core.fileProviderAuthority
 import java.io.File
 
 /** 在 cache/exports 下创建一个带时间戳的导出文件；目录不存在时自动创建。 */
@@ -23,7 +24,7 @@ fun shareFile(
     subject: String? = null,
 ) {
     runCatching {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
         val send = Intent(Intent.ACTION_SEND).apply {
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)

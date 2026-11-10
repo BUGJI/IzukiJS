@@ -16,6 +16,12 @@ import androidx.core.app.NotificationCompat
 import com.benton.izukijs.MainActivity
 import com.benton.izukijs.R
 import com.benton.izukijs.di.appContainer
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * MCP 服务的前台服务：在服务运行期间保活进程并显示常驻通知（含访问地址与停止入口）。
@@ -29,10 +35,18 @@ class McpServerService : Service() {
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    /**
+     * 启停 / 重建都在后台执行：HttpServer 停止会等待在途请求，并做 socket 绑定与网卡枚举，
+     * 这些都不应占用主线程（onStartCommand 运行在主线程）。
+     */
+    private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     /** 防抖后的重建任务：合并短时间内的连续配置改动，避免同一秒内多次 stop/start。 */
     private val pendingRestart = Runnable {
-        controller.restart()
-        updateNotification()
+        ioScope.launch {
+            controller.restart()
+            withContext(Dispatchers.Main) { updateNotification() }
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -44,6 +58,7 @@ class McpServerService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(pendingRestart)
+        ioScope.cancel()
         super.onDestroy()
     }
 
@@ -51,26 +66,31 @@ class McpServerService : Service() {
         when (intent?.action) {
             ACTION_STOP -> {
                 mainHandler.removeCallbacks(pendingRestart)
-                controller.stop()
                 stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
+                ioScope.launch {
+                    controller.stop()
+                    stopSelf()
+                }
                 return START_NOT_STICKY
             }
 
             ACTION_RESTART -> {
                 mainHandler.removeCallbacks(pendingRestart)
                 mainHandler.postDelayed(pendingRestart, RESTART_DEBOUNCE_MS)
+                updateNotification()
                 return START_STICKY
             }
 
             else -> {
                 mainHandler.removeCallbacks(pendingRestart)
                 startForegroundInternal()
-                controller.start()
+                ioScope.launch {
+                    controller.start()
+                    withContext(Dispatchers.Main) { updateNotification() }
+                }
+                return START_STICKY
             }
         }
-        updateNotification()
-        return START_STICKY
     }
 
     private fun startForegroundInternal() {

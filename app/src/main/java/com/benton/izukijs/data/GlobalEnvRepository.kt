@@ -1,6 +1,7 @@
 package com.benton.izukijs.data
 
 import android.content.Context
+import com.benton.izukijs.core.storage.AtomicFile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -53,12 +54,7 @@ class GlobalEnvRepository(context: Context) {
         val root = JSONObject().apply {
             put("variables", JSONObject(_values.value as Map<*, *>))
         }
-        runCatching {
-            val tmp = File(file.parentFile, "$FILE_NAME.tmp")
-            tmp.writeText(root.toString())
-            if (file.exists()) file.delete()
-            tmp.renameTo(file)
-        }
+        runCatching { AtomicFile.writeText(file, root.toString()) }
     }
 
     private fun publish() {

@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.Display
+import com.benton.izukijs.core.image.ImageToBitmapConverter
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,6 +57,8 @@ class ScreenCapture(private val logBus: LogBus) {
     private var frameSeqValue = 0L
 
     private val captureLock = Any()
+
+    private val imageConverter = ImageToBitmapConverter()
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -126,31 +129,34 @@ class ScreenCapture(private val logBus: LogBus) {
 
     /** 抓取最近一帧屏幕位图（调用方负责 recycle）。 */
     fun capture(): Bitmap? = PerfMetrics.measure("capture.screen") {
-        synchronized(captureLock) {
-            val reader = imageReader ?: return@synchronized null
-            // 已有缓存时不再为等新帧阻塞：有新帧就取，没有就立刻返回上一帧。
-            val image = acquireLatest(reader, if (lastFrame == null) FIRST_CAPTURE_RETRY else 1)
-            if (image == null) {
-                PerfMetrics.count("capture.screen.cached")
-                return@synchronized cachedCopy()
+        val reader = synchronized(captureLock) { imageReader } ?: return@measure null
+        // 已有缓存时不再为等新帧阻塞：有新帧就取，没有就立刻返回上一帧。
+        val waitForFirstFrame = synchronized(captureLock) { lastFrame == null }
+        // 等待新帧的 retry-sleep 与位图转换都不在锁内，避免阻塞主线程的 stop()/resize()。
+        val image = acquireLatest(reader, if (waitForFirstFrame) FIRST_CAPTURE_RETRY else 1)
+        if (image == null) {
+            PerfMetrics.count("capture.screen.cached")
+            return@measure cachedCopy()
+        }
+        val bitmap = try {
+            imageConverter.toBitmap(image)
+        } catch (t: Throwable) {
+            PerfMetrics.count("capture.screen.error")
+            logBus.warn("屏幕帧转换失败：${t.message}")
+            null
+        } finally {
+            runCatching { image.close() }
+        }
+        if (bitmap == null) {
+            PerfMetrics.count("capture.screen.cached")
+            cachedCopy()
+        } else {
+            synchronized(captureLock) {
+                frameSeqValue++
+                // 调用方会 recycle 返回值，这里保留一份副本供静态画面兜底。
+                updateCache(bitmap)
             }
-            try {
-                val bitmap = imageToBitmap(image)
-                if (bitmap == null) {
-                    PerfMetrics.count("capture.screen.cached")
-                    cachedCopy()
-                } else {
-                    frameSeqValue++
-                    // 调用方会 recycle 返回值，这里保留一份副本供静态画面兜底。
-                    updateCache(bitmap)
-                    bitmap
-                }
-            } catch (t: Throwable) {
-                PerfMetrics.count("capture.screen.error")
-                cachedCopy()
-            } finally {
-                runCatching { image.close() }
-            }
+            bitmap
         }
     }
 
@@ -162,10 +168,11 @@ class ScreenCapture(private val logBus: LogBus) {
         lastFrame = runCatching { bitmap.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
     }
 
-    private fun cachedCopy(): Bitmap? =
+    private fun cachedCopy(): Bitmap? = synchronized(captureLock) {
         lastFrame?.takeIf { !it.isRecycled }?.let { frame ->
             runCatching { frame.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
         }
+    }
 
     fun stop() {
         synchronized(captureLock) {
@@ -186,6 +193,7 @@ class ScreenCapture(private val logBus: LogBus) {
             lastFrame = null
             frameSeqValue = 0L
         }
+        imageConverter.clear()
     }
 
     private fun createDisplay(projection: MediaProjection, w: Int, h: Int, d: Int) {
@@ -204,27 +212,29 @@ class ScreenCapture(private val logBus: LogBus) {
     }
 
     private fun resize(projection: MediaProjection, size: IntArray) {
-        width = size[0]
-        height = size[1]
-        density = size[2]
-        lastFrame?.recycle()
-        lastFrame = null
-        val oldReader = imageReader
-        val display = virtualDisplay
-        if (display != null) {
-            val newReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-            imageReader = newReader
-            runCatching {
-                display.resize(width, height, density)
-                display.surface = newReader.surface
-            }.onFailure {
-                runCatching { newReader.close() }
+        synchronized(captureLock) {
+            width = size[0]
+            height = size[1]
+            density = size[2]
+            lastFrame?.recycle()
+            lastFrame = null
+            val oldReader = imageReader
+            val display = virtualDisplay
+            if (display != null) {
+                val newReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+                imageReader = newReader
+                runCatching {
+                    display.resize(width, height, density)
+                    display.surface = newReader.surface
+                }.onFailure {
+                    runCatching { newReader.close() }
+                    createDisplay(projection, width, height, density)
+                }
+            } else {
                 createDisplay(projection, width, height, density)
             }
-        } else {
-            createDisplay(projection, width, height, density)
+            runCatching { oldReader?.close() }
         }
-        runCatching { oldReader?.close() }
         logBus.info("录屏尺寸已更新为 ${width} x ${height}")
     }
 
@@ -235,20 +245,6 @@ class ScreenCapture(private val logBus: LogBus) {
             if (attempt < retries - 1) runCatching { Thread.sleep(CAPTURE_RETRY_DELAY_MS) }
         }
         return null
-    }
-
-    private fun imageToBitmap(image: Image): Bitmap? {
-        val plane = image.planes[0]
-        val pixelStride = plane.pixelStride
-        val rowStride = plane.rowStride
-        val rowPadding = rowStride - pixelStride * image.width
-        val widthWithPadding = image.width + rowPadding / pixelStride
-        val full = Bitmap.createBitmap(widthWithPadding, image.height, Bitmap.Config.ARGB_8888)
-        full.copyPixelsFromBuffer(plane.buffer)
-        if (widthWithPadding == image.width) return full
-        val cropped = Bitmap.createBitmap(full, 0, 0, image.width, image.height)
-        full.recycle()
-        return cropped
     }
 
     private fun screenSize(context: Context): IntArray {

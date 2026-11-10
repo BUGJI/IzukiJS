@@ -55,7 +55,10 @@ class LogBus(private val capacity: Int = 500) {
     }
 
     fun log(level: LogLevel, message: String) {
-        if (level.ordinal < minLevel.ordinal) return
+        if (level.ordinal < minLevel.ordinal) {
+            PerfMetrics.count("log.dropped")
+            return
+        }
         PerfMetrics.count("log.append")
         PerfMetrics.measure("log.append") {
             val entry = LogEntry(counter.incrementAndGet(), System.currentTimeMillis(), level, message)
@@ -100,10 +103,16 @@ class LogBus(private val capacity: Int = 500) {
         message: String,
         intervalMs: Long = 500L,
     ) {
-        if (minLevel.ordinal > LogLevel.DEBUG.ordinal) return
+        if (minLevel.ordinal > LogLevel.DEBUG.ordinal) {
+            PerfMetrics.count("log.dropped")
+            return
+        }
         val now = SystemClock.elapsedRealtime()
         val last = throttleTimestamps[key]
-        if (last != null && now - last < intervalMs) return
+        if (last != null && now - last < intervalMs) {
+            PerfMetrics.count("log.throttled")
+            return
+        }
         throttleTimestamps[key] = now
         debug(message)
     }

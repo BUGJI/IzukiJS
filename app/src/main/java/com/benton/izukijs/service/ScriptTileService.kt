@@ -10,6 +10,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 快捷设置磁贴：一键运行 / 停止「钉到磁贴」的固定脚本。
@@ -45,18 +46,27 @@ class ScriptTileService : TileService() {
         }
         if (container.scriptExecutionManager.running.value) {
             container.scriptExecutionManager.requestStop()
+            updateTile()
         } else {
-            val id = container.tileSettingsRepository.current()
-            val script = id?.let { container.scriptRepository.find(it) }
-            if (script != null) {
-                container.scriptExecutionManager.run(
-                    script.id,
-                    script.name,
-                    container.scriptRepository.read(script),
-                )
+            // 读取脚本是磁盘 I/O，放到后台后回到主线程启动。
+            scope.launch {
+                val loaded = withContext(Dispatchers.IO) {
+                    runCatching {
+                        val id = container.tileSettingsRepository.current()
+                        val script = id?.let { container.scriptRepository.find(it) }
+                        script?.let { it to container.scriptRepository.read(it) }
+                    }.getOrNull()
+                }
+                if (loaded != null) {
+                    container.scriptExecutionManager.run(
+                        loaded.first.id,
+                        loaded.first.name,
+                        loaded.second,
+                    )
+                }
+                updateTile()
             }
         }
-        updateTile()
     }
 
     override fun onDestroy() {
@@ -65,23 +75,26 @@ class ScriptTileService : TileService() {
     }
 
     private fun updateTile() {
-        val tile = qsTile ?: return
         val container = appContainer
         val enabled = container.runtimeSettingsRepository.current().tileEnabled
         val running = container.scriptExecutionManager.running.value
-        val scriptName = runCatching {
-            container.tileSettingsRepository.current()?.let { id ->
-                container.scriptRepository.find(id)?.name
+        scope.launch {
+            val scriptName = withContext(Dispatchers.IO) {
+                runCatching {
+                    container.tileSettingsRepository.current()?.let { id ->
+                        container.scriptRepository.find(id)?.name
+                    }
+                }.getOrNull()
             }
-        }.getOrNull()
-
-        tile.state = when {
-            !enabled || scriptName == null -> Tile.STATE_UNAVAILABLE
-            running -> Tile.STATE_ACTIVE
-            else -> Tile.STATE_INACTIVE
+            val tile = qsTile ?: return@launch
+            tile.state = when {
+                !enabled || scriptName == null -> Tile.STATE_UNAVAILABLE
+                running -> Tile.STATE_ACTIVE
+                else -> Tile.STATE_INACTIVE
+            }
+            tile.label = scriptName?.let { getString(R.string.tile_script_named, it) }
+                ?: getString(R.string.tile_script)
+            tile.updateTile()
         }
-        tile.label = scriptName?.let { getString(R.string.tile_script_named, it) }
-            ?: getString(R.string.tile_script)
-        tile.updateTile()
     }
 }

@@ -10,6 +10,7 @@ import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.ocr.OcrProvider
 import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.runtime.FloatingWindowMode
 
 /** 控制模式的本地化名称（UI 层使用；模型内的 displayName 仍用于日志）。 */
 @Composable
@@ -78,6 +79,16 @@ fun AppLanguage.localizedName(): String = stringResource(
         AppLanguage.SYSTEM -> R.string.language_system
         AppLanguage.CHINESE -> R.string.language_chinese
         AppLanguage.ENGLISH -> R.string.language_english
+    },
+)
+
+/** 悬浮窗模式的本地化名称。 */
+@Composable
+fun FloatingWindowMode.localizedName(): String = stringResource(
+    when (this) {
+        FloatingWindowMode.OFF -> R.string.settings_floating_mode_off
+        FloatingWindowMode.COLLAPSED -> R.string.settings_floating_mode_collapsed
+        FloatingWindowMode.EXPANDED -> R.string.settings_floating_mode_expanded
     },
 )
 

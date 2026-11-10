@@ -88,7 +88,7 @@ adb forward tcp:8765 tcp:8765
 | `find` | 查找元素并返回匹配项（中心坐标 + 边界）。`text` 会先按 OCR 行聚合（同一行多个块拼接）再匹配，精确失败后按编辑距离容错（`fuzzy` 默认 true，可用 `min_conf` 过滤低置信块），或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证）。`ok` 表示是否命中，并附 `matched`。`target=virtual` 暂不支持，请改用 `ocr(target=virtual)` + 坐标输入 |
 | `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true`；控件树不可用时返回 `hit_checked=false` + `hit_reason`。`by=text` 在无障碍不可用时会用 OCR 行匹配兜底 |
 | `swipe` | 滑动（支持 `normalized`） |
-| `gesture` | 复杂轨迹（曲线 / 多段 / 多指 / 停顿） |
+| `gesture` | 复杂轨迹（曲线 / 多段 / 多指 / 停顿）。Root / Shizuku 等不支持完整轨迹的后端会降级：连续移动段合并为一次滑动，中间点 / 曲线 / 多指同时性丢失；只需直线滑动请用 `swipe` |
 | `text` | 输入文本；`by=id` + `value` 时给指定控件设值；`method` 选 `auto`/`input`/`clipboard`/`broadcast`（无障碍优先，Shizuku/无线调试/Root 下用控件树定位并聚焦后输入）；`dismiss_ime=true` 输入后收起软键盘 |
 | `press` | 按键：`key` 为 back / home / recents / enter / esc，或 Android KeyEvent 键码；收软键盘用 esc（`back` 通常收不掉） |
 | `wait` | 等待：`for=text` 等文字出现，`for=idle` 等界面稳定。`ok` 表示是否等到；`for=idle` 无控件树时返回 `ok=false, degraded=true`。总耗时受 `timeout_ms` 硬约束 |
@@ -152,7 +152,7 @@ adb forward tcp:8765 tcp:8765
 ## 后台保活
 
 - MCP 由前台服务 `McpServerService` 常驻，通知栏显示访问地址与停止入口。
-- 建议在「权限与能力 → 其他 → 后台保活」将本应用加入「电池优化白名单」，否则部分 ROM 在切后台 / 锁屏后会回收进程，
+- 建议在「权限与能力 → 附加能力 → 后台保活」将本应用加入「电池优化白名单」，否则部分 ROM 在切后台 / 锁屏后会回收进程，
   表现为客户端 `ECONNREFUSED` 或 `Read timed out`（该设置对脚本运行同样生效）。
 
 ## 安全护栏

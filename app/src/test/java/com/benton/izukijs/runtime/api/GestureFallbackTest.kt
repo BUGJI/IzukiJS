@@ -59,12 +59,13 @@ class GestureFallbackTest {
     fun shortSamePointBecomesTapNotLongPress() {
         val controller = RecordingController()
 
-        val ok = applyGestureFallback(
+        val result = applyGestureFallback(
             controller,
             listOf(stroke(Triple(100f, 200f, 0L), Triple(100f, 200f, 15L))),
         )
 
-        assertTrue(ok)
+        assertTrue(result.ok)
+        assertEquals(1, result.taps)
         assertTrue("短同点段不应触发长按", controller.longClicks.isEmpty())
         assertEquals(listOf(Swipe(100f, 200f, 100f, 200f, 70L)), controller.swipes)
     }
@@ -154,5 +155,79 @@ class GestureFallbackTest {
 
         assertEquals(listOf(Swipe(540f, 2100f, 540f, 1200f, 260L)), controller.swipes)
         assertEquals(listOf(LongClick(540f, 1200f, 700L)), controller.longClicks)
+    }
+
+    @Test
+    fun threeMovingPointsCollapseToSingleSwipe() {
+        val controller = RecordingController()
+
+        val result = applyGestureFallback(
+            controller,
+            listOf(
+                stroke(
+                    Triple(540f, 1700f, 0L),
+                    Triple(540f, 1300f, 120L),
+                    Triple(540f, 900f, 200L),
+                ),
+            ),
+        )
+
+        assertTrue(result.ok)
+        assertEquals(listOf(Swipe(540f, 1700f, 540f, 900f, 200L)), controller.swipes)
+        assertTrue(controller.longClicks.isEmpty())
+        assertEquals(1, result.swipes)
+        assertEquals(1, result.droppedPoints)
+    }
+
+    @Test
+    fun collapsedSwipeFollowedByHoldKeepsHold() {
+        val controller = RecordingController()
+
+        val result = applyGestureFallback(
+            controller,
+            listOf(
+                stroke(
+                    Triple(540f, 2200f, 0L),
+                    Triple(540f, 1500f, 100L),
+                    Triple(540f, 1200f, 260L),
+                    Triple(540f, 1200f, 960L),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(Swipe(540f, 2200f, 540f, 1200f, 260L)), controller.swipes)
+        assertEquals(listOf(LongClick(540f, 1200f, 700L)), controller.longClicks)
+        assertEquals(1, result.droppedPoints)
+    }
+
+    @Test
+    fun multiStrokeCollapsesEachIndependently() {
+        val controller = RecordingController()
+
+        val result = applyGestureFallback(
+            controller,
+            listOf(
+                stroke(
+                    Triple(200f, 1600f, 0L),
+                    Triple(200f, 1300f, 150L),
+                    Triple(200f, 900f, 300L),
+                ),
+                stroke(
+                    Triple(880f, 1600f, 0L),
+                    Triple(880f, 1300f, 150L),
+                    Triple(880f, 900f, 300L),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(
+                Swipe(200f, 1600f, 200f, 900f, 300L),
+                Swipe(880f, 1600f, 880f, 900f, 300L),
+            ),
+            controller.swipes,
+        )
+        assertEquals(2, result.swipes)
+        assertEquals(2, result.droppedPoints)
     }
 }

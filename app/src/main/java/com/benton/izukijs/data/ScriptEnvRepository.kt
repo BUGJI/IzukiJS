@@ -1,6 +1,7 @@
 package com.benton.izukijs.data
 
 import android.content.Context
+import com.benton.izukijs.core.storage.AtomicFile
 import com.benton.izukijs.model.ScriptEnvData
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -83,26 +84,32 @@ class ScriptEnvRepository(context: Context) {
         persist()
     }
 
-    fun removeState(scriptId: String, key: String) = synchronized(lock) {
-        val current = entries[scriptId] ?: return
-        entries[scriptId] = current.copy(state = current.state - key)
-        persist()
+    fun removeState(scriptId: String, key: String) {
+        synchronized(lock) {
+            val current = entries[scriptId] ?: return
+            entries[scriptId] = current.copy(state = current.state - key)
+            persist()
+        }
     }
 
-    fun clearState(scriptId: String) = synchronized(lock) {
-        val current = entries[scriptId] ?: return
-        entries[scriptId] = current.copy(state = emptyMap())
-        persist()
+    fun clearState(scriptId: String) {
+        synchronized(lock) {
+            val current = entries[scriptId] ?: return
+            entries[scriptId] = current.copy(state = emptyMap())
+            persist()
+        }
     }
 
     fun remove(scriptId: String) = synchronized(lock) {
         if (entries.remove(scriptId) != null) persist()
     }
 
-    fun move(oldId: String, newId: String) = synchronized(lock) {
-        val existing = entries.remove(oldId) ?: return
-        entries[newId] = existing
-        persist()
+    fun move(oldId: String, newId: String) {
+        synchronized(lock) {
+            val existing = entries.remove(oldId) ?: return
+            entries[newId] = existing
+            persist()
+        }
     }
 
     private fun load() {
@@ -136,12 +143,7 @@ class ScriptEnvRepository(context: Context) {
                 },
             )
         }
-        runCatching {
-            val tmp = File(file.parentFile, "$FILE_NAME.tmp")
-            tmp.writeText(root.toString())
-            if (file.exists()) file.delete()
-            tmp.renameTo(file)
-        }
+        runCatching { AtomicFile.writeText(file, root.toString()) }
         publish()
     }
 

@@ -73,7 +73,8 @@ class InputApi(
      *
      * QuickJS 无法直接传对象数组，prelude 中把 JS 数组 `JSON.stringify` 后经 [gestureRaw] 传入。
      * 无障碍与 v2 及以上固件的蓝牙 HID 支持带时间戳的完整轨迹；Shizuku / Root 无法表达
-     * 曲线与停顿，会降级为逐段 [DeviceController.swipe]（同点段：短为点击、长为长按）。
+     * 曲线与中间点，会降级执行：每个笔画的连续移动段合并为一次 [DeviceController.swipe]，
+     * 同点段按点击 / 长按下发。降级会丢失轨迹信息时用 warn 提示。
      */
     @JavascriptInterface
     fun gestureRaw(strokesJson: String): Boolean {
@@ -101,14 +102,23 @@ class InputApi(
             logBus.debug("$summary${capable.resultTag(true)}")
             return true
         }
-        // 全部失败，才退回能力协商选出的后端做分段近似。
+        // 全部失败，才退回能力协商选出的后端做降级执行。
         val fallback = preferred ?: capable ?: run {
             logBus.debug("$summary → 无可用后端 ✗")
             return false
         }
-        val ok = applyGestureFallback(fallback, strokes)
-        logBus.debug("$summary（分段近似）${fallback.resultTag(ok)}")
-        return ok
+        val result = applyGestureFallback(fallback, strokes)
+        val operations = "滑动 ${result.swipes} 次 / 点击 ${result.taps} 次 / 长按 ${result.holds} 次"
+        if (result.droppedPoints > 0 || strokes.size > 1) {
+            logBus.warn(
+                "$summary 降级执行：${strokes.sumOf { it.points.size }} 个点变为 $operations，" +
+                    "中间点 / 曲线 / 多指同时性已丢失（该后端无法表达）；" +
+                    "只需一次直线滑动请直接用 swipe()${fallback.resultTag(result.ok)}",
+            )
+        } else {
+            logBus.debug("$summary 降级执行：$operations${fallback.resultTag(result.ok)}")
+        }
+        return result.ok
     }
 
     private fun gestureCapableController(exclude: DeviceController?): DeviceController? {
@@ -289,10 +299,22 @@ private const val TAP_MAX_MS = 180L
 /** 点击实际下发的按压时长下限，避免 0ms 的瞬时 tap 过短而不被部分应用识别。 */
 private const val TAP_MIN_MS = 70L
 
+/** 降级执行的手势统计，用于日志告知脚本作者轨迹是否被压缩失真。 */
+internal data class GestureFallbackResult(
+    val ok: Boolean,
+    val swipes: Int,
+    val taps: Int,
+    val holds: Int,
+    /** 连续移动段中被丢弃的中间点数量（曲线 / 折返被拉直）。 */
+    val droppedPoints: Int,
+)
+
 /**
- * 不支持复杂轨迹的后端（Shizuku / Root / 旧固件 HID）的降级执行：按相邻点逐段下发。
+ * 不支持复杂轨迹的后端（Shizuku / Root / 旧固件 HID）的降级执行。
  *
- * - 非同点段：直连 [DeviceController.swipe]，保留原始坐标与时长。
+ * - 连续移动段合并为**一次** [DeviceController.swipe]（起点 → 终点，时长求和）：中间点在
+ *   这些后端上无法表达，若逐段下发，一次手势会变成 N-1 次独立 swipe，对分页型 UI 就会
+ *   一次滑动翻多页。
  * - 同点段且时长 ≤ [TAP_MAX_MS]：视为**点击**，下发一段 [TAP_MIN_MS]~[TAP_MAX_MS] 的同点短按压
  *   （用同点 swipe 而非 longClick，才能控制按压时长；直接 longClick 会被后端抬到长按阈值）。
  * - 同点段且时长更长：视为**按住停顿**，走 [DeviceController.longClick]。
@@ -302,31 +324,52 @@ private const val TAP_MIN_MS = 70L
 internal fun applyGestureFallback(
     controller: DeviceController,
     strokes: List<GestureStroke>,
-): Boolean {
+): GestureFallbackResult {
     var sent = false
+    var swipes = 0
+    var taps = 0
+    var holds = 0
+    var droppedPoints = 0
     for (stroke in strokes) {
         val points = stroke.points
-        for (i in 0 until points.size - 1) {
+        var i = 0
+        while (i < points.size - 1) {
             val from = points[i]
             val to = points[i + 1]
-            val duration = (to.timeMs - from.timeMs).coerceAtLeast(1L)
-            val samePoint = from.x == to.x && from.y == to.y
-            val ok = when {
-                !samePoint ->
-                    controller.swipe(from.x, from.y, to.x, to.y, duration)
-                duration <= TAP_MAX_MS ->
+            if (from.x != to.x || from.y != to.y) {
+                var end = to
+                var duration = to.timeMs - from.timeMs
+                var j = i + 1
+                while (j < points.size - 1) {
+                    val nextFrom = points[j]
+                    val nextTo = points[j + 1]
+                    if (nextFrom.x == nextTo.x && nextFrom.y == nextTo.y) break
+                    duration += nextTo.timeMs - nextFrom.timeMs
+                    end = nextTo
+                    j++
+                }
+                droppedPoints += (j - i - 1).coerceAtLeast(0)
+                val ok = controller.swipe(from.x, from.y, end.x, end.y, duration.coerceAtLeast(1L))
+                sent = sent || ok
+                swipes++
+                i = j
+            } else {
+                val duration = (to.timeMs - from.timeMs).coerceAtLeast(1L)
+                val ok = if (duration <= TAP_MAX_MS) {
                     controller.swipe(
                         from.x,
                         from.y,
                         from.x,
                         from.y,
                         duration.coerceIn(TAP_MIN_MS, TAP_MAX_MS),
-                    )
-                else ->
-                    controller.longClick(from.x, from.y, duration)
+                    ).also { taps++ }
+                } else {
+                    controller.longClick(from.x, from.y, duration).also { holds++ }
+                }
+                sent = sent || ok
+                i++
             }
-            sent = sent || ok
         }
     }
-    return sent
+    return GestureFallbackResult(sent, swipes, taps, holds, droppedPoints)
 }

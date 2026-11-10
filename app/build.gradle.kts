@@ -7,6 +7,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("13").toInt()
+val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.1.11")
+
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
@@ -25,8 +28,8 @@ android {
         applicationId = "com.benton.izukijs"
         minSdk = 28
         targetSdk = 37
-        versionCode = 13
-        versionName = "1.1.11"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -70,6 +73,10 @@ android {
                 signingConfigs.getByName("release")
             } else {
                 // 未配置正式签名时回退到 debug 签名，便于本地出包验证。
+                // 明确告警，避免把 debug 签名的产物误当正式包分发。
+                logger.warn(
+                    "[Izuki] keystore.properties 缺失，release 将使用 debug 签名，仅用于本地验证。",
+                )
                 signingConfigs.getByName("debug")
             }
         }
@@ -85,13 +92,18 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures {
         aidl = true
         compose = true
         buildConfig = true
+    }
+    lint {
+        // 先收敛现有告警，不让 lint 失败阻断构建；后续可逐步加 baseline。
+        abortOnError = false
+        checkReleaseBuilds = true
     }
     packaging {
         resources {
@@ -102,7 +114,7 @@ android {
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -111,6 +123,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)

@@ -12,11 +12,13 @@ import java.io.FileOutputStream
 import java.util.Locale
 import java.util.PriorityQueue
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import org.json.JSONArray
 import org.json.JSONObject
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Core
+import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Point
 import org.opencv.core.Scalar
@@ -57,9 +59,11 @@ class ImageApi(
                 matchTemplate(screen, templatePath, threshold, region, 1).firstOrNull()
             }
             if (match == null) {
+                PerfMetrics.count("image.findImage.miss")
                 logBus.debugThrottled("image.findImage", "找图 ${File(templatePath).name} → 未命中 ✗")
                 null
             } else {
+                PerfMetrics.count("image.findImage.hit")
                 logBus.debugThrottled(
                     "image.findImage",
                     "找图 ${File(templatePath).name} → (${match.x}, ${match.y}) " +
@@ -121,7 +125,12 @@ class ImageApi(
                 threshold,
                 Rect(0, 0, screen.width, screen.height),
                 1,
-            ).firstOrNull() ?: return null
+            ).firstOrNull()
+            if (match == null) {
+                PerfMetrics.count("image.findImage.miss")
+                return null
+            }
+            PerfMetrics.count("image.findImage.hit")
             "${match.x},${match.y},${match.confidence}"
         } finally {
             screen.recycle()
@@ -154,12 +163,14 @@ class ImageApi(
                 findColorMatches(bitmap, target, threshold.toInt(), region, 1).firstOrNull()
             }
             if (match == null) {
+                PerfMetrics.count("image.findColor.miss")
                 logBus.debugThrottled(
                     "image.findColor",
                     "找色 $color (±${threshold.toInt()}) → 未找到 ✗",
                 )
                 null
             } else {
+                PerfMetrics.count("image.findColor.hit")
                 logBus.debugThrottled(
                     "image.findColor",
                     "找色 $color (±${threshold.toInt()}) → (${match.x},${match.y}) ✓",
@@ -203,6 +214,91 @@ class ImageApi(
                 })
             }
             array.toString()
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /**
+     * 在当前屏幕上按颜色做连通域聚类。
+     * options: `{minPixels, maxRegions, region:{x,y,width,height}}`。
+     */
+    @JavascriptInterface
+    fun findColorRegionsRaw(
+        color: String,
+        threshold: Double,
+        optionsJson: String,
+    ): String {
+        val bitmap = screenshot() ?: run {
+            logBus.warn("找色区域失败：无法获取屏幕截图")
+            return "[]"
+        }
+        return try {
+            findColorRegions(bitmap, color, threshold.toInt(), optionsJson)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** 在指定截图上按颜色做连通域聚类，复用同一张截图做多种判断。 */
+    @JavascriptInterface
+    fun findColorRegionsInRaw(
+        screenPath: String,
+        color: String,
+        threshold: Double,
+        optionsJson: String,
+    ): String {
+        val bitmap = BitmapFactory.decodeFile(screenPath) ?: run {
+            logBus.warn("找色区域失败：无法读取屏幕图片 $screenPath")
+            return "[]"
+        }
+        return try {
+            findColorRegions(bitmap, color, threshold.toInt(), optionsJson)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** 在指定截图上找色，返回首个命中点 "x,y"；与 [findImageInRaw] 对齐。 */
+    @JavascriptInterface
+    fun findColorInRaw(
+        screenPath: String,
+        color: String,
+        threshold: Double,
+    ): String? {
+        val target = parseColor(color) ?: run {
+            logBus.warn("找色失败：颜色格式无效 \"$color\"")
+            return null
+        }
+        val bitmap = BitmapFactory.decodeFile(screenPath) ?: run {
+            logBus.warn("找色失败：无法读取屏幕图片 $screenPath")
+            return null
+        }
+        return try {
+            val match = PerfMetrics.measure("image.findColor") {
+                findColorMatches(
+                    bitmap,
+                    target,
+                    threshold.toInt(),
+                    Rect(0, 0, bitmap.width, bitmap.height),
+                    1,
+                ).firstOrNull()
+            }
+            if (match == null) {
+                PerfMetrics.count("image.findColor.miss")
+                logBus.debugThrottled(
+                    "image.findColor",
+                    "找色 $color (±${threshold.toInt()}) @ $screenPath → 未找到 ✗",
+                )
+                null
+            } else {
+                PerfMetrics.count("image.findColor.hit")
+                logBus.debugThrottled(
+                    "image.findColor",
+                    "找色 $color (±${threshold.toInt()}) @ $screenPath → (${match.x},${match.y}) ✓",
+                )
+                "${match.x},${match.y}"
+            }
         } finally {
             bitmap.recycle()
         }
@@ -268,26 +364,30 @@ class ImageApi(
             logBus.warn("找图失败：模板不存在或无法读取 $templatePath")
             return emptyList()
         }
-        val cropped = if (region.left == 0 &&
-            region.top == 0 &&
-            region.width() == screen.width &&
-            region.height() == screen.height
-        ) {
-            screen
-        } else {
-            Bitmap.createBitmap(screen, region.left, region.top, region.width(), region.height())
-        }
         var screenMat: Mat? = null
+        var regionMat: Mat? = null
         var result: Mat? = null
         try {
-            if (template.cols() > cropped.width || template.rows() > cropped.height) {
+            if (template.cols() > region.width() || template.rows() > region.height()) {
                 logBus.debug("找图 ${File(templatePath).name} → 跳过：模板大于查找区域 ✗")
                 return emptyList()
             }
             screenMat = Mat()
-            Utils.bitmapToMat(cropped, screenMat)
+            Utils.bitmapToMat(screen, screenMat)
+            // 用 Mat ROI 代替先裁剪 Bitmap：省掉一次整图/区域位图分配与拷贝。
+            regionMat = if (region.left == 0 &&
+                region.top == 0 &&
+                region.width() == screen.width &&
+                region.height() == screen.height
+            ) {
+                screenMat
+            } else {
+                screenMat.submat(
+                    org.opencv.core.Rect(region.left, region.top, region.width(), region.height()),
+                )
+            }
             result = Mat()
-            Imgproc.matchTemplate(screenMat, template, result, Imgproc.TM_CCOEFF_NORMED)
+            Imgproc.matchTemplate(regionMat, template, result, Imgproc.TM_CCOEFF_NORMED)
             val max = limit.coerceIn(1, MAX_MATCHES)
             val templateWidth = template.cols()
             val templateHeight = template.rows()
@@ -309,9 +409,10 @@ class ImageApi(
             logBus.error("图像匹配失败: ${t.message}")
             emptyList()
         } finally {
-            screenMat?.release()
             result?.release()
-            if (cropped !== screen) cropped.recycle()
+            // submat 与 screenMat 共享数据，先释放子矩阵再释放父矩阵。
+            if (regionMat !== screenMat) regionMat?.release()
+            screenMat?.release()
         }
     }
 
@@ -485,6 +586,160 @@ class ImageApi(
         return matches
     }
 
+    private data class ColorRegionOptions(
+        val minPixels: Int,
+        val maxRegions: Int,
+        val region: Rect,
+    )
+
+    private fun findColorRegions(
+        bitmap: Bitmap,
+        color: String,
+        tolerance: Int,
+        optionsJson: String,
+    ): String {
+        val target = parseColor(color) ?: run {
+            logBus.warn("找色区域失败：颜色格式无效 \"$color\"")
+            return "[]"
+        }
+        val options = parseColorRegionOptions(optionsJson, bitmap.width, bitmap.height) ?: return "[]"
+        val regions = PerfMetrics.measure("image.findColorRegions") {
+            detectColorRegions(bitmap, target, tolerance, options)
+        }
+        logBus.debugThrottled(
+            "image.findColorRegions",
+            "找色区域 $color (±${tolerance.coerceIn(0, 255)}) → ${regions.size} 个区域",
+        )
+        val array = JSONArray()
+        regions.forEach { region ->
+            array.put(
+                JSONObject().apply {
+                    put("x", region.x)
+                    put("y", region.y)
+                    put("w", region.w)
+                    put("h", region.h)
+                    put("pixels", region.pixels)
+                    put("cx", region.cx)
+                    put("cy", region.cy)
+                },
+            )
+        }
+        return array.toString()
+    }
+
+    private fun parseColorRegionOptions(
+        json: String,
+        width: Int,
+        height: Int,
+    ): ColorRegionOptions? {
+        val obj = if (json.isBlank()) {
+            JSONObject()
+        } else {
+            try {
+                JSONObject(json)
+            } catch (t: Throwable) {
+                logBus.warn("找色区域 options 解析失败: ${t.message}")
+                return null
+            }
+        }
+        val regionJson = obj.optJSONObject("region")?.toString() ?: ""
+        val region = parseRegion(regionJson, width, height, "找色区域") ?: return null
+        return ColorRegionOptions(
+            minPixels = obj.optInt("minPixels", 1).coerceAtLeast(1),
+            maxRegions = obj.optInt("maxRegions", DEFAULT_MAX_REGIONS).coerceIn(1, MAX_MATCHES),
+            region = region,
+        )
+    }
+
+    private fun detectColorRegions(
+        bitmap: Bitmap,
+        target: Int,
+        tolerance: Int,
+        options: ColorRegionOptions,
+    ): List<ColorRegion> {
+        if (!ensureOpenCv()) return emptyList()
+        val region = options.region
+        val cropped = if (
+            region.left == 0 &&
+            region.top == 0 &&
+            region.width() == bitmap.width &&
+            region.height() == bitmap.height
+        ) {
+            bitmap
+        } else {
+            Bitmap.createBitmap(bitmap, region.left, region.top, region.width(), region.height())
+        }
+        var rgba: Mat? = null
+        var mask: Mat? = null
+        var labels: Mat? = null
+        var stats: Mat? = null
+        var centroids: Mat? = null
+        return try {
+            rgba = Mat()
+            Utils.bitmapToMat(cropped, rgba)
+            val tr = (target shr 16) and 0xFF
+            val tg = (target shr 8) and 0xFF
+            val tb = target and 0xFF
+            val tol = tolerance.coerceIn(0, 255)
+            val lower = Scalar(
+                (tr - tol).coerceIn(0, 255).toDouble(),
+                (tg - tol).coerceIn(0, 255).toDouble(),
+                (tb - tol).coerceIn(0, 255).toDouble(),
+                0.0,
+            )
+            val upper = Scalar(
+                (tr + tol).coerceIn(0, 255).toDouble(),
+                (tg + tol).coerceIn(0, 255).toDouble(),
+                (tb + tol).coerceIn(0, 255).toDouble(),
+                255.0,
+            )
+            mask = Mat()
+            Core.inRange(rgba, lower, upper, mask)
+            labels = Mat()
+            stats = Mat()
+            centroids = Mat()
+            val count = Imgproc.connectedComponentsWithStats(
+                mask,
+                labels,
+                stats,
+                centroids,
+                8,
+                CvType.CV_32S,
+            )
+            val accumulator = ColorRegionAccumulator(options.minPixels, options.maxRegions)
+            val statRow = IntArray(5)
+            val centroidRow = DoubleArray(2)
+            for (index in 1 until count) {
+                stats.get(index, 0, statRow)
+                val area = statRow[Imgproc.CC_STAT_AREA]
+                if (area < options.minPixels) continue
+                centroids.get(index, 0, centroidRow)
+                accumulator.offer(
+                    ColorRegion(
+                        x = statRow[Imgproc.CC_STAT_LEFT] + region.left,
+                        y = statRow[Imgproc.CC_STAT_TOP] + region.top,
+                        w = statRow[Imgproc.CC_STAT_WIDTH],
+                        h = statRow[Imgproc.CC_STAT_HEIGHT],
+                        pixels = area,
+                        cx = (centroidRow[0] + region.left).roundToInt(),
+                        cy = (centroidRow[1] + region.top).roundToInt(),
+                    ),
+                )
+            }
+            accumulator.toList()
+        } catch (t: Throwable) {
+            logBus.error("找色区域失败: ${t.message}")
+            emptyList()
+        } finally {
+            rgba?.release()
+            mask?.release()
+            labels?.release()
+            stats?.release()
+            centroids?.release()
+            if (cropped !== bitmap) cropped.recycle()
+        }
+    }
+
     private fun Double.confidence(): String = String.format(Locale.US, "%.3f", this)
 
     /** 按「路径 + 修改时间」缓存解码后的模板（RGBA Mat）。返回的 Mat 归缓存所有，调用方不得释放。 */
@@ -583,6 +838,7 @@ class ImageApi(
         }
 
         private const val MAX_MATCHES = 200
+        private const val DEFAULT_MAX_REGIONS = 20
     }
 
     /** 进程级模板缓存：脚本多次运行、循环找图时复用已解码的模板，避免反复读盘解码。 */

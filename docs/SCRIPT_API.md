@@ -58,9 +58,12 @@ gesture([
 ```
 
 > 复杂轨迹交给**支持它的后端**执行，并按「控制模式」偏好在其中选择：无障碍与
-> **v2 及以上固件的蓝牙 HID** 都支持曲线与停顿。两者都不可用时，才降级为逐段
-> 执行（此时曲线会失真）：同点段时长 ≤ 180ms 视为**点击**（按 70~180ms 下发按压），
-> 更长则视为**按住停顿**（长按）。
+> **v2 及以上固件的蓝牙 HID** 都支持曲线与停顿。两者都不可用时（Root / Shizuku /
+> 旧固件 HID），才降级执行：无法表达带时间戳的中间点与曲线，单个笔画的**连续移动段会
+> 合并为一次滑动**（只保留首尾，时长求和），同点段时长 ≤ 180ms 视为**点击**
+> （按 70~180ms 下发按压），更长则视为**按住停顿**（长按）。出现中间点丢弃或多笔画时
+> 会输出 warn 提示。
+> **只需要一次直线滑动请直接用 `swipe()`**，不要用多点 `gesture()`。
 > HID 仅支持**单指**（多笔画会顺序执行）；无障碍单次手势的 Stroke 数量与总时长受系统限制，
 > 过长的轨迹可能被拒绝。
 
@@ -92,7 +95,7 @@ gesture([
 
 读取 / 等待 / 清除通知需在「权限与能力」页开启「通知监听（通知使用权）」。
 `notify.progress` / `notify.update` / `notify.reset` 更新的是脚本运行通知，需要
-`POST_NOTIFICATIONS`，并受「设置 → 运行与虚拟屏 → 通知」控制。
+`POST_NOTIFICATIONS`，并受「设置 → 脚本运行 → 通知」控制。
 使用 `// @need notify` 时才会暴露 `notify` 命名空间。
 
 ### 监听与清除
@@ -181,7 +184,7 @@ var entries = fs.list("/sdcard/izuki");
 
 ## `http`（需启用「脚本网络」）
 
-默认关闭，可在「权限与能力 → 其他 → 脚本网络（HTTP）」启用并配置域名白名单。
+默认关闭，可在「权限与能力 → 附加能力 → 脚本网络（HTTP）」启用并配置域名白名单。
 白名单留空表示不限制；填写后仅允许这些主机及其子域。只支持 `http` / `https`，
 单次响应体上限 2 MB（超出会截断并返回 `truncated: true`）。
 
@@ -305,11 +308,21 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `images.findAllImages(template, threshold=0.8, region?, limit=20)` | 找全部匹配，返回数组 |
 | `images.findColor(color, threshold=4, region?)` | 找色，返回 `{x, y}` 或 `null`，`color` 形如 `"#RRGGBB"` |
 | `images.findAllColors(color, threshold=4, region?, limit=100)` | 找全部同色像素，返回 `[{x,y}]`（按扫描顺序截断到 limit） |
-| `images.findImageInRaw(screenPath, template, threshold)` | 在指定截图上找图 |
+| `images.findColorRegions(color, threshold=4, options?)` | 按颜色做连通域聚类，返回 `[{x,y,w,h,pixels,cx,cy}]`（按 `pixels` 降序） |
+| `images.findColorRegionsInRaw(screenPath, color, threshold=4, options?)` | 在指定截图上做连通域找色，返回同上 |
+| `images.findColorInRaw(screenPath, color, threshold=4)` | 在指定截图上找色，返回 `{x, y}` 或 `null` |
+| `images.findImageInRaw(screenPath, template, threshold)` | 在指定截图上找图，返回 `"x,y,confidence"` 字符串或 `null` |
+| `images.findColorRaw(color, threshold)` | 低层找色，返回 `"x,y"` 字符串或 `null` |
+| `images.findImageRaw(template, threshold)` | 低层找图，返回 `"x,y,confidence"` 字符串或 `null` |
 | `images.saveTemplate(path, x, y, width, height)` | 从当前屏幕裁剪区域保存为 PNG 模板，返回路径；`path` 传 `""` 存到缓存目录 |
 | `images.available()` | OpenCV 是否可用 |
 
 `region` 为 `{x, y, width, height}`（屏幕像素），省略时搜索整屏。`limit` 上限 200。
+
+`findColorRegions` 的 `options` 为
+`{minPixels=1, maxRegions=20, region?: {x, y, width, height}}`。返回区域的 `x/y` 是包围盒左上角，
+`w/h` 是尺寸，`pixels` 是命中像素数，`cx/cy` 是像素质心；`minPixels` 用来过滤小杂点，
+`maxRegions` 上限 200。
 
 ```js
 var p = images.findImage("/sdcard/tpl.png", 0.85, { x: 0, y: 300, width: 1080, height: 1500 });
@@ -318,11 +331,24 @@ if (p) click(p.x, p.y);
 images.saveTemplate("/sdcard/tpl/ok.png", 420, 1800, 240, 80);
 var hits = images.findAllImages("/sdcard/tpl/item.png", 0.9, null, 10);
 hits.forEach(function (hit) { log(hit.x + "," + hit.y); });
+
+// 区域找色：过滤小杂点后，按面积从大到小依次点击区域中心
+var regions = images.findColorRegions("#BEF74F", 40, {
+  minPixels: 10000,
+  maxRegions: 10,
+  region: { x: 0, y: 200, width: 1200, height: 1500 }
+});
+regions.forEach(function (r) { click(r.cx, r.cy); });
+
+// 同一张截图复用：先截图，再做多种找色判断
+var shot = captureScreen("");
+var hit = images.findColorInRaw(shot, "#BEF74F", 40);
+if (hit) click(hit.x, hit.y);
 ```
 
 ## `ocr`（本地 / 在线可切换）
 
-识别引擎由设备配置（设置 → OCR 识别）决定，脚本无需改动：
+识别引擎由设备配置（设置 → 识别与截图 → OCR）决定，脚本无需改动：
 
 - **本地**：MLKit 中文模型，端侧离线。
 - **在线**：百度 OCR / Google Vision / 自定义，适合低端设备省算力；在线失败自动回退本地。
@@ -334,11 +360,20 @@ hits.forEach(function (hit) { log(hit.x + "," + hit.y); });
 |---|---|
 | `ocr.recognize()` | 识别当前屏幕，返回全文 |
 | `ocr.recognizePath(path)` | 识别指定图片 |
+| `ocr.recognizeBlocksJson()` | 识别当前屏幕，返回结构化 JSON 字符串：`{text, image:{w,h}, blocks:[...]}` |
 | `ocr.find(text)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null`（x/y 为中心） |
+
+`blocks` 每项为 `{text, x, y, w, h, left, top, right, bottom, conf?, suspicious?}`，
+其中 `x/y` 是包围盒中心，`left/top/right/bottom` 是四边坐标。
 
 ```js
 var hit = ocr.find("登录");
 if (hit) click(hit.x, hit.y);
+
+var result = JSON.parse(ocr.recognizeBlocksJson());
+result.blocks.forEach(function (block) {
+  log(block.text + " @ " + block.x + "," + block.y);
+});
 ```
 
 ## `permissions`（权限查询）
@@ -428,7 +463,7 @@ virtualScreen.target("virtual");
 
 说明：
 
-- 后台模式需要 Android 10+、Shizuku 授权，并在「设置 → 运行与虚拟屏 → 后台虚拟屏」中允许。
+- 后台模式需要 Android 10+、Shizuku 授权，并在「设置 → 悬浮窗与虚拟屏 → 后台虚拟屏」中允许。
 - `@env RUN_MODE=background` 会在脚本启动时自动创建虚拟屏；未允许或不可用时回退前台并记录警告。
 - 脚本开始时目标按运行模式重置：后台脚本为 `auto`（跟随虚拟屏），前台脚本为主屏；脚本内仍可用
   `virtualScreen.target("virtual")` 显式切换。未显式指定目标时，脚本自行调用
@@ -639,4 +674,4 @@ if (ai.available()) {
 > （较慢，约 1~2 秒且偶发失败），但这些都不是脚本 API 的一部分。
 > 无线调试需要 Android 11+；后台虚拟屏与 Shizuku 特权解锁仍依赖 Shizuku。
 
-推荐组合：**无障碍读控件树 + HID/Shizuku/无线调试 注入输入**。在「设置 → 控制模式优先级」中指定优先后端即可。
+推荐组合：**无障碍读控件树 + HID/Shizuku/无线调试 注入输入**。在「设置 → 控制后端 → 读取 / 操作优先级」中指定优先后端即可。

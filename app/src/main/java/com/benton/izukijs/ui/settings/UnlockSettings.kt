@@ -2,7 +2,6 @@ package com.benton.izukijs.ui.settings
 
 import com.benton.izukijs.ui.common.SectionGap
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -38,6 +37,7 @@ import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.StatusRow
 import com.benton.izukijs.ui.common.SwitchRow
+import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -45,14 +45,16 @@ import kotlinx.coroutines.withContext
 
 @Composable
 fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
+    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val container = rememberAppContainer()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
-    val unlockSettings by container.unlockSettingsRepository.settings.collectAsStateWithLifecycle()
-    val mcpConfig by container.mcpConfigRepository.config.collectAsStateWithLifecycle()
+    val unlockSettings = ui.unlockSettings
+    val mcpConfig = ui.mcpConfig
+    val readyModes = ui.readyModes
     val recordingState by container.unlockGestureRecorder.state.collectAsStateWithLifecycle()
-    val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
     val unlockReady = ControlMode.SHIZUKU in readyModes ||
         ControlMode.ADB in readyModes ||
         ControlMode.ROOT in readyModes
@@ -77,7 +79,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
             checked = unlockSettings.enabled,
             enabled = unlockReady,
         ) {
-            container.unlockSettingsRepository.save(unlockSettings.copy(enabled = it))
+            viewModel.saveUnlock(unlockSettings.copy(enabled = it))
         }
 
         if (unlockSettings.enabled) {
@@ -92,7 +94,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                     FilterChip(
                         selected = unlockSettings.method == method,
                         onClick = {
-                            container.unlockSettingsRepository.save(
+                            viewModel.saveUnlock(
                                 unlockSettings.copy(method = method),
                             )
                         },
@@ -120,9 +122,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                         value = pinPlain,
                         keyboardType = KeyboardType.NumberPassword,
                         onChange = { input ->
-                            container.unlockSettingsRepository.setPin(
-                                input.filter { it.isDigit() },
-                            )
+                            viewModel.setUnlockPin(input.filter { it.isDigit() })
                         },
                     )
                     Text(
@@ -172,7 +172,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                         TextButton(
                             enabled = !recordingActive,
                             onClick = {
-                                container.unlockSettingsRepository.setPattern(null)
+                                viewModel.clearUnlockPattern()
                                 container.unlockGestureRecorder.resetState()
                             },
                         ) {

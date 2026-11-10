@@ -38,7 +38,9 @@ class OcrProcessor(
                     "（图像 ${bitmap.width}×${bitmap.height}）",
             )
         }
-        result.copy(blocks = sanitized.blocks)
+        // 没有裁剪 / 丢弃时直接复用原结果，避免无谓的整份 blocks 拷贝。
+        if (sanitized.clamped == 0 && sanitized.dropped == 0) result
+        else result.copy(blocks = sanitized.blocks)
     }
 
     private fun recognizeRaw(bitmap: Bitmap): OcrResult? {

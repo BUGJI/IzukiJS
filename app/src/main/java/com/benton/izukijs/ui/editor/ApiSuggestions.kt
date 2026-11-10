@@ -62,9 +62,10 @@ object ApiSuggestions {
         ),
         "images" to listOf(
             "findImage(", "findAllImages(", "findColor(", "findAllColors(",
-            "findImageInRaw(", "saveTemplate(", "available(",
+            "findColorRegions(", "findColorRegionsInRaw(", "findColorInRaw(",
+            "findImageInRaw(", "findColorRaw(", "findImageRaw(", "saveTemplate(", "available(",
         ),
-        "ocr" to listOf("recognize(", "recognizePath(", "find("),
+        "ocr" to listOf("recognize(", "recognizePath(", "recognizeBlocksJson(", "find("),
         "http" to listOf("request(", "get(", "post(", "postJson(", "available(", "isAllowed("),
         "clipboard" to listOf("get(", "set(", "clear("),
         "notify" to listOf(
@@ -95,17 +96,28 @@ object ApiSuggestions {
         ),
     )
 
+    /**
+     * 只回溯光标前有限窗口：标识符 / 命名空间不会很长，避免每次按键都复制并扫描整篇脚本。
+     */
+    private const val TOKEN_SCAN_WINDOW = 64
+
+    private fun tokenWindow(text: String, cursor: Int): Pair<Int, String>? {
+        if (cursor <= 0 || cursor > text.length) return null
+        val start = (cursor - TOKEN_SCAN_WINDOW).coerceAtLeast(0)
+        return start to text.substring(start, cursor)
+    }
+
     /** 光标前最后一个标识符 / 命名空间，例如 `sel`、`selector.fi`、`app.`。 */
     fun tokenAt(text: String, cursor: Int): String? {
-        if (cursor <= 0 || cursor > text.length) return null
-        return TOKEN.find(text.substring(0, cursor))?.value
+        val (_, window) = tokenWindow(text, cursor) ?: return null
+        return TOKEN.find(window)?.value
     }
 
     /** 当前标识符的起始下标，用于替换补全。 */
     fun tokenStart(text: String, cursor: Int): Int {
-        if (cursor <= 0 || cursor > text.length) return cursor
-        val match = TOKEN.find(text.substring(0, cursor)) ?: return cursor
-        return match.range.first
+        val (start, window) = tokenWindow(text, cursor) ?: return cursor
+        val match = TOKEN.find(window) ?: return cursor
+        return start + match.range.first
     }
 
     fun suggestions(token: String, limit: Int = 6): List<ApiSuggestion> {

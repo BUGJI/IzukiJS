@@ -14,7 +14,7 @@
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/BUGJI/IzukiJS?sort=semver&label=Release)](https://github.com/BUGJI/IzukiJS/releases)
 [![Platform](https://img.shields.io/badge/Platform-Android%2028%2B-green.svg)]()
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.2.10-purple.svg)]()
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-purple.svg)]()
 
 ## 界面预览
 
@@ -22,6 +22,7 @@
   <img src="docs/images/run.png" width="22%" alt="运行页" />
   <img src="docs/images/editor.png" width="22%" alt="脚本编辑器" />
   <img src="docs/images/logs.png" width="22%" alt="日志页" />
+  <!-- TODO: 设置页已重排，当前截图为旧版占位，待补拍 -->
   <img src="docs/images/settings.png" width="22%" alt="设置页" />
 </p>
 
@@ -153,15 +154,15 @@ cd IzukiJS
 
 ### 首次使用
 
-1. 打开 App，在「运行 → 权限与能力」按「读取 / 操作 / 其他」分组按需开启：
+1. 打开 App，在「运行 → 权限与能力」按「读取 / 操作 / 附加能力」分组按需开启：
    - **无障碍**：跳转系统无障碍设置开启（读控件树、API30+ 截图、基础手势）。
    - **Shizuku**：先安装并启动 Shizuku，再在 App 内授权（输入注入、截图、Shell）。
    - **无线调试**：Android 11+，开启开发者选项 → 无线调试；Android 17+ 先允许本地网络权限，
      再点「开始配对（通知输入）」并在通知栏输入系统显示的配对码（无需安装 Shizuku）。
    - **Root**：检测 Root 并通过 `su` 授权。
    - **蓝牙 HID**：扫描并连接外部 HID 数位板狗。
-   - **其他能力**（开关式）：通知监听、使用情况访问、应用列表、全部文件访问、保持唤醒 /
-     点亮屏幕、锁屏自主解锁、快捷磁贴。
+   - **附加能力**（开关式）：通知监听、使用情况访问、应用列表、全部文件访问。
+   - 运行超时、保持唤醒、快捷磁贴、自主解锁与悬浮窗请到「设置」页配置。
 
 2. 需要无限截图时，在「权限与能力」中授权「屏幕捕获」一次并开始。
 3. 在「脚本」页新建脚本，编辑并运行；编辑器支持 JS 语法高亮、查找替换、撤销重做、
@@ -239,7 +240,7 @@ app/src/main/cpp/  # QuickJS 中断回调 JNI 垫片
 
 ## 技术栈
 
-- Kotlin 2.2.10 · Jetpack Compose（Material 3）· Navigation Compose
+- Kotlin 2.4.21 · Jetpack Compose（Material 3）· Navigation Compose
 - [QuickJS-Android](https://github.com/taoweiji/quickjs-android)（`com.github.hjhrq1991:quickjs-android`，采用 16KB 页大小兼容的修复分支，经 JitPack 分发）
 - [Shizuku](https://shizuku.rikka.app/) · OpenCV · MLKit 中文文字识别
 - Kotlin Coroutines · Timber

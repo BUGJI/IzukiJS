@@ -10,10 +10,12 @@
 }
 
 # ===== JS 桥接层（通过反射调用 @JavascriptInterface 方法）=====
--keep class com.benton.izukijs.runtime.api.** { *; }
--keepclassmembers class com.benton.izukijs.runtime.api.** {
+# 全局保留所有 @JavascriptInterface 方法名：QuickJS 通过反射按名调用，
+# 覆盖 runtime.api 之外的桥接类（如 ai.AiApi），避免新增桥接类时漏配规则。
+-keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+-keep class com.benton.izukijs.runtime.api.** { *; }
 
 # ===== QuickJS =====
 -keep class com.quickjs.** { *; }

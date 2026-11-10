@@ -27,12 +27,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -55,12 +53,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
 import com.benton.izukijs.model.ScriptInfo
-import com.benton.izukijs.schedule.CronExpression
 import com.benton.izukijs.schedule.Schedule
 import com.benton.izukijs.schedule.ScheduleConditions
 import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
-import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.automation.TriggerEditor
+import com.benton.izukijs.ui.automation.TriggerEditorState
+import com.benton.izukijs.ui.automation.computeNextTrigger
+import com.benton.izukijs.ui.automation.scheduleEventLabel
+import com.benton.izukijs.ui.automation.scheduleKindLabel
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.IzukiPageScaffold
@@ -69,7 +70,6 @@ import com.benton.izukijs.ui.common.formatMonthDayTime
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
-import java.util.Calendar
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,43 +227,13 @@ private fun AddScheduleDialog(
     onDismiss: () -> Unit,
     onConfirm: (ScheduleDraft) -> Unit,
 ) {
-    val initialCalendar = remember(initial) {
-        initial?.triggerAtMillis
-            ?.takeIf { it > 0L }
-            ?.let { Calendar.getInstance().apply { timeInMillis = it } }
+    val trigger = remember(initial) {
+        initial?.let { TriggerEditorState.from(it) } ?: TriggerEditorState.empty()
     }
     var selected by remember(initial) {
         mutableStateOf(scripts.firstOrNull { it.id == initial?.scriptId } ?: scripts.firstOrNull())
     }
     var scriptExpanded by remember { mutableStateOf(false) }
-    var kind by remember(initial) { mutableStateOf(initial?.kind ?: ScheduleKind.TIME) }
-    var hour by remember(initial) {
-        mutableStateOf(initialCalendar?.get(Calendar.HOUR_OF_DAY)?.toString() ?: "8")
-    }
-    var minute by remember(initial) {
-        mutableStateOf(initialCalendar?.get(Calendar.MINUTE)?.toString() ?: "0")
-    }
-    var interval by remember(initial) {
-        mutableStateOf(initial?.intervalMinutes?.takeIf { it > 0L }?.toString() ?: "60")
-    }
-    var cron by remember(initial) {
-        mutableStateOf(initial?.cron?.ifBlank { "0 8 * * *" } ?: "0 8 * * *")
-    }
-    var event by remember(initial) {
-        mutableStateOf(initial?.event ?: ScheduleEvent.CHARGING)
-    }
-    var conditionCharging by remember(initial) {
-        mutableStateOf(initial?.conditions?.charging ?: false)
-    }
-    var conditionWifi by remember(initial) {
-        mutableStateOf(initial?.conditions?.wifi ?: false)
-    }
-    var conditionUnlocked by remember(initial) {
-        mutableStateOf(initial?.conditions?.unlocked ?: false)
-    }
-    var foregroundPackage by remember(initial) {
-        mutableStateOf(initial?.conditions?.foregroundPackage.orEmpty())
-    }
     var retryCount by remember(initial) { mutableStateOf((initial?.retryCount ?: 0).toString()) }
     var retryDelay by remember(initial) {
         mutableStateOf((initial?.retryDelayMinutes ?: 10L).coerceAtLeast(1L).toString())
@@ -275,7 +245,7 @@ private fun AddScheduleDialog(
         if (selected == null) selected = scripts.firstOrNull()
     }
 
-    val cronValid = kind != ScheduleKind.CRON || CronExpression.parse(cron) != null
+    val cronValid = trigger.cronValid
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -311,110 +281,8 @@ private fun AddScheduleDialog(
                     }
                 }
 
-                ChipFlow {
-                    ScheduleKind.entries.forEach { item ->
-                        FilterChip(
-                            selected = kind == item,
-                            onClick = { kind = item },
-                            label = { Text(stringResource(kindLabel(item))) },
-                        )
-                    }
-                }
+                TriggerEditor(trigger)
 
-                when (kind) {
-                    ScheduleKind.TIME, ScheduleKind.INTERVAL -> {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            OutlinedTextField(
-                                value = hour,
-                                onValueChange = { hour = it.filter(Char::isDigit).take(2) },
-                                label = { Text(stringResource(R.string.schedule_hour)) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                            )
-                            OutlinedTextField(
-                                value = minute,
-                                onValueChange = { minute = it.filter(Char::isDigit).take(2) },
-                                label = { Text(stringResource(R.string.schedule_minute)) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                        if (kind == ScheduleKind.INTERVAL) {
-                            OutlinedTextField(
-                                value = interval,
-                                onValueChange = { interval = it.filter(Char::isDigit).take(5) },
-                                label = { Text(stringResource(R.string.schedule_interval)) },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-
-                    ScheduleKind.CRON -> {
-                        OutlinedTextField(
-                            value = cron,
-                            onValueChange = { cron = it },
-                            label = { Text(stringResource(R.string.schedule_cron_label)) },
-                            placeholder = { Text(stringResource(R.string.schedule_cron_hint)) },
-                            singleLine = true,
-                            isError = cron.isNotBlank() && !cronValid,
-                            supportingText = {
-                                Text(
-                                    if (cronValid) {
-                                        stringResource(R.string.schedule_cron_hint)
-                                    } else {
-                                        stringResource(R.string.schedule_cron_invalid)
-                                    },
-                                )
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-
-                    ScheduleKind.EVENT -> {
-                        ChipFlow {
-                            ScheduleEvent.entries.forEach { item ->
-                                FilterChip(
-                                    selected = event == item,
-                                    onClick = { event = item },
-                                    label = { Text(stringResource(eventLabel(item))) },
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Text(
-                    stringResource(R.string.schedule_conditions),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                ChipFlow {
-                    FilterChip(
-                        selected = conditionCharging,
-                        onClick = { conditionCharging = !conditionCharging },
-                        label = { Text(stringResource(R.string.schedule_condition_charging)) },
-                    )
-                    FilterChip(
-                        selected = conditionWifi,
-                        onClick = { conditionWifi = !conditionWifi },
-                        label = { Text(stringResource(R.string.schedule_condition_wifi)) },
-                    )
-                    FilterChip(
-                        selected = conditionUnlocked,
-                        onClick = { conditionUnlocked = !conditionUnlocked },
-                        label = { Text(stringResource(R.string.schedule_condition_unlocked)) },
-                    )
-                }
-                OutlinedTextField(
-                    value = foregroundPackage,
-                    onValueChange = { foregroundPackage = it.trim() },
-                    label = { Text(stringResource(R.string.schedule_foreground_label)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
 
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
@@ -444,18 +312,13 @@ private fun AddScheduleDialog(
                     onConfirm(
                         ScheduleDraft(
                             script = script,
-                            kind = kind,
-                            hour = hour.toIntOrNull()?.coerceIn(0, 23) ?: 8,
-                            minute = minute.toIntOrNull()?.coerceIn(0, 59) ?: 0,
-                            interval = interval.toLongOrNull()?.coerceAtLeast(1L) ?: 60L,
-                            cron = cron.trim(),
-                            event = if (kind == ScheduleKind.EVENT) event else null,
-                            conditions = ScheduleConditions(
-                                charging = conditionCharging,
-                                wifi = conditionWifi,
-                                unlocked = conditionUnlocked,
-                                foregroundPackage = foregroundPackage.trim(),
-                            ),
+                            kind = trigger.kind,
+                            hour = trigger.hourInt(),
+                            minute = trigger.minuteInt(),
+                            interval = trigger.intervalLong(),
+                            cron = trigger.cron.trim(),
+                            event = trigger.eventOrNull(),
+                            conditions = trigger.conditions(),
                             retryCount = retryCount.toIntOrNull()?.coerceIn(0, 10) ?: 0,
                             retryDelay = retryDelay.toLongOrNull()?.coerceIn(1L, 1440L) ?: 10L,
                         ),
@@ -483,19 +346,6 @@ private data class ScheduleDraft(
     val retryDelay: Long,
 )
 
-private fun kindLabel(kind: ScheduleKind): Int = when (kind) {
-    ScheduleKind.TIME -> R.string.schedule_kind_time
-    ScheduleKind.INTERVAL -> R.string.schedule_kind_interval
-    ScheduleKind.CRON -> R.string.schedule_kind_cron
-    ScheduleKind.EVENT -> R.string.schedule_kind_event
-}
-
-private fun eventLabel(event: ScheduleEvent): Int = when (event) {
-    ScheduleEvent.CHARGING -> R.string.schedule_event_charging
-    ScheduleEvent.WIFI -> R.string.schedule_event_wifi
-    ScheduleEvent.UNLOCK -> R.string.schedule_event_unlock
-}
-
 @Composable
 private fun describe(schedule: Schedule): String {
     val time = formatMonthDayTime(schedule.triggerAtMillis)
@@ -509,7 +359,7 @@ private fun describe(schedule: Schedule): String {
 
         ScheduleKind.EVENT -> stringResource(
             R.string.schedule_event_desc,
-            stringResource(eventLabel(schedule.event ?: ScheduleEvent.CHARGING)),
+            scheduleEventLabel(schedule.event ?: ScheduleEvent.CHARGING),
         )
     }
     val conditionParts = buildList {
@@ -540,18 +390,4 @@ private fun describe(schedule: Schedule): String {
         ""
     }
     return base + conditions + retry
-}
-
-private fun computeNextTrigger(hour: Int, minute: Int): Long {
-    val now = Calendar.getInstance()
-    val target = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, hour)
-        set(Calendar.MINUTE, minute)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }
-    if (target.timeInMillis <= now.timeInMillis) {
-        target.add(Calendar.DAY_OF_YEAR, 1)
-    }
-    return target.timeInMillis
 }

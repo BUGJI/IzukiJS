@@ -1,7 +1,7 @@
 package com.benton.izukijs.data
 
 import android.content.Context
-import com.benton.izukijs.model.RunRecord
+import com.benton.izukijs.model.RecentRun
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,13 +17,13 @@ class RunHistoryRepository(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private val _recent = MutableStateFlow(load())
-    val recent: StateFlow<List<RunRecord>> = _recent.asStateFlow()
+    val recent: StateFlow<List<RecentRun>> = _recent.asStateFlow()
 
     /** 记录一次运行，把脚本移到最前，最多保留 [MAX] 条。以 id 去重，重命名后仍能命中。 */
     fun record(id: String, name: String) {
         if (id.isBlank() || name.isBlank()) return
         val next = buildList {
-            add(RunRecord(id = id, name = name, at = System.currentTimeMillis()))
+            add(RecentRun(id = id, name = name, at = System.currentTimeMillis()))
             // 同时清掉旧版本遗留的「只有名称」记录，避免同名脚本出现两条快捷入口。
             addAll(
                 _recent.value
@@ -41,7 +41,7 @@ class RunHistoryRepository(context: Context) {
         prefs.edit().remove(KEY).apply()
     }
 
-    private fun load(): List<RunRecord> {
+    private fun load(): List<RecentRun> {
         val raw = prefs.getString(KEY, null) ?: return emptyList()
         return runCatching {
             val array = JSONArray(raw)
@@ -51,14 +51,14 @@ class RunHistoryRepository(context: Context) {
                     val name = obj.optString("name")
                     // 旧版本只存名称；id 留空，由运行页回退到按名称匹配。
                     if (name.isNotBlank()) {
-                        add(RunRecord(obj.optString("id"), name, obj.optLong("at")))
+                        add(RecentRun(obj.optString("id"), name, obj.optLong("at")))
                     }
                 }
             }
         }.getOrDefault(emptyList())
     }
 
-    private fun persist(list: List<RunRecord>) {
+    private fun persist(list: List<RecentRun>) {
         val array = JSONArray()
         list.forEach { record ->
             array.put(

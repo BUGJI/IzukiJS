@@ -41,9 +41,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -56,7 +59,10 @@ import com.benton.izukijs.ui.adb.AdbSetupScreen
 import com.benton.izukijs.ui.ai.AiAgentScreen
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SnackbarController
+import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.editor.EditorScreen
+import com.benton.izukijs.ui.flow.FlowEditScreen
+import com.benton.izukijs.ui.flow.FlowScreen
 import com.benton.izukijs.ui.hid.HidSetupScreen
 import com.benton.izukijs.ui.logs.LogsScreen
 import com.benton.izukijs.ui.mcp.McpServerScreen
@@ -75,6 +81,7 @@ import kotlinx.coroutines.launch
 object Routes {
     const val ARG_SCRIPT_ID = "scriptId"
     const val ARG_SETTINGS_CATEGORY = "category"
+    const val ARG_FLOW_ID = "flowId"
 
     /** 主界面占位路由：四个底部标签由 [HorizontalPager] 承载，此路由只作为详情页的返回落点。 */
     const val MAIN = "main"
@@ -84,6 +91,9 @@ object Routes {
     const val SCRIPT_EDIT = "script_edit/{$ARG_SCRIPT_ID}"
     const val SETUP = "setup"
     const val SCHEDULE = "schedule"
+    const val FLOWS = "flows"
+    const val FLOW_NEW = "flow_new"
+    const val FLOW_EDIT = "flow_edit/{$ARG_FLOW_ID}"
     const val HID = "hid"
     const val ADB = "adb"
     const val AI = "ai"
@@ -93,6 +103,8 @@ object Routes {
     fun editor(scriptId: String) = "editor/$scriptId"
 
     fun scriptEdit(scriptId: String) = "script_edit/$scriptId"
+
+    fun flowEdit(flowId: String) = "flow_edit/$flowId"
 
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
 }
@@ -156,16 +168,7 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                         enter = fadeIn(tween(NAV_ANIM_MS)) + expandHorizontally(tween(NAV_ANIM_MS)),
                         exit = fadeOut(tween(NAV_ANIM_MS)) + shrinkHorizontally(tween(NAV_ANIM_MS)),
                     ) {
-                        NavigationRail {
-                            BottomItem.entries.forEachIndexed { index, item ->
-                                NavigationRailItem(
-                                    selected = pagerState.currentPage == index,
-                                    onClick = { selectTab(index) },
-                                    icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
-                                    label = { Text(stringResource(item.labelRes)) },
-                                )
-                            }
-                        }
+                        MainNavigationRail(pagerState = pagerState, onSelectTab = ::selectTab)
                     }
                     Box(modifier = Modifier.weight(1f)) {
                         MainTabsHost(
@@ -199,16 +202,7 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
                             enter = slideInVertically(tween(NAV_ANIM_MS)) { it } + fadeIn(tween(NAV_ANIM_MS)),
                             exit = slideOutVertically(tween(NAV_ANIM_MS)) { it } + fadeOut(tween(NAV_ANIM_MS)),
                         ) {
-                            NavigationBar {
-                                BottomItem.entries.forEachIndexed { index, item ->
-                                    NavigationBarItem(
-                                        selected = pagerState.currentPage == index,
-                                        onClick = { selectTab(index) },
-                                        icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
-                                        label = { Text(stringResource(item.labelRes)) },
-                                    )
-                                }
-                            }
+                            MainNavigationBar(pagerState = pagerState, onSelectTab = ::selectTab)
                         }
                     },
                     snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -238,6 +232,39 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
     }
 }
 
+/**
+ * 侧边导航栏。单独抽出，让 [PagerState.currentPage] 的读取只落在这一小块重组范围内，
+ * 滑动切换标签时不再波及整个导航树。
+ */
+@Composable
+private fun MainNavigationRail(pagerState: PagerState, onSelectTab: (Int) -> Unit) {
+    NavigationRail {
+        BottomItem.entries.forEachIndexed { index, item ->
+            NavigationRailItem(
+                selected = pagerState.currentPage == index,
+                onClick = { onSelectTab(index) },
+                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                label = { Text(stringResource(item.labelRes)) },
+            )
+        }
+    }
+}
+
+/** 底部导航栏，抽出的原因同 [MainNavigationRail]。 */
+@Composable
+private fun MainNavigationBar(pagerState: PagerState, onSelectTab: (Int) -> Unit) {
+    NavigationBar {
+        BottomItem.entries.forEachIndexed { index, item ->
+            NavigationBarItem(
+                selected = pagerState.currentPage == index,
+                onClick = { onSelectTab(index) },
+                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                label = { Text(stringResource(item.labelRes)) },
+            )
+        }
+    }
+}
+
 /** 把主界面各标签的跳转回调接到导航控制器上。 */
 @Composable
 private fun MainTabsHost(
@@ -256,6 +283,7 @@ private fun MainTabsHost(
         onOpenScript = { id -> open(Routes.editor(id)) },
         onOpenScriptEdit = { id -> open(Routes.scriptEdit(id)) },
         onOpenSchedule = { open(Routes.SCHEDULE) },
+        onOpenFlows = { open(Routes.FLOWS) },
         onOpenCategory = { category -> open(Routes.settingsDetail(category)) },
         onOpenAi = { open(Routes.AI) },
         onOpenMcp = { open(Routes.MCP) },
@@ -266,9 +294,11 @@ private fun MainTabsHost(
 }
 
 /**
- * 四个底部标签的可滑动容器。用 [HorizontalPager] 承载，左右滑动或点击底栏即可切换；
- * `beyondViewportPageCount` 设为标签总数，让四个页面常驻组合，避免切走后状态丢失。
- * 常驻组合下，日志页通过 `isActivePage` 在非当前页时停止订阅高频 LogBus，避免后台页反复重组。
+ * 四个底部标签的可滑动容器。用 [HorizontalPager] 承载，左右滑动或点击底栏即可切换。
+ *
+ * 不预组合离屏页（[beyondViewportPageCount] 为 0）：四个页面同时首帧组合会多花约 2.7s
+ * 冷启动时间，改为按需组合；页面内可保存的状态由 Pager 按页恢复，切走再回来不受影响。
+ * 日志页仍通过 `isActivePage` 在非当前页时停止订阅高频 LogBus，避免后台页反复重组。
  */
 @Composable
 private fun MainTabs(
@@ -278,6 +308,7 @@ private fun MainTabs(
     onOpenScript: (String) -> Unit,
     onOpenScriptEdit: (String) -> Unit,
     onOpenSchedule: () -> Unit,
+    onOpenFlows: () -> Unit,
     onOpenCategory: (SettingsCategory) -> Unit,
     onOpenAi: () -> Unit,
     onOpenMcp: () -> Unit,
@@ -288,7 +319,7 @@ private fun MainTabs(
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
-        beyondViewportPageCount = BottomItem.entries.size,
+        beyondViewportPageCount = 0,
         userScrollEnabled = userScrollEnabled,
     ) { page ->
         when (BottomItem.entries[page]) {
@@ -302,6 +333,7 @@ private fun MainTabs(
                 onOpenScript = onOpenScript,
                 onEditScript = onOpenScriptEdit,
                 onOpenSchedule = onOpenSchedule,
+                onOpenFlows = onOpenFlows,
             )
 
             BottomItem.LOGS -> LogsScreen(
@@ -313,6 +345,7 @@ private fun MainTabs(
                 onOpenCategory = onOpenCategory,
                 onOpenAi = onOpenAi,
                 onOpenMcp = onOpenMcp,
+                onOpenSetup = onOpenSetup,
             )
         }
     }
@@ -380,16 +413,34 @@ private fun DetailNavHost(
                 navArgument(Routes.ARG_SETTINGS_CATEGORY) { type = NavType.StringType },
             ),
         ) { entry ->
-            SettingsDetailScreen(
-                categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
-                onBack = { navController.popBackStack() },
-                onOpenSetup = {
-                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
-                },
-                onOpenMcp = {
-                    navController.navigate(Routes.MCP) { launchSingleTop = true }
-                },
-            )
+            // 设置标签页在 NavHost 之外，使用的是 Activity 的 ViewModelStore；
+            // 二级页也切到同一个 owner，避免每个设置页各创建一份 SettingsViewModel。
+            val context = LocalContext.current
+            val settingsOwner = remember(context) {
+                context.findActivity() as? ViewModelStoreOwner
+            }
+
+            @Composable
+            fun SettingsContent() {
+                SettingsDetailScreen(
+                    categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
+                    onBack = { navController.popBackStack() },
+                    onOpenSetup = {
+                        navController.navigate(Routes.SETUP) { launchSingleTop = true }
+                    },
+                    onOpenMcp = {
+                        navController.navigate(Routes.MCP) { launchSingleTop = true }
+                    },
+                )
+            }
+
+            if (settingsOwner != null) {
+                CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
+                    SettingsContent()
+                }
+            } else {
+                SettingsContent()
+            }
         }
         composable(
             route = Routes.EDITOR,
@@ -414,15 +465,35 @@ private fun DetailNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
                 onOpenAdb = { navController.navigate(Routes.ADB) { launchSingleTop = true } },
-                onOpenUnlockSettings = {
-                    navController.navigate(Routes.settingsDetail(SettingsCategory.UNLOCK)) {
-                        launchSingleTop = true
-                    }
-                },
             )
         }
         composable(Routes.SCHEDULE) {
             ScheduleScreen(onBack = { navController.popBackStack() })
+        }
+        composable(Routes.FLOWS) {
+            FlowScreen(
+                onBack = { navController.popBackStack() },
+                onOpenFlowEdit = { flowId ->
+                    navController.navigate(
+                        if (flowId == null) Routes.FLOW_NEW else Routes.flowEdit(flowId),
+                    ) { launchSingleTop = true }
+                },
+            )
+        }
+        composable(Routes.FLOW_NEW) {
+            FlowEditScreen(
+                flowId = null,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = Routes.FLOW_EDIT,
+            arguments = listOf(navArgument(Routes.ARG_FLOW_ID) { type = NavType.StringType }),
+        ) { entry ->
+            FlowEditScreen(
+                flowId = entry.arguments?.getString(Routes.ARG_FLOW_ID),
+                onBack = { navController.popBackStack() },
+            )
         }
         composable(Routes.HID) {
             HidSetupScreen(onBack = { navController.popBackStack() })
@@ -445,7 +516,7 @@ private fun DetailNavHost(
             VirtualScreenScreen(
                 onBack = { navController.popBackStack() },
                 onOpenSettings = {
-                    navController.navigate(Routes.settingsDetail(SettingsCategory.RUN)) {
+                    navController.navigate(Routes.settingsDetail(SettingsCategory.DISPLAY)) {
                         launchSingleTop = true
                     }
                 },

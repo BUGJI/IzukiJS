@@ -143,7 +143,12 @@ class FloatingWindowService : android.app.Service() {
         OverlayCoordinator.register(overlayListener)
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.hasExtra(EXTRA_COLLAPSED) == true) {
+            setMinimized(intent.getBooleanExtra(EXTRA_COLLAPSED, false))
+        }
+        return START_NOT_STICKY
+    }
 
     override fun onDestroy() {
         isActive = false
@@ -423,10 +428,11 @@ class FloatingWindowService : android.app.Service() {
         private const val NOTIFICATION_ID = NotificationIds.FLOATING_WINDOW
         private const val MAX_LOG_LINES = 200
         private const val RENDER_INTERVAL_MS = 250L
+        private const val EXTRA_COLLAPSED = "extra_collapsed"
 
         private val _active = MutableStateFlow(false)
 
-        /** 服务运行状态的响应式订阅，供「权限与能力」页同步开关。 */
+        /** 服务运行状态的响应式订阅，供「设置 → 悬浮窗与虚拟屏」页同步开关。 */
         val active: StateFlow<Boolean> = _active.asStateFlow()
 
         @Volatile
@@ -437,16 +443,18 @@ class FloatingWindowService : android.app.Service() {
             }
 
         /** 开启悬浮窗。开启后常驻，脚本结束也不会自动关闭，需手动点击关闭按钮或开关。 */
-        fun start(context: Context) {
+        fun start(context: Context, collapsed: Boolean = false) {
             // 无悬浮窗权限时直接不启动，避免白白拉起一个前台服务（也规避 FGS 超时风险）。
             if (!Settings.canDrawOverlays(context)) return
-            runCatching { context.startForegroundService(Intent(context, FloatingWindowService::class.java)) }
+            val intent = Intent(context, FloatingWindowService::class.java)
+                .putExtra(EXTRA_COLLAPSED, collapsed)
+            runCatching { context.startForegroundService(intent) }
         }
 
         /** 脚本开始时确保悬浮窗显示（脚本结束后保持显示）。 */
-        fun showForRun(context: Context) {
+        fun showForRun(context: Context, collapsed: Boolean) {
             if (isActive) return
-            start(context)
+            start(context, collapsed)
         }
 
         fun stop(context: Context) {

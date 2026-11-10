@@ -19,6 +19,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +34,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.newCacheExportFile
 import com.benton.izukijs.ui.common.shareFile
@@ -53,10 +56,12 @@ fun LogsScreen(
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     // 主界面四个标签常驻组合；非当前页时不订阅高频日志，避免脚本输出时后台页反复重组 / 布局。
-    var logs by remember { mutableStateOf(container.logBus.entries.value) }
+    // 用 State 承载并在子组件内解包，日志刷新只重组控制台面板，不波及整页。
+    val logs: MutableState<List<LogEntry>> =
+        remember { mutableStateOf(container.logBus.entries.value) }
     LaunchedEffect(isActivePage) {
         if (!isActivePage) return@LaunchedEffect
-        container.logBus.entries.collect { logs = it }
+        container.logBus.entries.collect { logs.value = it }
     }
     val virtualScreenState by container.virtualScreenManager.state.collectAsStateWithLifecycle()
 
@@ -90,14 +95,28 @@ fun LogsScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             )
-            ConsolePanel(
-                entries = logs,
+            LogsConsole(
+                logsState = logs,
                 onClear = { container.logBus.clear() },
-                showHeader = false,
                 modifier = Modifier.weight(1f),
             )
         }
     }
+}
+
+/** 在子作用域内解包日志状态，把高频重组限制在控制台面板内。 */
+@Composable
+private fun LogsConsole(
+    logsState: State<List<LogEntry>>,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    ConsolePanel(
+        entries = logsState.value,
+        onClear = onClear,
+        showHeader = false,
+        modifier = modifier,
+    )
 }
 
 @Composable

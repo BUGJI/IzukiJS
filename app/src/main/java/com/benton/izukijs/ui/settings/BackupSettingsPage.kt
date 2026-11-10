@@ -3,8 +3,6 @@ package com.benton.izukijs.ui.settings
 import com.benton.izukijs.ui.common.SectionGap
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
@@ -27,6 +25,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
+import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SectionCard
@@ -73,7 +72,7 @@ internal fun BackupSettingsScreen() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(SectionGap))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ActionButtons {
             Button(onClick = {
                 scope.launch {
                     val file = newCacheExportFile(context, "izukijs_config", "json")

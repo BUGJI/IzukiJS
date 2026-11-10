@@ -22,6 +22,7 @@ class ScheduleEventReceiver : BroadcastReceiver() {
 
         val container = (context.applicationContext as IzukiApp).container
         container.scheduleRunner.onEvent(event)
+        container.flowRunner.onEvent(event)
     }
 
     companion object {

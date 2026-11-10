@@ -11,8 +11,22 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Article
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Gamepad
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.PictureInPicture
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -23,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -38,16 +53,21 @@ import com.benton.izukijs.ui.common.localizedName
 import com.benton.izukijs.ui.appViewModel
 
 /** 设置分组。key 用于二级页面路由参数。 */
-enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
-    GENERAL("general", R.string.settings_general),
-    CONTROL("control", R.string.settings_control),
-    VISION("vision", R.string.settings_vision),
-    RUN("run", R.string.settings_run),
-    UNLOCK("unlock", R.string.settings_unlock),
-    ENV("env", R.string.settings_env),
-    STORAGE("storage", R.string.settings_storage),
-    BACKUP("backup", R.string.settings_backup),
-    ABOUT("about", R.string.settings_about),
+enum class SettingsCategory(
+    val key: String,
+    @StringRes val titleRes: Int,
+    val icon: ImageVector,
+) {
+    GENERAL("general", R.string.settings_general, Icons.Filled.Settings),
+    CONTROL("control", R.string.settings_control, Icons.Filled.Gamepad),
+    VISION("vision", R.string.settings_vision, Icons.Filled.Visibility),
+    RUN("run", R.string.settings_run, Icons.Filled.Code),
+    DISPLAY("display", R.string.settings_display, Icons.Filled.PictureInPicture),
+    UNLOCK("unlock", R.string.settings_unlock, Icons.Filled.LockOpen),
+    ENV("env", R.string.settings_env, Icons.Filled.Key),
+    LOG("log", R.string.settings_storage, Icons.Filled.Article),
+    BACKUP("backup", R.string.settings_backup, Icons.Filled.Backup),
+    ABOUT("about", R.string.settings_about, Icons.Filled.Info),
     ;
 
     companion object {
@@ -61,6 +81,7 @@ fun SettingsScreen(
     onOpenCategory: (SettingsCategory) -> Unit = {},
     onOpenAi: () -> Unit = {},
     onOpenMcp: () -> Unit = {},
+    onOpenSetup: () -> Unit = {},
 ) {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
@@ -72,7 +93,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(SectionGap))
             CategoryGroup {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.GENERAL.titleRes),
+                    category = SettingsCategory.GENERAL,
                     summary = stringResource(
                         R.string.settings_general_summary,
                         ui.language.localizedName(),
@@ -81,9 +102,9 @@ fun SettingsScreen(
                 ) { onOpenCategory(SettingsCategory.GENERAL) }
             }
             Spacer(Modifier.height(SectionGap))
-            CategoryGroup(stringResource(R.string.settings_group_control_vision)) {
+            CategoryGroup(stringResource(R.string.settings_group_automation)) {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.CONTROL.titleRes),
+                    category = SettingsCategory.CONTROL,
                     summary = stringResource(
                         R.string.settings_control_summary,
                         ui.controllerSettings.readMode?.localizedName() ?: stringResource(R.string.common_auto),
@@ -91,7 +112,7 @@ fun SettingsScreen(
                     ),
                 ) { onOpenCategory(SettingsCategory.CONTROL) }
                 CategoryRow(
-                    title = stringResource(SettingsCategory.VISION.titleRes),
+                    category = SettingsCategory.VISION,
                     summary = stringResource(
                         R.string.settings_vision_summary,
                         ui.captureSettings.scalePercent,
@@ -104,14 +125,26 @@ fun SettingsScreen(
                         ),
                     ),
                 ) { onOpenCategory(SettingsCategory.VISION) }
-            }
-            Spacer(Modifier.height(SectionGap))
-            CategoryGroup(stringResource(R.string.settings_group_run)) {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.RUN.titleRes),
+                    category = SettingsCategory.RUN,
                     summary = stringResource(
                         R.string.settings_run_summary,
-                        ui.virtualScreenSettings.defaultMode.localizedName(),
+                        if (ui.runtimeSettings.scriptTimeoutMinutes <= 0) {
+                            stringResource(R.string.perm_timeout_unlimited)
+                        } else {
+                            stringResource(
+                                R.string.perm_timeout_minutes,
+                                ui.runtimeSettings.scriptTimeoutMinutes,
+                            )
+                        },
+                        stringResource(if (ui.runtimeSettings.keepAwake) R.string.common_on else R.string.common_off),
+                    ),
+                ) { onOpenCategory(SettingsCategory.RUN) }
+                CategoryRow(
+                    category = SettingsCategory.DISPLAY,
+                    summary = stringResource(
+                        R.string.settings_display_summary,
+                        ui.runtimeSettings.floatingWindowMode.localizedName(),
                         stringResource(
                             when (ui.virtualScreenState) {
                                 VirtualScreenState.Idle -> R.string.virtual_screen_status_short_idle
@@ -121,9 +154,43 @@ fun SettingsScreen(
                             },
                         ),
                     ),
-                ) { onOpenCategory(SettingsCategory.RUN) }
+                ) { onOpenCategory(SettingsCategory.DISPLAY) }
                 CategoryRow(
-                    title = stringResource(SettingsCategory.UNLOCK.titleRes),
+                    category = SettingsCategory.ENV,
+                    summary = stringResource(R.string.settings_env_summary, ui.globalEnv.size),
+                ) { onOpenCategory(SettingsCategory.ENV) }
+            }
+            Spacer(Modifier.height(SectionGap))
+            CategoryGroup(stringResource(R.string.settings_group_extensions)) {
+                CategoryRow(
+                    icon = Icons.Filled.AutoAwesome,
+                    title = stringResource(R.string.settings_ai_agent),
+                    summary = stringResource(
+                        if (ui.aiConfig.isConfigured) R.string.settings_ai_configured else R.string.settings_ai_not_configured,
+                    ),
+                ) { onOpenAi() }
+                CategoryRow(
+                    icon = Icons.Filled.Hub,
+                    title = stringResource(R.string.settings_mcp_server),
+                    summary = if (ui.mcpStatus.running) {
+                        stringResource(
+                            R.string.settings_mcp_summary_running,
+                            ui.mcpStatus.addresses.firstOrNull().orEmpty(),
+                        )
+                    } else {
+                        stringResource(R.string.settings_mcp_summary_stopped)
+                    },
+                ) { onOpenMcp() }
+            }
+            Spacer(Modifier.height(SectionGap))
+            CategoryGroup(stringResource(R.string.settings_group_security)) {
+                CategoryRow(
+                    icon = Icons.Filled.Lock,
+                    title = stringResource(R.string.run_permissions_title),
+                    summary = stringResource(R.string.settings_permissions_summary),
+                ) { onOpenSetup() }
+                CategoryRow(
+                    category = SettingsCategory.UNLOCK,
                     summary = stringResource(
                         R.string.settings_unlock_summary,
                         stringResource(
@@ -140,48 +207,24 @@ fun SettingsScreen(
                 ) { onOpenCategory(SettingsCategory.UNLOCK) }
             }
             Spacer(Modifier.height(SectionGap))
-            CategoryGroup(stringResource(R.string.settings_group_extensions)) {
-                CategoryRow(
-                    title = stringResource(R.string.settings_ai_agent),
-                    summary = stringResource(
-                        if (ui.aiConfig.isConfigured) R.string.settings_ai_configured else R.string.settings_ai_not_configured,
-                    ),
-                ) { onOpenAi() }
-                CategoryRow(
-                    title = stringResource(R.string.settings_mcp_server),
-                    summary = if (ui.mcpStatus.running) {
-                        stringResource(
-                            R.string.settings_mcp_summary_running,
-                            ui.mcpStatus.addresses.firstOrNull().orEmpty(),
-                        )
-                    } else {
-                        stringResource(R.string.settings_mcp_summary_stopped)
-                    },
-                ) { onOpenMcp() }
-                CategoryRow(
-                    title = stringResource(SettingsCategory.ENV.titleRes),
-                    summary = stringResource(R.string.settings_env_summary, ui.globalEnv.size),
-                ) { onOpenCategory(SettingsCategory.ENV) }
-            }
-            Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_data)) {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.STORAGE.titleRes),
+                    category = SettingsCategory.LOG,
                     summary = stringResource(
                         R.string.settings_storage_summary,
                         ui.logSettings.maxSizeMb,
                         ui.logSettings.retentionDays,
                     ),
-                ) { onOpenCategory(SettingsCategory.STORAGE) }
+                ) { onOpenCategory(SettingsCategory.LOG) }
                 CategoryRow(
-                    title = stringResource(SettingsCategory.BACKUP.titleRes),
+                    category = SettingsCategory.BACKUP,
                     summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
             }
             Spacer(Modifier.height(SectionGap))
             CategoryGroup {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.ABOUT.titleRes),
+                    category = SettingsCategory.ABOUT,
                     summary = when (val state = ui.updateState) {
                         is UpdateState.Available ->
                             stringResource(R.string.update_available, state.info.versionName)
@@ -212,10 +255,11 @@ fun SettingsDetailScreen(
             SettingsCategory.GENERAL -> GeneralSettings()
             SettingsCategory.CONTROL -> ControlSettings(onOpenSetup = onOpenSetup)
             SettingsCategory.VISION -> VisionSettings()
-            SettingsCategory.RUN -> RunSettings(onOpenSetup = onOpenSetup)
+            SettingsCategory.RUN -> RunSettings()
+            SettingsCategory.DISPLAY -> DisplaySettings(onOpenSetup = onOpenSetup)
             SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
             SettingsCategory.ENV -> GlobalEnvSettings()
-            SettingsCategory.STORAGE -> StorageSettings()
+            SettingsCategory.LOG -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()
             SettingsCategory.ABOUT -> AboutSettings()
             null -> Text(
@@ -246,7 +290,28 @@ private fun CategoryGroup(title: String? = null, content: @Composable ColumnScop
 }
 
 @Composable
-private fun CategoryRow(title: String, summary: String, onClick: () -> Unit) {
+private fun CategoryRow(
+    category: SettingsCategory,
+    summary: String,
+    onClick: () -> Unit,
+) = CategoryRow(
+    icon = category.icon,
+    title = stringResource(category.titleRes),
+    summary = summary,
+    onClick = onClick,
+)
+
+@Composable
+private fun CategoryRow(title: String, summary: String, onClick: () -> Unit) =
+    CategoryRow(icon = null, title = title, summary = summary, onClick = onClick)
+
+@Composable
+private fun CategoryRow(
+    icon: ImageVector?,
+    title: String,
+    summary: String,
+    onClick: () -> Unit,
+) {
     Card(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
@@ -257,6 +322,15 @@ private fun CategoryRow(title: String, summary: String, onClick: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (icon != null) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.width(16.dp))
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyLarge)
                 Text(

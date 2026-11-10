@@ -6,7 +6,7 @@ import com.benton.izukijs.core.prefs.PrefsStateStore
 import kotlinx.coroutines.flow.StateFlow
 
 /**
- * 运行期开关。用于「权限与能力」页里那些无法程序化开关、或需要在应用层再做一层
+ * 运行期开关。用于「设置」与「权限与能力」页里那些无法程序化开关、或需要在应用层再做一层
  * 显式开关的能力：
  *
  * - [keepAwake] / [wakeScreen]：脚本运行期间是否持有唤醒锁、是否顺带亮屏（WAKE_LOCK）。
@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
  * - [tileEnabled]：快捷磁贴是否响应点击。
  * - [scriptTimeoutMinutes]：单次脚本运行的超时分钟数，0 表示不限制。
  * - [perfBaseline]：是否采集并定期输出性能基线（帧耗时、截图、找图找色、日志刷新等）。
+ * - [floatingWindowMode]：脚本运行时日志悬浮条的显示方式。
  */
 data class RuntimeSettings(
     val keepAwake: Boolean = true,
@@ -24,7 +25,21 @@ data class RuntimeSettings(
     val tileEnabled: Boolean = true,
     val scriptTimeoutMinutes: Int = 0,
     val perfBaseline: Boolean = false,
+    val floatingWindowMode: FloatingWindowMode = FloatingWindowMode.EXPANDED,
 )
+
+/** 脚本运行时日志悬浮条的显示方式。 */
+enum class FloatingWindowMode(val key: String) {
+    OFF("off"),
+    COLLAPSED("collapsed"),
+    EXPANDED("expanded"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): FloatingWindowMode =
+            entries.firstOrNull { it.key == key } ?: EXPANDED
+    }
+}
 
 /** SharedPreferences 持久化 + 内存缓存。 */
 class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSettings>(
@@ -43,6 +58,9 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
         tileEnabled = prefs.getBoolean(KEY_TILE, true),
         scriptTimeoutMinutes = prefs.getInt(KEY_SCRIPT_TIMEOUT, 0).coerceAtLeast(0),
         perfBaseline = prefs.getBoolean(KEY_PERF_BASELINE, false),
+        floatingWindowMode = FloatingWindowMode.fromKey(
+            prefs.getString(KEY_FLOATING_WINDOW_MODE, null),
+        ),
     )
 
     override fun write(editor: SharedPreferences.Editor, value: RuntimeSettings) {
@@ -54,6 +72,7 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
             .putBoolean(KEY_TILE, value.tileEnabled)
             .putInt(KEY_SCRIPT_TIMEOUT, value.scriptTimeoutMinutes)
             .putBoolean(KEY_PERF_BASELINE, value.perfBaseline)
+            .putString(KEY_FLOATING_WINDOW_MODE, value.floatingWindowMode.key)
     }
 
     private companion object {
@@ -65,5 +84,6 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
         const val KEY_TILE = "tile_enabled"
         const val KEY_SCRIPT_TIMEOUT = "script_timeout_minutes"
         const val KEY_PERF_BASELINE = "perf_baseline"
+        const val KEY_FLOATING_WINDOW_MODE = "floating_window_mode"
     }
 }

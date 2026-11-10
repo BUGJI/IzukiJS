@@ -1,17 +1,22 @@
 # 性能基线
 
 项目内置了一套轻量性能采集器 `PerfMetrics`，用于对比优化前后的运行速度与界面流畅性。
-默认关闭，开启后每 30 秒向 logcat 输出一个统计窗口，输出后清空窗口，便于“一次只观察一个场景”。
+默认关闭，开启后每 30 秒输出一个统计窗口（应用内日志 + logcat），输出后清空窗口，便于“一次只观察一个场景”。
 
 ## 开启
 
-1. 打开 **设置 → 运行 → 性能基线**，启用「启用性能基线采集」。
+1. 打开 **设置 → 数据 → 日志 → 性能基线**，启用「启用性能基线采集」。
 2. 保持悬浮窗开关与脚本运行方式不变，按下面的场景操作。
 3. 采集完成后关闭开关。
 
 也可以在开启状态下点击「立即输出本次统计」，手动结束当前窗口。
 
 ## 查看
+
+开启后每次统计会同时写入两处：
+
+1. **应用内日志页**：每次报告是「1 条 `[perf]` 汇总 + 1 条 `[perf] 明细`」，可直接在日志页筛选 `perf` 查看、复制或导出；日志文件与 MCP `read_logs` 也能读到。
+2. **logcat**：保留逐行输出，便于 `adb logcat -s IzukiPerf`：
 
 ```bash
 adb logcat -c
@@ -37,17 +42,31 @@ gauge log.buffer=200
 | 指标 | 含义 |
 |---|---|
 | `ui.frame` | 主窗口每帧总耗时；`jank` 为超过当前刷新率一帧的帧数占比 |
+| `ui.layout` / `ui.draw` / `ui.command` / `ui.swap` | 每帧的布局测量、绘制、命令提交、缓冲交换耗时 |
+| `ui.sync` / `ui.gpu` | 每帧同步与 GPU 耗时（Android 12+） |
+| `mem.java.used` / `mem.java.max` | Java 堆已用 / 上限（MB） |
+| `mem.native` | Native 堆已分配（MB） |
+| `mem.pss.kb` | 进程总 PSS（KB） |
+| `gc.count` / `gc.time.ms` | 本窗口内 GC 次数与总耗时（毫秒） |
+| `threads` / `fd.count` | 进程线程数与打开的文件描述符数 |
+| `uptime` | 进程已运行秒数 |
 | `log.emit` | `LogBus` 合并后刷新给 UI 的耗时 |
 | `log.append` | 单条日志写入（含 logcat、落盘调度、运行归档）的耗时 |
+| `log.dropped` / `log.throttled` | 因日志级别过滤 / DEBUG 采样丢弃的条数 |
+| `log.file.bytes` | 当前日志文件体积（字节） |
 | `floating.logs.render` | 悬浮窗日志面板一次绘制的耗时 |
 | `console.filter` | 日志页按级别 / 关键字过滤的耗时 |
 | `capture.screen` | 主屏截图（持续录屏）耗时 |
 | `capture.screen.cached` | 没有新帧、直接使用上一帧缓存的次数 |
 | `capture.screen.fallback` | 持续录屏不可用、回退到其它截图后端的次数 |
 | `capture.virtual` | 虚拟屏取帧耗时 |
-| `image.findImage` / `image.findColor` | 找图 / 找色整体耗时 |
+| `image.findImage` / `image.findColor` / `image.findColorRegions` | 找图 / 找色 / 区域找色整体耗时 |
+| `image.findImage.hit` / `image.findImage.miss` | 找图命中 / 未命中次数 |
+| `image.findColor.hit` / `image.findColor.miss` | 找色命中 / 未命中次数 |
 | `image.matchTemplate` / `image.findColorScan` | OpenCV 模板匹配 / 像素扫描耗时 |
 | `overlay.hideWait` | 截图前等待悬浮层隐藏的耗时 |
+| `script.run` / `script.succeeded` / `script.failed` / `script.timeout` / `script.stopped` | 窗口内脚本启动与各结束状态次数 |
+| `script.running` | 当前是否有脚本在运行（0 / 1） |
 | `script.prepare` | 脚本启动的参数解析 / 历史记录 / 通知与悬浮窗拉起耗时（后台线程） |
 | `opencv.prewarm` / `ocr.prewarm` | 脚本启动时视觉能力的后台预热耗时 |
 | `ocr.recognize` | OCR 识别耗时 |
