@@ -2,16 +2,21 @@ package com.benton.izukijs.service
 
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import com.benton.izukijs.core.perf.PerfMetrics
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
- * 截图时临时隐藏悬浮层的中枢。
+ * 截图 / 触摸注入时临时隐藏悬浮层的中枢。
  *
- * 悬浮窗服务注册 [Listener]；脚本执行任何截图（找图 / 找色 / OCR / captureScreen / AI）前
- * 调用 [withoutOverlay]，先隐藏悬浮窗并等待一帧，截图完成后再恢复显示，
- * 避免悬浮窗内容被截入画面。没有注册监听器时该调用无任何开销。
+ * 悬浮窗服务注册 [Listener]；脚本执行任何截图（找图 / 找色 / OCR / captureScreen / AI）
+ * 或触摸注入（点击 / 长按 / 滑动 / 手势）前调用 [withoutOverlay]，先隐藏悬浮窗并等待一帧，
+ * 操作完成后再恢复显示：既避免悬浮窗内容被截入画面，也避免点击落在悬浮条上而非目标应用。
+ * 没有注册监听器时该调用无任何开销。
  *
- * 连续截图（例如循环找图）不会每次都重新隐藏 / 等待：隐藏状态会保持到最后一帧后
+ * 支持同时注册多个监听者（脚本日志悬浮窗、调试面板等），隐藏 / 恢复会作用于全部监听者。
+ * 连续操作（例如循环找图或连点）不会每次都重新隐藏 / 等待：隐藏状态会保持到最后一帧后
  * 延迟 [SHOW_DELAY_MS] 再恢复，兼顾正确性与性能。
  */
 object OverlayCoordinator {
@@ -37,8 +42,7 @@ object OverlayCoordinator {
 
     private val LOCK = Any()
 
-    @Volatile
-    private var listener: Listener? = null
+    private val listeners = LinkedHashSet<Listener>()
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -46,21 +50,26 @@ object OverlayCoordinator {
     private var hidden = false
 
     private val showRunnable = Runnable {
-        synchronized(LOCK) {
-            if (!hidden) return@synchronized
+        val snapshot = synchronized(LOCK) {
+            if (!hidden) return@synchronized null
             hidden = false
-            listener?.show()
-        }
+            listeners.toList()
+        } ?: return@Runnable
+        snapshot.forEach { it.show() }
     }
 
     fun register(value: Listener) {
-        synchronized(LOCK) { listener = value }
+        val hideNow = synchronized(LOCK) {
+            listeners.add(value)
+            hidden
+        }
+        if (hideNow) value.hide()
     }
 
     fun unregister(value: Listener) {
         synchronized(LOCK) {
-            if (listener === value) {
-                listener = null
+            listeners.remove(value)
+            if (listeners.isEmpty()) {
                 mainHandler.removeCallbacks(showRunnable)
                 hidden = false
             }
@@ -68,24 +77,23 @@ object OverlayCoordinator {
     }
 
     /**
-     * 在截图前后临时隐藏 / 显示悬浮窗。应在非主线程调用（截图发生在脚本线程）。
+     * 在截图 / 触摸注入前后临时隐藏 / 显示悬浮层。应在非主线程调用（操作发生在脚本线程）。
      */
     fun <T> withoutOverlay(block: () -> T): T {
-        var current: Listener? = null
         var needWait = false
+        val targets: List<Listener>
         synchronized(LOCK) {
-            val target = listener
-            current = target
-            if (target != null && !hidden) {
+            targets = listeners.toList()
+            if (targets.isNotEmpty() && !hidden) {
                 hidden = true
                 needWait = true
-                target.hide()
+                targets.forEach { it.hide() }
             }
         }
-        val target = current ?: return block()
+        if (targets.isEmpty()) return block()
         if (needWait) {
             PerfMetrics.measure("overlay.hideWait") {
-                target.awaitHidden(HIDE_TIMEOUT_MS)
+                targets.forEach { it.awaitHidden(HIDE_TIMEOUT_MS) }
             }
         }
         return try {
@@ -100,9 +108,32 @@ object OverlayCoordinator {
         }
     }
 
+    /**
+     * 等待视图在隐藏后真正完成一帧绘制。主线程调用或视图未附着时立即返回，避免阻塞主线程。
+     */
+    fun awaitViewHidden(view: View, timeoutMs: Long) {
+        if (Looper.myLooper() == Looper.getMainLooper() || !view.isAttachedToWindow) return
+        val latch = CountDownLatch(1)
+        view.post {
+            if (!view.isAttachedToWindow) {
+                latch.countDown()
+                return@post
+            }
+            // 等两帧：第一帧完成隐藏后的 traversal / draw，第二帧确认画面已更新。
+            view.postOnAnimation {
+                view.postOnAnimation { latch.countDown() }
+            }
+        }
+        try {
+            latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
     /** 隐藏后等待一帧绘制的最长时间；实现方通常在一帧内返回。 */
     private const val HIDE_TIMEOUT_MS = 100L
 
-    /** 连续截图结束后延迟恢复显示，避免高频截图时反复闪烁。 */
+    /** 连续操作结束后延迟恢复显示，避免高频操作时反复闪烁。 */
     private const val SHOW_DELAY_MS = 300L
 }

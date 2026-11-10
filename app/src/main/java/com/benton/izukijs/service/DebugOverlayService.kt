@@ -12,7 +12,9 @@ import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.text.method.ScrollingMovementMethod
 import android.view.Gravity
@@ -43,7 +45,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * 调试悬浮窗：一键获取当前布局树 / OCR 结果（含每个结果的位置坐标）。
- * 抓取与识别期间会临时隐藏自身，识别结果可用叠加层在屏幕上标出位置。
+ * 抓取与识别期间会临时隐藏自身；脚本执行截图或触摸注入时也会经 [OverlayCoordinator]
+ * 一并隐藏，避免被截入画面或拦截点击。识别结果可用叠加层在屏幕上标出位置。
  */
 class DebugOverlayService : Service() {
 
@@ -54,8 +57,23 @@ class DebugOverlayService : Service() {
     private lateinit var params: WindowManager.LayoutParams
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val container get() = (application as IzukiApp).container
+
+    private val overlayListener = object : OverlayCoordinator.Listener {
+        override fun hide() {
+            mainHandler.post { panel?.visibility = View.INVISIBLE }
+        }
+
+        override fun show() {
+            mainHandler.post { panel?.visibility = View.VISIBLE }
+        }
+
+        override fun awaitHidden(timeoutMs: Long) {
+            panel?.let { OverlayCoordinator.awaitViewHidden(it, timeoutMs) }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -72,10 +90,12 @@ class DebugOverlayService : Service() {
         isActive = true
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         showPanel()
+        OverlayCoordinator.register(overlayListener)
     }
 
     override fun onDestroy() {
         isActive = false
+        OverlayCoordinator.unregister(overlayListener)
         scope.cancel()
         removeBoxOverlay()
         panel?.let { runCatching { windowManager.removeView(it) } }
@@ -212,14 +232,13 @@ class DebugOverlayService : Service() {
     private fun runTask(progress: String, block: () -> TaskResult) {
         output?.text = progress
         scope.launch {
-            panel?.visibility = View.INVISIBLE
-            delay(HIDE_DELAY_MS)
             val result = withContext(Dispatchers.IO) {
-                runCatching { block() }.getOrElse {
-                    TaskResult(getString(R.string.debug_task_failed, it.message.orEmpty()), emptyList())
+                OverlayCoordinator.withoutOverlay {
+                    runCatching { block() }.getOrElse {
+                        TaskResult(getString(R.string.debug_task_failed, it.message.orEmpty()), emptyList())
+                    }
                 }
             }
-            panel?.visibility = View.VISIBLE
             output?.text = result.text
             showBoxes(result.blocks)
         }
@@ -366,7 +385,6 @@ class DebugOverlayService : Service() {
     companion object {
         private const val CHANNEL_ID = "izuki_debug_overlay"
         private const val NOTIFICATION_ID = NotificationIds.DEBUG_OVERLAY
-        private const val HIDE_DELAY_MS = 160L
         private const val BOX_DISPLAY_MS = 6000L
 
         private val _active = MutableStateFlow(false)

@@ -131,13 +131,15 @@ class ScreenUnlockController(
                 Thread.sleep(BOUNCER_SETTLE_MS)
                 if (!isLocked()) return UnlockResult.OK
                 val size = screenInfo()
-                controller.swipe(
-                    size.width / 2f,
-                    size.height * 0.82f,
-                    size.width / 2f,
-                    size.height * 0.18f,
-                    260L,
-                )
+                OverlayCoordinator.withoutOverlay {
+                    controller.swipe(
+                        size.width / 2f,
+                        size.height * 0.82f,
+                        size.width / 2f,
+                        size.height * 0.18f,
+                        260L,
+                    )
+                }
                 return if (awaitUnlocked(DISMISS_TIMEOUT_MS)) {
                     UnlockResult.OK
                 } else {
@@ -304,10 +306,12 @@ class ScreenUnlockController(
     ): Boolean {
         for ((index, points) in strokes.withIndex()) {
             if (points.isEmpty()) continue
-            val ok = if (points.size == 1) {
-                accessibility.click(points[0].x, points[0].y)
-            } else {
-                accessibility.gesture(listOf(GestureStroke(points)))
+            val ok = OverlayCoordinator.withoutOverlay {
+                if (points.size == 1) {
+                    accessibility.click(points[0].x, points[0].y)
+                } else {
+                    accessibility.gesture(listOf(GestureStroke(points)))
+                }
             }
             if (!ok) return false
             val duration = recorded.getOrNull(index)?.durationMs ?: 0L

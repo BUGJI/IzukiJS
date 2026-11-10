@@ -7,6 +7,7 @@ import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.controller.accessibility.releaseNode
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.service.OverlayCoordinator
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -292,7 +293,11 @@ class SelectorApi(
             } else {
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
-                controller()?.click(rect.exactCenterX(), rect.exactCenterY()) ?: false
+                controller()?.let { target ->
+                    OverlayCoordinator.withoutOverlay {
+                        target.click(rect.exactCenterX(), rect.exactCenterY())
+                    }
+                } ?: false
             }
         } finally {
             node.releaseNode()
@@ -307,11 +312,15 @@ class SelectorApi(
             } else {
                 val rect = Rect()
                 node.getBoundsInScreen(rect)
-                controller()?.longClick(
-                    rect.exactCenterX(),
-                    rect.exactCenterY(),
-                    DEFAULT_LONG_CLICK_MS,
-                ) ?: false
+                controller()?.let { target ->
+                    OverlayCoordinator.withoutOverlay {
+                        target.longClick(
+                            rect.exactCenterX(),
+                            rect.exactCenterY(),
+                            DEFAULT_LONG_CLICK_MS,
+                        )
+                    }
+                } ?: false
             }
         } finally {
             node.releaseNode()

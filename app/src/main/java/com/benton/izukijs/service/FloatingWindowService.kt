@@ -43,14 +43,13 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * 脚本日志悬浮窗。脚本运行时自动显示，默认展示 INFO 及以上级别的日志，
  * 提供最小化、停止脚本与关闭窗口按钮；停止脚本后悬浮窗保持显示，需手动关闭。
  *
- * 脚本进行任何截图操作时，会通过 [OverlayCoordinator] 临时隐藏自身，避免被截入画面。
+ * 脚本进行任何截图或触摸注入（点击 / 长按 / 滑动 / 手势）时，会通过 [OverlayCoordinator]
+ * 临时隐藏自身，避免被截入画面或拦截点击。
  */
 class FloatingWindowService : android.app.Service() {
 
@@ -101,25 +100,7 @@ class FloatingWindowService : android.app.Service() {
         }
 
         override fun awaitHidden(timeoutMs: Long) {
-            val view = rootView ?: return
-            // 主线程不能阻塞等待；截图路径都在脚本线程调用。
-            if (Looper.myLooper() == Looper.getMainLooper() || !view.isAttachedToWindow) return
-            val latch = CountDownLatch(1)
-            mainHandler.post {
-                if (!view.isAttachedToWindow) {
-                    latch.countDown()
-                    return@post
-                }
-                // 等两帧：第一帧完成隐藏后的 traversal / draw，第二帧确认画面已更新。
-                view.postOnAnimation {
-                    view.postOnAnimation { latch.countDown() }
-                }
-            }
-            try {
-                latch.await(timeoutMs, TimeUnit.MILLISECONDS)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
+            rootView?.let { OverlayCoordinator.awaitViewHidden(it, timeoutMs) }
         }
     }
 

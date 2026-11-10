@@ -10,6 +10,7 @@ import com.benton.izukijs.controller.TextInputMethod
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.service.OverlayCoordinator
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,10 +28,20 @@ class InputApi(
     private fun gestureController(): DeviceController? =
         controllers.controllerFor(Capability.GESTURE)
 
+    /**
+     * 触摸注入前先隐藏悬浮层，避免点击落在悬浮条上而非目标应用。
+     *
+     * 输入打到虚拟屏时不会与主屏悬浮窗重叠，直接执行，避免无谓闪烁。
+     */
+    private fun <T> withoutOverlayOnMainDisplay(block: () -> T): T =
+        if (controllers.targetDisplayId != null) block() else OverlayCoordinator.withoutOverlay(block)
+
     @JavascriptInterface
     fun click(x: Double, y: Double): Boolean {
         val controller = gestureController()
-        val ok = controller?.click(x.toFloat(), y.toFloat()) ?: false
+        val ok = controller?.let {
+            withoutOverlayOnMainDisplay { it.click(x.toFloat(), y.toFloat()) }
+        } ?: false
         logBus.debug("点击 (${x.toInt()}, ${y.toInt()})${controller.resultTag(ok)}")
         return ok
     }
@@ -38,7 +49,11 @@ class InputApi(
     @JavascriptInterface
     fun longClick(x: Double, y: Double, durationMillis: Double): Boolean {
         val controller = gestureController()
-        val ok = controller?.longClick(x.toFloat(), y.toFloat(), durationMillis.toLong()) ?: false
+        val ok = controller?.let {
+            withoutOverlayOnMainDisplay {
+                it.longClick(x.toFloat(), y.toFloat(), durationMillis.toLong())
+            }
+        } ?: false
         logBus.debug(
             "长按 (${x.toInt()}, ${y.toInt()}) ${durationMillis.toLong()}ms${controller.resultTag(ok)}",
         )
@@ -54,13 +69,17 @@ class InputApi(
         durationMillis: Double,
     ): Boolean {
         val controller = gestureController()
-        val ok = controller?.swipe(
-            x1.toFloat(),
-            y1.toFloat(),
-            x2.toFloat(),
-            y2.toFloat(),
-            durationMillis.toLong(),
-        ) ?: false
+        val ok = controller?.let {
+            withoutOverlayOnMainDisplay {
+                it.swipe(
+                    x1.toFloat(),
+                    y1.toFloat(),
+                    x2.toFloat(),
+                    y2.toFloat(),
+                    durationMillis.toLong(),
+                )
+            }
+        } ?: false
         logBus.debug(
             "滑动 (${x1.toInt()}, ${y1.toInt()})→(${x2.toInt()}, ${y2.toInt()}) " +
                 "${durationMillis.toLong()}ms${controller.resultTag(ok)}",
@@ -93,21 +112,25 @@ class InputApi(
         // 轨迹就直接执行。否则找其它支持复杂轨迹的后端兜底，避免曲线与停顿被降级
         // 成分段直线而失真。
         val preferred = gestureController()
-        if (preferred != null && preferred.supportsGesture() && preferred.gesture(strokes)) {
-            logBus.debug("$summary${preferred.resultTag(true)}")
-            return true
-        }
         val capable = gestureCapableController(preferred)
-        if (capable != null && capable.gesture(strokes)) {
-            logBus.debug("$summary${capable.resultTag(true)}")
-            return true
+        val executed = withoutOverlayOnMainDisplay {
+            if (preferred != null && preferred.supportsGesture() && preferred.gesture(strokes)) {
+                logBus.debug("$summary${preferred.resultTag(true)}")
+                true
+            } else if (capable != null && capable.gesture(strokes)) {
+                logBus.debug("$summary${capable.resultTag(true)}")
+                true
+            } else {
+                false
+            }
         }
+        if (executed) return true
         // 全部失败，才退回能力协商选出的后端做降级执行。
         val fallback = preferred ?: capable ?: run {
             logBus.debug("$summary → 无可用后端 ✗")
             return false
         }
-        val result = applyGestureFallback(fallback, strokes)
+        val result = withoutOverlayOnMainDisplay { applyGestureFallback(fallback, strokes) }
         val operations = "滑动 ${result.swipes} 次 / 点击 ${result.taps} 次 / 长按 ${result.holds} 次"
         if (result.droppedPoints > 0 || strokes.size > 1) {
             logBus.warn(
