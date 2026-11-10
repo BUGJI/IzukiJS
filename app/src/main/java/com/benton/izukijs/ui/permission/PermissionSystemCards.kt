@@ -1,59 +1,9 @@
 package com.benton.izukijs.ui.permission
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
 import com.benton.izukijs.ui.common.SwitchRow
-
-@Composable
-internal fun FloatingCard(state: PermissionUiState, actions: PermissionActions) {
-    val info = PermissionInfo(
-        title = stringResource(R.string.perm_floating_title),
-        description = stringResource(R.string.perm_floating_desc),
-        dimensions = listOf(
-            Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_low), Rating.GOOD),
-            Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
-        ),
-        tip = stringResource(R.string.perm_floating_tip),
-    )
-    PermissionCard(
-        info = info,
-        status = stringResource(
-            if (state.floatingEnabled || state.debugOverlayEnabled) R.string.perm_status_on else R.string.perm_status_off,
-        ),
-        ready = state.floatingEnabled || state.debugOverlayEnabled,
-        onShowInfo = { actions.showInfo(info) },
-        action = {
-            Column {
-                SwitchRow(
-                    label = stringResource(R.string.perm_floating_control),
-                    checked = state.floatingEnabled,
-                ) { checked -> actions.setFloating(checked) }
-                Spacer(Modifier.height(12.dp))
-                SwitchRow(
-                    label = stringResource(R.string.perm_floating_debug),
-                    checked = state.debugOverlayEnabled,
-                    description = stringResource(R.string.perm_floating_debug_desc),
-                ) { checked -> actions.setDebugOverlay(checked) }
-                if (!state.canDrawOverlays) {
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        stringResource(R.string.perm_overlay_needed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        },
-    )
-}
 
 @Composable
 internal fun UsageAccessCard(state: PermissionUiState, actions: PermissionActions) {

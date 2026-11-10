@@ -59,9 +59,11 @@ class ImageApi(
                 matchTemplate(screen, templatePath, threshold, region, 1).firstOrNull()
             }
             if (match == null) {
+                PerfMetrics.count("image.findImage.miss")
                 logBus.debugThrottled("image.findImage", "找图 ${File(templatePath).name} → 未命中 ✗")
                 null
             } else {
+                PerfMetrics.count("image.findImage.hit")
                 logBus.debugThrottled(
                     "image.findImage",
                     "找图 ${File(templatePath).name} → (${match.x}, ${match.y}) " +
@@ -123,7 +125,12 @@ class ImageApi(
                 threshold,
                 Rect(0, 0, screen.width, screen.height),
                 1,
-            ).firstOrNull() ?: return null
+            ).firstOrNull()
+            if (match == null) {
+                PerfMetrics.count("image.findImage.miss")
+                return null
+            }
+            PerfMetrics.count("image.findImage.hit")
             "${match.x},${match.y},${match.confidence}"
         } finally {
             screen.recycle()
@@ -156,12 +163,14 @@ class ImageApi(
                 findColorMatches(bitmap, target, threshold.toInt(), region, 1).firstOrNull()
             }
             if (match == null) {
+                PerfMetrics.count("image.findColor.miss")
                 logBus.debugThrottled(
                     "image.findColor",
                     "找色 $color (±${threshold.toInt()}) → 未找到 ✗",
                 )
                 null
             } else {
+                PerfMetrics.count("image.findColor.hit")
                 logBus.debugThrottled(
                     "image.findColor",
                     "找色 $color (±${threshold.toInt()}) → (${match.x},${match.y}) ✓",
@@ -276,12 +285,14 @@ class ImageApi(
                 ).firstOrNull()
             }
             if (match == null) {
+                PerfMetrics.count("image.findColor.miss")
                 logBus.debugThrottled(
                     "image.findColor",
                     "找色 $color (±${threshold.toInt()}) @ $screenPath → 未找到 ✗",
                 )
                 null
             } else {
+                PerfMetrics.count("image.findColor.hit")
                 logBus.debugThrottled(
                     "image.findColor",
                     "找色 $color (±${threshold.toInt()}) @ $screenPath → (${match.x},${match.y}) ✓",

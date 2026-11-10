@@ -95,7 +95,7 @@ gesture([
 
 读取 / 等待 / 清除通知需在「权限与能力」页开启「通知监听（通知使用权）」。
 `notify.progress` / `notify.update` / `notify.reset` 更新的是脚本运行通知，需要
-`POST_NOTIFICATIONS`，并受「设置 → 运行与虚拟屏 → 通知」控制。
+`POST_NOTIFICATIONS`，并受「设置 → 脚本运行 → 通知」控制。
 使用 `// @need notify` 时才会暴露 `notify` 命名空间。
 
 ### 监听与清除
@@ -184,7 +184,7 @@ var entries = fs.list("/sdcard/izuki");
 
 ## `http`（需启用「脚本网络」）
 
-默认关闭，可在「权限与能力 → 其他 → 脚本网络（HTTP）」启用并配置域名白名单。
+默认关闭，可在「权限与能力 → 附加能力 → 脚本网络（HTTP）」启用并配置域名白名单。
 白名单留空表示不限制；填写后仅允许这些主机及其子域。只支持 `http` / `https`，
 单次响应体上限 2 MB（超出会截断并返回 `truncated: true`）。
 
@@ -463,7 +463,7 @@ virtualScreen.target("virtual");
 
 说明：
 
-- 后台模式需要 Android 10+、Shizuku 授权，并在「设置 → 运行与虚拟屏 → 后台虚拟屏」中允许。
+- 后台模式需要 Android 10+、Shizuku 授权，并在「设置 → 悬浮窗与虚拟屏 → 后台虚拟屏」中允许。
 - `@env RUN_MODE=background` 会在脚本启动时自动创建虚拟屏；未允许或不可用时回退前台并记录警告。
 - 脚本开始时目标按运行模式重置：后台脚本为 `auto`（跟随虚拟屏），前台脚本为主屏；脚本内仍可用
   `virtualScreen.target("virtual")` 显式切换。未显式指定目标时，脚本自行调用

@@ -206,6 +206,7 @@ class AppContainer(private val application: Application) {
         runHistoryRepository = runHistoryRepository,
         virtualScreen = virtualScreenManager,
         virtualScreenSettings = virtualScreenSettingsRepository,
+        runtimeSettings = runtimeSettingsRepository,
     )
 
     val scriptExecutionManager = ScriptExecutionManager(
@@ -300,6 +301,7 @@ class AppContainer(private val application: Application) {
     /** 初始化控制后端。会注册 Shizuku 监听并异步探测 Root。 */
     fun init() {
         logBus.setSink { logFileStore.append(it) }
+        PerfMetrics.setReportSink { logBus.info(it) }
         appScope.launch { scriptRepository.seedBundledScripts() }
         shizukuManager.init()
         rootManager.init()

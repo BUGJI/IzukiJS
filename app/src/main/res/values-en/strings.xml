@@ -44,8 +44,14 @@
     <string name="settings_progress_notification_desc">Allow scripts to update the running notification through notify.progress; when disabled the API returns false.</string>
     <string name="settings_notification_permission_denied">Notification permission is not granted, so progress notifications will not appear.</string>
     <string name="settings_notification_permission_action">Grant notification permission</string>
+    <string name="settings_floating_window">Floating control bar</string>
+    <string name="settings_floating_window_desc">How the log overlay appears while a script runs. Collapsed keeps only the title bar and stop button to avoid covering the screen.</string>
+    <string name="settings_floating_mode_off">Off</string>
+    <string name="settings_floating_mode_collapsed">Collapsed</string>
+    <string name="settings_floating_mode_expanded">Expanded</string>
+    <string name="settings_floating_window_hint">Choosing Off closes the current overlay; you can still enable it manually on this page. Script keep-alive uses the run notification and is unaffected.</string>
     <string name="settings_perf_baseline">Performance baseline</string>
-    <string name="settings_perf_baseline_desc">Records frame time, screenshots, image/color matching, OCR and log rendering metrics, reported to logcat every 30 seconds. Read with adb logcat -s IzukiPerf.</string>
+    <string name="settings_perf_baseline_desc">Records frame time, memory/GC, screenshots, image/color matching, OCR and log rendering metrics, reported every 30 seconds to the in-app log (prefixed with [perf]) and logcat. Read with adb logcat -s IzukiPerf.</string>
     <string name="settings_perf_baseline_toggle">Enable performance baseline</string>
     <string name="settings_perf_baseline_toggle_desc">Turn on only when comparing before/after optimizations or investigating jank; keep it off for daily use.</string>
     <string name="settings_perf_baseline_report_now">Report current window now</string>
@@ -273,7 +279,7 @@
     <string name="perm_overlay_needed">Grant the \"Display over other apps\" permission in system settings.</string>
     <string name="perm_group_read">Read</string>
     <string name="perm_group_operate">Operate</string>
-    <string name="perm_group_other">Other</string>
+    <string name="perm_group_other">Extra capabilities</string>
     <string name="perm_status_unauthorized">Not authorized</string>
     <string name="perm_detail_open">Details</string>
     <string name="perm_detail_close">Got it</string>
@@ -392,13 +398,14 @@
     <string name="settings_title">Settings</string>
     <string name="settings_control">Control backends</string>
     <string name="settings_vision">Recognition &amp; capture</string>
-    <string name="settings_run">Run &amp; virtual display</string>
+    <string name="settings_run">Script runtime</string>
+    <string name="settings_display">Floating window &amp; virtual display</string>
     <string name="settings_unlock">Secure unlock</string>
     <string name="settings_editor">Editor</string>
     <string name="settings_ai_agent">AI Agent</string>
-    <string name="settings_storage">Storage &amp; logs</string>
+    <string name="settings_storage">Logs</string>
     <string name="settings_backup">Backup &amp; restore</string>
-    <string name="settings_about">About</string>
+    <string name="settings_about">About &amp; updates</string>
     <string name="settings_env">Environment variables</string>
     <string name="settings_env_summary">%1$d variables defined</string>
     <string name="settings_env_desc">Shared by all scripts by default; same-name script variables take precedence.</string>
@@ -410,7 +417,8 @@
     <string name="settings_unknown_category">Unknown settings category.</string>
     <string name="settings_control_summary">Read %1$s · operate %2$s</string>
     <string name="settings_vision_summary">Capture %1$d%% · OCR %2$s</string>
-    <string name="settings_run_summary">Default %1$s · virtual display %2$s</string>
+    <string name="settings_run_summary">Timeout %1$s · keep awake %2$s</string>
+    <string name="settings_display_summary">Floating window %1$s · virtual display %2$s</string>
     <string name="settings_unlock_summary">%1$s · %2$s</string>
     <string name="settings_unlock_credential_configured">Credential configured</string>
     <string name="settings_unlock_credential_missing">No credential</string>
@@ -421,9 +429,9 @@
     <string name="settings_local">Local</string>
     <string name="settings_online">Online</string>
     <string name="settings_version_short">v%1$s</string>
-    <string name="settings_group_control_vision">Control &amp; recognition</string>
-    <string name="settings_group_run">Run &amp; automation</string>
+    <string name="settings_group_automation">Automation</string>
     <string name="settings_group_extensions">Extensions</string>
+    <string name="settings_group_security">Security</string>
     <string name="settings_group_data">Data</string>
 
     <!-- Control & vision -->

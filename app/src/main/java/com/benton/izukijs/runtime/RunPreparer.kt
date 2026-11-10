@@ -46,6 +46,7 @@ class RunPreparer(
     private val runHistoryRepository: RunHistoryRepository,
     private val virtualScreen: VirtualScreenManager,
     private val virtualScreenSettings: VirtualScreenSettingsRepository,
+    private val runtimeSettings: RuntimeSettingsRepository,
 ) {
 
     internal fun prepare(
@@ -94,8 +95,16 @@ class RunPreparer(
         runCatching { ScriptForegroundService.start(appContext, scriptName) }.onFailure {
             logBus.warn("前台服务启动失败，脚本将继续运行但可能被系统回收：${it.message}")
         }
-        runCatching { FloatingWindowService.showForRun(appContext) }.onFailure {
-            logBus.warn("悬浮窗启动失败：${it.message}")
+        val floatingMode = runtimeSettings.current().floatingWindowMode
+        if (floatingMode != FloatingWindowMode.OFF) {
+            runCatching {
+                FloatingWindowService.showForRun(
+                    appContext,
+                    collapsed = floatingMode == FloatingWindowMode.COLLAPSED,
+                )
+            }.onFailure {
+                logBus.warn("悬浮窗启动失败：${it.message}")
+            }
         }
         return PreparedRun(scriptEnv, plannedRunMode, virtualSettings)
     }

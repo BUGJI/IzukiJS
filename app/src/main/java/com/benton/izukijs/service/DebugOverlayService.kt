@@ -371,7 +371,7 @@ class DebugOverlayService : Service() {
 
         private val _active = MutableStateFlow(false)
 
-        /** 服务运行状态的响应式订阅，供「权限与能力」页同步开关。 */
+        /** 服务运行状态的响应式订阅，供「设置 → 悬浮窗与虚拟屏」页同步开关。 */
         val active: StateFlow<Boolean> = _active.asStateFlow()
 
         @Volatile

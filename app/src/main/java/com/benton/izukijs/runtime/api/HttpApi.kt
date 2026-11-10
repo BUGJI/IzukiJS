@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets
 import org.json.JSONObject
 
 /**
- * 脚本网络 API。挂在全局 `http` 命名空间，默认关闭，可在「权限与能力 → 其他」启用。
+ * 脚本网络 API。挂在全局 `http` 命名空间，默认关闭，可在「权限与能力 → 附加能力」启用。
  *
  * 只支持 http / https；域名白名单为空时放行任意主机，填写后按主机或子域匹配。
  * 请求方法、Header、请求体、超时与是否跟随重定向均由脚本指定。为避免脚本误读超大响应，

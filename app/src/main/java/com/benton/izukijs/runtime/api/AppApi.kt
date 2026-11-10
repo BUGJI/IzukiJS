@@ -22,7 +22,7 @@ import org.json.JSONObject
  *
  * [shellExec] 为可选的 Shell 执行器（Shizuku / Root），用于在无障碍不可用时通过
  * `dumpsys window` 兜底获取当前前台包名；[usageStats] 兜底在两者都不可用时按使用记录推断。
- * [appListEnabled] 是「权限与能力」页里应用列表开关的读取器。
+ * [appListEnabled] 是「权限与能力 → 附加能力」页里应用列表开关的读取器。
  */
 class AppApi(
     private val context: Context,

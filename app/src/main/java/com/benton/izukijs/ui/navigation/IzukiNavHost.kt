@@ -462,11 +462,6 @@ private fun DetailNavHost(
                 onBack = { navController.popBackStack() },
                 onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
                 onOpenAdb = { navController.navigate(Routes.ADB) { launchSingleTop = true } },
-                onOpenUnlockSettings = {
-                    navController.navigate(Routes.settingsDetail(SettingsCategory.UNLOCK)) {
-                        launchSingleTop = true
-                    }
-                },
             )
         }
         composable(Routes.SCHEDULE) {
@@ -518,7 +513,7 @@ private fun DetailNavHost(
             VirtualScreenScreen(
                 onBack = { navController.popBackStack() },
                 onOpenSettings = {
-                    navController.navigate(Routes.settingsDetail(SettingsCategory.RUN)) {
+                    navController.navigate(Routes.settingsDetail(SettingsCategory.DISPLAY)) {
                         launchSingleTop = true
                     }
                 },

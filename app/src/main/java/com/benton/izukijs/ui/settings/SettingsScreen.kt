@@ -43,9 +43,10 @@ enum class SettingsCategory(val key: String, @StringRes val titleRes: Int) {
     CONTROL("control", R.string.settings_control),
     VISION("vision", R.string.settings_vision),
     RUN("run", R.string.settings_run),
+    DISPLAY("display", R.string.settings_display),
     UNLOCK("unlock", R.string.settings_unlock),
     ENV("env", R.string.settings_env),
-    STORAGE("storage", R.string.settings_storage),
+    LOG("log", R.string.settings_storage),
     BACKUP("backup", R.string.settings_backup),
     ABOUT("about", R.string.settings_about),
     ;
@@ -81,7 +82,7 @@ fun SettingsScreen(
                 ) { onOpenCategory(SettingsCategory.GENERAL) }
             }
             Spacer(Modifier.height(SectionGap))
-            CategoryGroup(stringResource(R.string.settings_group_control_vision)) {
+            CategoryGroup(stringResource(R.string.settings_group_automation)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.CONTROL.titleRes),
                     summary = stringResource(
@@ -104,14 +105,26 @@ fun SettingsScreen(
                         ),
                     ),
                 ) { onOpenCategory(SettingsCategory.VISION) }
-            }
-            Spacer(Modifier.height(SectionGap))
-            CategoryGroup(stringResource(R.string.settings_group_run)) {
                 CategoryRow(
                     title = stringResource(SettingsCategory.RUN.titleRes),
                     summary = stringResource(
                         R.string.settings_run_summary,
-                        ui.virtualScreenSettings.defaultMode.localizedName(),
+                        if (ui.runtimeSettings.scriptTimeoutMinutes <= 0) {
+                            stringResource(R.string.perm_timeout_unlimited)
+                        } else {
+                            stringResource(
+                                R.string.perm_timeout_minutes,
+                                ui.runtimeSettings.scriptTimeoutMinutes,
+                            )
+                        },
+                        stringResource(if (ui.runtimeSettings.keepAwake) R.string.common_on else R.string.common_off),
+                    ),
+                ) { onOpenCategory(SettingsCategory.RUN) }
+                CategoryRow(
+                    title = stringResource(SettingsCategory.DISPLAY.titleRes),
+                    summary = stringResource(
+                        R.string.settings_display_summary,
+                        ui.runtimeSettings.floatingWindowMode.localizedName(),
                         stringResource(
                             when (ui.virtualScreenState) {
                                 VirtualScreenState.Idle -> R.string.virtual_screen_status_short_idle
@@ -121,23 +134,11 @@ fun SettingsScreen(
                             },
                         ),
                     ),
-                ) { onOpenCategory(SettingsCategory.RUN) }
+                ) { onOpenCategory(SettingsCategory.DISPLAY) }
                 CategoryRow(
-                    title = stringResource(SettingsCategory.UNLOCK.titleRes),
-                    summary = stringResource(
-                        R.string.settings_unlock_summary,
-                        stringResource(
-                            if (ui.unlockSettings.enabled) R.string.common_on else R.string.common_off,
-                        ),
-                        stringResource(
-                            if (ui.unlockSettings.hasCredential) {
-                                R.string.settings_unlock_credential_configured
-                            } else {
-                                R.string.settings_unlock_credential_missing
-                            },
-                        ),
-                    ),
-                ) { onOpenCategory(SettingsCategory.UNLOCK) }
+                    title = stringResource(SettingsCategory.ENV.titleRes),
+                    summary = stringResource(R.string.settings_env_summary, ui.globalEnv.size),
+                ) { onOpenCategory(SettingsCategory.ENV) }
             }
             Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_extensions)) {
@@ -158,21 +159,36 @@ fun SettingsScreen(
                         stringResource(R.string.settings_mcp_summary_stopped)
                     },
                 ) { onOpenMcp() }
+            }
+            Spacer(Modifier.height(SectionGap))
+            CategoryGroup(stringResource(R.string.settings_group_security)) {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.ENV.titleRes),
-                    summary = stringResource(R.string.settings_env_summary, ui.globalEnv.size),
-                ) { onOpenCategory(SettingsCategory.ENV) }
+                    title = stringResource(SettingsCategory.UNLOCK.titleRes),
+                    summary = stringResource(
+                        R.string.settings_unlock_summary,
+                        stringResource(
+                            if (ui.unlockSettings.enabled) R.string.common_on else R.string.common_off,
+                        ),
+                        stringResource(
+                            if (ui.unlockSettings.hasCredential) {
+                                R.string.settings_unlock_credential_configured
+                            } else {
+                                R.string.settings_unlock_credential_missing
+                            },
+                        ),
+                    ),
+                ) { onOpenCategory(SettingsCategory.UNLOCK) }
             }
             Spacer(Modifier.height(SectionGap))
             CategoryGroup(stringResource(R.string.settings_group_data)) {
                 CategoryRow(
-                    title = stringResource(SettingsCategory.STORAGE.titleRes),
+                    title = stringResource(SettingsCategory.LOG.titleRes),
                     summary = stringResource(
                         R.string.settings_storage_summary,
                         ui.logSettings.maxSizeMb,
                         ui.logSettings.retentionDays,
                     ),
-                ) { onOpenCategory(SettingsCategory.STORAGE) }
+                ) { onOpenCategory(SettingsCategory.LOG) }
                 CategoryRow(
                     title = stringResource(SettingsCategory.BACKUP.titleRes),
                     summary = stringResource(R.string.settings_backup_summary),
@@ -212,10 +228,11 @@ fun SettingsDetailScreen(
             SettingsCategory.GENERAL -> GeneralSettings()
             SettingsCategory.CONTROL -> ControlSettings(onOpenSetup = onOpenSetup)
             SettingsCategory.VISION -> VisionSettings()
-            SettingsCategory.RUN -> RunSettings(onOpenSetup = onOpenSetup)
+            SettingsCategory.RUN -> RunSettings()
+            SettingsCategory.DISPLAY -> DisplaySettings(onOpenSetup = onOpenSetup)
             SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
             SettingsCategory.ENV -> GlobalEnvSettings()
-            SettingsCategory.STORAGE -> StorageSettings()
+            SettingsCategory.LOG -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()
             SettingsCategory.ABOUT -> AboutSettings()
             null -> Text(

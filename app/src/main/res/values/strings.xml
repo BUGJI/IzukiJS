@@ -44,8 +44,14 @@
     <string name="settings_progress_notification_desc">允许脚本通过 notify.progress 更新运行通知的进度、阶段与颜色；关闭后该 API 返回 false。</string>
     <string name="settings_notification_permission_denied">通知权限未授予，进度通知不会显示。</string>
     <string name="settings_notification_permission_action">授予通知权限</string>
+    <string name="settings_floating_window">悬浮控制条</string>
+    <string name="settings_floating_window_desc">脚本运行时如何显示日志悬浮条。折叠后只保留标题栏和停止按钮，避免遮挡屏幕。</string>
+    <string name="settings_floating_mode_off">不弹出</string>
+    <string name="settings_floating_mode_collapsed">折叠显示</string>
+    <string name="settings_floating_mode_expanded">展开显示</string>
+    <string name="settings_floating_window_hint">选择「不弹出」会关闭当前悬浮条；之后仍可在此页手动开启。脚本保活由运行通知负责，不受影响。</string>
     <string name="settings_perf_baseline">性能基线</string>
-    <string name="settings_perf_baseline_desc">记录帧耗时、截图、找图找色、OCR 与日志刷新等指标，每 30 秒输出一次到 logcat；用 adb logcat -s IzukiPerf 查看。</string>
+    <string name="settings_perf_baseline_desc">记录帧耗时、内存 / GC、截图、找图找色、OCR 与日志刷新等指标，每 30 秒输出一次到应用内日志（以 [perf] 开头）和 logcat；也可用 adb logcat -s IzukiPerf 查看。</string>
     <string name="settings_perf_baseline_toggle">启用性能基线采集</string>
     <string name="settings_perf_baseline_toggle_desc">建议仅在对比优化前后、或排查卡顿时开启，日常使用保持关闭。</string>
     <string name="settings_perf_baseline_report_now">立即输出本次统计</string>
@@ -273,7 +279,7 @@
     <string name="perm_overlay_needed">需要在系统设置中授予「显示在其他应用上层」权限。</string>
     <string name="perm_group_read">读取</string>
     <string name="perm_group_operate">操作</string>
-    <string name="perm_group_other">其他</string>
+    <string name="perm_group_other">附加能力</string>
     <string name="perm_status_unauthorized">未授权</string>
     <string name="perm_detail_open">查看说明</string>
     <string name="perm_detail_close">知道了</string>
@@ -392,13 +398,14 @@
     <string name="settings_title">设置</string>
     <string name="settings_control">控制后端</string>
     <string name="settings_vision">识别与截图</string>
-    <string name="settings_run">运行与虚拟屏</string>
+    <string name="settings_run">脚本运行</string>
+    <string name="settings_display">悬浮窗与虚拟屏</string>
     <string name="settings_unlock">安全解锁</string>
     <string name="settings_editor">编辑器</string>
     <string name="settings_ai_agent">AI Agent</string>
-    <string name="settings_storage">存储与日志</string>
+    <string name="settings_storage">日志</string>
     <string name="settings_backup">备份与恢复</string>
-    <string name="settings_about">关于</string>
+    <string name="settings_about">关于与更新</string>
     <string name="settings_env">环境变量</string>
     <string name="settings_env_summary">已定义 %1$d 个变量</string>
     <string name="settings_env_desc">所有脚本默认共享这些变量；脚本内同名变量优先。</string>
@@ -410,7 +417,8 @@
     <string name="settings_unknown_category">未知的设置分组。</string>
     <string name="settings_control_summary">读取 %1$s · 操作 %2$s</string>
     <string name="settings_vision_summary">截图 %1$d%% · OCR %2$s</string>
-    <string name="settings_run_summary">默认 %1$s · 虚拟屏%2$s</string>
+    <string name="settings_run_summary">超时 %1$s · 保持唤醒 %2$s</string>
+    <string name="settings_display_summary">悬浮窗 %1$s · 虚拟屏%2$s</string>
     <string name="settings_unlock_summary">%1$s · %2$s</string>
     <string name="settings_unlock_credential_configured">凭据已配置</string>
     <string name="settings_unlock_credential_missing">未配置凭据</string>
@@ -421,9 +429,9 @@
     <string name="settings_local">本地</string>
     <string name="settings_online">在线</string>
     <string name="settings_version_short">v%1$s</string>
-    <string name="settings_group_control_vision">控制与识别</string>
-    <string name="settings_group_run">运行与自动化</string>
+    <string name="settings_group_automation">自动化</string>
     <string name="settings_group_extensions">扩展</string>
+    <string name="settings_group_security">安全</string>
     <string name="settings_group_data">数据</string>
 
     <!-- 控制与视觉 -->

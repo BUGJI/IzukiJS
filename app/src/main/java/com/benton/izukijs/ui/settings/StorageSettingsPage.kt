@@ -11,6 +11,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.SectionCard
@@ -152,6 +154,29 @@ internal fun StorageSettings() {
                     }
                 }
             }) { Text(stringResource(R.string.storage_export_log)) }
+        }
+    }
+
+    Spacer(Modifier.height(SectionGap))
+    SectionCard(stringResource(R.string.settings_perf_baseline)) {
+        Text(
+            stringResource(R.string.settings_perf_baseline_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            label = stringResource(R.string.settings_perf_baseline_toggle),
+            description = stringResource(R.string.settings_perf_baseline_toggle_desc),
+            checked = ui.runtimeSettings.perfBaseline,
+        ) {
+            viewModel.saveRuntimeSettings(ui.runtimeSettings.copy(perfBaseline = it))
+        }
+        if (ui.runtimeSettings.perfBaseline) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = { PerfMetrics.reportNow() }) {
+                Text(stringResource(R.string.settings_perf_baseline_report_now))
+            }
         }
     }
 

@@ -116,6 +116,8 @@ class ScriptExecutionManager(
             lastStartedRunId = runId
             RunLogRegistry.begin(runId, scriptId, scriptName)
             activeSession = session
+            PerfMetrics.count("script.run")
+            PerfMetrics.setGauge("script.running", 1L)
         }
 
         // 参数解析、运行历史落盘、通知 / 悬浮窗启动等放到后台，避免从界面点运行时阻塞主线程。
@@ -301,6 +303,13 @@ class ScriptExecutionManager(
                 }
                 val error = failure?.let { it.stackTraceToString().take(MAX_RUN_ERROR_CHARS) }
                 RunLogRegistry.finish(session.runId, status, error)
+                when (status) {
+                    RunStatus.SUCCEEDED -> PerfMetrics.count("script.succeeded")
+                    RunStatus.FAILED -> PerfMetrics.count("script.failed")
+                    RunStatus.TIMEOUT -> PerfMetrics.count("script.timeout")
+                    RunStatus.STOPPED -> PerfMetrics.count("script.stopped")
+                    RunStatus.RUNNING -> Unit
+                }
                 val success = !timedOut && (failure == null || exited)
                 runCatching { onFinished?.invoke(success) }.onFailure {
                     logBus.warn("运行结束回调失败：${it.message}")
@@ -326,6 +335,7 @@ class ScriptExecutionManager(
             RunStatus.FAILED,
             error.stackTraceToString().take(MAX_RUN_ERROR_CHARS),
         )
+        PerfMetrics.count("script.failed")
         session.releaseWakeLock()
         resetRunningState(session)
         runCatching { ScriptForegroundService.stop(appContext) }
@@ -361,6 +371,7 @@ class ScriptExecutionManager(
             _runningScriptId.value = null
             _runningRunId.value = null
             activeSession = null
+            PerfMetrics.setGauge("script.running", 0L)
         }
     }
 

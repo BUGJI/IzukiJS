@@ -9,6 +9,13 @@
 
 ### 新增
 
+- 日志设置页（设置 → 数据 → 日志 → 日志存储下方）新增性能基线开关与「立即输出」；报告接入应用内日志：
+  每次统计写「1 条 `[perf]` 汇总 + 1 条多行明细」，可在日志页筛选、
+  导出，MCP `read_logs` 也可读取；logcat（`adb logcat -s IzukiPerf`）输出保留。新增帧分解
+  （layout / draw / sync / gpu 等）、内存 / GC / 线程 / FD、日志丢弃与落盘体积、找图找色命中率、
+  脚本运行状态等指标，详见 [`docs/PERF.md`](docs/PERF.md)。
+- 新增「设置 → 运行与虚拟屏 → 悬浮控制条」显示模式：不弹出 / 折叠显示 / 展开显示（默认）。
+  折叠时只保留标题栏与停止按钮；关闭自动弹出不影响脚本保活与通知栏控制。
 - 脚本新增图色区域识别：`images.findColorRegions()` / `images.findColorRegionsInRaw()` 按连通域返回
   `{x,y,w,h,pixels,cx,cy}`，支持 `minPixels` / `maxRegions` / `region` 过滤；新增
   `images.findColorInRaw()`，可复用指定截图找色。`docs/SCRIPT_API.md` 同步补充

@@ -173,15 +173,17 @@ Artifacts are split per ABI: `arm64-v8a` / `armeabi-v7a` / `x86_64`.
 ### First Run
 
 1. Open the app and, under "Run → Permissions & Capabilities", enable the backends you need within
-   the "Read / Operate / Other" groups:
+   the "Read / Operate / Extra capabilities" groups:
    - **Accessibility**: jump to the system accessibility settings and enable it (view tree,
      API30+ screenshots, basic gestures).
    - **Shizuku**: install and start Shizuku first, then authorize in the app (input injection,
      screenshots, Shell).
    - **Root**: detect Root and authorize through `su`.
    - **Bluetooth HID**: scan for and connect an external HID dongle.
-   - **Other capabilities** (switch-based): notification listening, usage access, app list, full
-     file access, keep-awake / wake screen, automatic lock-screen unlock, Quick Settings tile.
+   - **Extra capabilities** (switch-based): notification listening, usage access, app list, full
+     file access.
+   - Runtime timeout, keep-awake, Quick Settings tile, automatic unlock and floating window now
+     live under "Settings".
 
 2. For unlimited screenshots, authorize "Screen capture" once under "Permissions & Capabilities" and
    start it.

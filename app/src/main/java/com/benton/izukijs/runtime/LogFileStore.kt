@@ -3,6 +3,7 @@ package com.benton.izukijs.runtime
 import android.content.Context
 import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.core.log.LogLevel
+import com.benton.izukijs.core.perf.PerfMetrics
 import java.io.BufferedReader
 import java.io.BufferedWriter
 import java.io.File
@@ -42,7 +43,7 @@ class LogFileStore(
         synchronized(lock) {
             pending.append(entry.timeMillis)
                 .append('|').append(entry.level.name).append('|')
-                .append(entry.message).append('\n')
+                .append(entry.message.escapeNewlines()).append('\n')
             schedule = !flushScheduled
             if (schedule) flushScheduled = true
         }
@@ -176,8 +177,13 @@ class LogFileStore(
             FileOutputStream(logFile, true).use { it.write(data) }
             val settings = settingsRepository.current()
             if (settings.autoClean) enforceSizeLocked(settings)
+            PerfMetrics.setGauge("log.file.bytes", logFile.length())
         }
     }
+
+    /** 日志文件按行解析，消息里的换行必须转义，否则会破坏 `time|LEVEL|message` 格式。 */
+    private fun String.escapeNewlines(): String =
+        replace("\r\n", "\\n").replace("\n", "\\n").replace("\r", "\\n")
 
     /** 超过上限时保留尾部约一半内容，采用流式截断，避免整文件读入内存。 */
     private fun enforceSizeLocked(settings: LogSettings) {
