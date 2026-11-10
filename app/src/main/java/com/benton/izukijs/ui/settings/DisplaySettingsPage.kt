@@ -14,7 +14,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,7 +37,7 @@ import com.benton.izukijs.virtualscreen.DeviceScreenResolution
 import com.benton.izukijs.virtualscreen.VirtualScreenResolution
 import com.benton.izukijs.virtualscreen.VirtualScreenState
 import com.benton.izukijs.ui.common.ChipFlow
-import com.benton.izukijs.ui.common.LabeledField
+import com.benton.izukijs.ui.common.NumberField
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.localizedName
@@ -47,16 +46,17 @@ import com.benton.izukijs.ui.appViewModel
 /** 悬浮窗与虚拟屏：统一管理悬浮条显示方式、控制面板开关与虚拟屏参数。 */
 @Composable
 internal fun DisplaySettings(onOpenSetup: () -> Unit = {}) {
-    FloatingWindowSettingsSection()
+    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+
+    FloatingWindowSettingsSection(ui, viewModel)
 
     Spacer(Modifier.height(SectionGap))
-    VirtualScreenSettingsSection(onOpenSetup = onOpenSetup)
+    VirtualScreenSettingsSection(ui, viewModel, onOpenSetup = onOpenSetup)
 }
 
 @Composable
-private fun FloatingWindowSettingsSection() {
-    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
-    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+private fun FloatingWindowSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
     val context = LocalContext.current
     val floatingEnabled by FloatingWindowService.active.collectAsStateWithLifecycle()
     val debugOverlayEnabled by DebugOverlayService.active.collectAsStateWithLifecycle()
@@ -167,9 +167,11 @@ private fun FloatingWindowSettingsSection() {
 }
 
 @Composable
-private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
-    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
-    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+private fun VirtualScreenSettingsSection(
+    ui: SettingsUiState,
+    viewModel: SettingsViewModel,
+    onOpenSetup: () -> Unit = {},
+) {
     val context = LocalContext.current
     val settings = ui.virtualScreenSettings
     val readyModes = ui.readyModes
@@ -184,19 +186,6 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
 
     fun save(new: com.benton.izukijs.virtualscreen.VirtualScreenSettings) =
         viewModel.saveVirtualScreen(new)
-
-    var widthText by remember { mutableStateOf(settings.resolution.width.toString()) }
-    var heightText by remember { mutableStateOf(settings.resolution.height.toString()) }
-    var dpiText by remember { mutableStateOf(settings.resolution.dpi.toString()) }
-    LaunchedEffect(settings.resolution) {
-        widthText = settings.resolution.width.toString()
-        heightText = settings.resolution.height.toString()
-        dpiText = settings.resolution.dpi.toString()
-    }
-    val customSizeInvalid =
-        widthText.toIntOrNull()?.let { it in VirtualScreenResolution.MIN_SIZE..VirtualScreenResolution.MAX_SIZE } != true ||
-            heightText.toIntOrNull()?.let { it in VirtualScreenResolution.MIN_SIZE..VirtualScreenResolution.MAX_SIZE } != true ||
-            dpiText.toIntOrNull()?.let { it in VirtualScreenResolution.MIN_DPI..VirtualScreenResolution.MAX_DPI } != true
 
     SectionCard(stringResource(R.string.virtual_screen_title)) {
         Text(
@@ -296,38 +285,29 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            LabeledField(
+            NumberField(
                 label = stringResource(R.string.virtual_screen_width),
-                value = widthText,
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-            ) { input ->
-                widthText = input
-                input.toIntOrNull()?.let { width ->
-                    val next = settings.resolution.copy(width = width)
-                    if (next.isValid) save(settings.copy(resolution = next))
-                }
+                value = settings.resolution.width,
+                range = VirtualScreenResolution.MIN_SIZE..VirtualScreenResolution.MAX_SIZE,
+                commitOnBlur = true,
+            ) { width ->
+                save(settings.copy(resolution = settings.resolution.copy(width = width)))
             }
-            LabeledField(
+            NumberField(
                 label = stringResource(R.string.virtual_screen_height),
-                value = heightText,
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-            ) { input ->
-                heightText = input
-                input.toIntOrNull()?.let { height ->
-                    val next = settings.resolution.copy(height = height)
-                    if (next.isValid) save(settings.copy(resolution = next))
-                }
+                value = settings.resolution.height,
+                range = VirtualScreenResolution.MIN_SIZE..VirtualScreenResolution.MAX_SIZE,
+                commitOnBlur = true,
+            ) { height ->
+                save(settings.copy(resolution = settings.resolution.copy(height = height)))
             }
-            LabeledField(
+            NumberField(
                 label = stringResource(R.string.virtual_screen_dpi),
-                value = dpiText,
-                keyboardType = androidx.compose.ui.text.input.KeyboardType.Number,
-            ) { input ->
-                dpiText = input
-                input.toIntOrNull()?.let { dpi ->
-                    val next = settings.resolution.copy(dpi = dpi)
-                    if (next.isValid) save(settings.copy(resolution = next))
-                }
+                value = settings.resolution.dpi,
+                range = VirtualScreenResolution.MIN_DPI..VirtualScreenResolution.MAX_DPI,
+                commitOnBlur = true,
+            ) { dpi ->
+                save(settings.copy(resolution = settings.resolution.copy(dpi = dpi)))
             }
             Text(
                 stringResource(
@@ -340,13 +320,6 @@ private fun VirtualScreenSettingsSection(onOpenSetup: () -> Unit = {}) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (customSizeInvalid) {
-                Text(
-                    stringResource(R.string.virtual_screen_custom_invalid),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
 
             if (pipSupported) {
                 Spacer(Modifier.height(SectionGap))

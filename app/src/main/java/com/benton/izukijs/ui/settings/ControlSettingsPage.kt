@@ -39,11 +39,16 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
     fun saveController(new: ControllerSettings) = viewModel.saveController(new)
 
     val capabilitiesByMode = viewModel.capabilitiesByMode()
+    val disabledModes = controllerSettings.disabledModes
     val readModes = ControlMode.entries.filter { mode ->
-        mode in readyModes && capabilitiesByMode[mode].orEmpty().any { it.group == CapabilityGroup.READ }
+        mode in readyModes &&
+            mode !in disabledModes &&
+            capabilitiesByMode[mode].orEmpty().any { it.group == CapabilityGroup.READ }
     }
     val operateModes = ControlMode.entries.filter { mode ->
-        mode in readyModes && capabilitiesByMode[mode].orEmpty().any { it.group == CapabilityGroup.OPERATE }
+        mode in readyModes &&
+            mode !in disabledModes &&
+            capabilitiesByMode[mode].orEmpty().any { it.group == CapabilityGroup.OPERATE }
     }
 
     PriorityCard(
@@ -67,7 +72,9 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
 
     val choiceCapabilities = Capability.entries.filter { capability ->
         ControlMode.entries.count { mode ->
-            mode in readyModes && capability in (capabilitiesByMode[mode] ?: emptySet())
+            mode in readyModes &&
+                mode !in disabledModes &&
+                capability in (capabilitiesByMode[mode] ?: emptySet())
         } >= 2
     }
 
@@ -83,6 +90,7 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
                 title = stringResource(R.string.perm_group_read),
                 capabilities = choiceCapabilities.filter { it.group == CapabilityGroup.READ },
                 readyModes = readyModes,
+                disabledModes = disabledModes,
                 capabilitiesByMode = capabilitiesByMode,
                 preferences = controllerSettings.capabilityPreferences,
             ) { capability, mode ->
@@ -100,6 +108,7 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
                 title = stringResource(R.string.perm_group_operate),
                 capabilities = choiceCapabilities.filter { it.group == CapabilityGroup.OPERATE },
                 readyModes = readyModes,
+                disabledModes = disabledModes,
                 capabilitiesByMode = capabilitiesByMode,
                 preferences = controllerSettings.capabilityPreferences,
             ) { capability, mode ->
@@ -145,7 +154,20 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
                         } else {
                             controllerSettings.disabledModes + mode
                         }
-                        saveController(controllerSettings.copy(disabledModes = disabled))
+                        // 停用后同时清掉指向该后端的偏好，避免留下永远不生效的选中项。
+                        saveController(
+                            if (enabled) {
+                                controllerSettings.copy(disabledModes = disabled)
+                            } else {
+                                controllerSettings.copy(
+                                    disabledModes = disabled,
+                                    readMode = controllerSettings.readMode.takeUnless { it == mode },
+                                    operateMode = controllerSettings.operateMode.takeUnless { it == mode },
+                                    capabilityPreferences = controllerSettings.capabilityPreferences
+                                        .filterValues { it != mode },
+                                )
+                            },
+                        )
                     },
                 )
             }
@@ -220,6 +242,7 @@ private fun CapabilityPreferenceBlock(
     title: String,
     capabilities: List<Capability>,
     readyModes: Set<ControlMode>,
+    disabledModes: Set<ControlMode>,
     capabilitiesByMode: Map<ControlMode, Set<Capability>>,
     preferences: Map<Capability, ControlMode>,
     onSelect: (Capability, ControlMode?) -> Unit,
@@ -242,7 +265,11 @@ private fun CapabilityPreferenceBlock(
                 label = { Text(stringResource(R.string.ctrl_follow_global)) },
             )
             ControlMode.entries
-                .filter { mode -> mode in readyModes && capability in (capabilitiesByMode[mode] ?: emptySet()) }
+                .filter { mode ->
+                    mode in readyModes &&
+                        mode !in disabledModes &&
+                        capability in (capabilitiesByMode[mode] ?: emptySet())
+                }
                 .forEach { mode ->
                     FilterChip(
                         selected = preferences[capability] == mode,

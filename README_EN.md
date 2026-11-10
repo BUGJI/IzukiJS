@@ -22,6 +22,7 @@ OCR and AI-Agent recovery.
   <img src="docs/images/run.png" width="22%" alt="Run page" />
   <img src="docs/images/editor.png" width="22%" alt="Script editor" />
   <img src="docs/images/logs.png" width="22%" alt="Logs page" />
+  <!-- TODO: settings page was reorganized; this screenshot is an outdated placeholder -->
   <img src="docs/images/settings.png" width="22%" alt="Settings page" />
 </p>
 

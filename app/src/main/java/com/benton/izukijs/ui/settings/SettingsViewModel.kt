@@ -10,6 +10,7 @@ import com.benton.izukijs.data.UnlockSettings
 import com.benton.izukijs.di.AppContainer
 import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.mcp.McpStatus
+import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ocr.OcrConfig
@@ -39,6 +40,7 @@ data class SettingsUiState(
     val logSettings: LogSettings = LogSettings(),
     val aiConfig: AiConfig = AiConfig(),
     val mcpStatus: McpStatus = McpStatus(),
+    val mcpConfig: McpConfig = McpConfig(),
     val language: AppLanguage = AppLanguage.SYSTEM,
     val appearance: AppearanceSettings = AppearanceSettings(),
     val updateSettings: UpdateSettings = UpdateSettings(),
@@ -83,6 +85,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.mcpServerController.status.collectInto { state, value ->
             state.copy(mcpStatus = value)
         }
+        container.mcpConfigRepository.config.collectInto { state, value ->
+            state.copy(mcpConfig = value)
+        }
         container.languageRepository.language.collectInto { state, value ->
             state.copy(language = value)
         }
@@ -125,6 +130,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun saveVirtualScreen(value: VirtualScreenSettings) =
         container.virtualScreenSettingsRepository.save(value)
+
+    fun saveUnlock(value: UnlockSettings) = container.unlockSettingsRepository.save(value)
+
+    fun setUnlockPin(pin: String) = container.unlockSettingsRepository.setPin(pin)
+
+    fun clearUnlockPattern() = container.unlockSettingsRepository.setPattern(null)
 
     fun saveRuntimeSettings(value: RuntimeSettings) = container.runtimeSettingsRepository.save(value)
 

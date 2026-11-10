@@ -294,9 +294,11 @@ private fun MainTabsHost(
 }
 
 /**
- * 四个底部标签的可滑动容器。用 [HorizontalPager] 承载，左右滑动或点击底栏即可切换；
- * `beyondViewportPageCount` 设为标签总数，让四个页面常驻组合，避免切走后状态丢失。
- * 常驻组合下，日志页通过 `isActivePage` 在非当前页时停止订阅高频 LogBus，避免后台页反复重组。
+ * 四个底部标签的可滑动容器。用 [HorizontalPager] 承载，左右滑动或点击底栏即可切换。
+ *
+ * 不预组合离屏页（[beyondViewportPageCount] 为 0）：四个页面同时首帧组合会多花约 2.7s
+ * 冷启动时间，改为按需组合；页面内可保存的状态由 Pager 按页恢复，切走再回来不受影响。
+ * 日志页仍通过 `isActivePage` 在非当前页时停止订阅高频 LogBus，避免后台页反复重组。
  */
 @Composable
 private fun MainTabs(
@@ -317,7 +319,7 @@ private fun MainTabs(
     HorizontalPager(
         state = pagerState,
         modifier = Modifier.fillMaxSize(),
-        beyondViewportPageCount = BottomItem.entries.size,
+        beyondViewportPageCount = 0,
         userScrollEnabled = userScrollEnabled,
     ) { page ->
         when (BottomItem.entries[page]) {
@@ -343,6 +345,7 @@ private fun MainTabs(
                 onOpenCategory = onOpenCategory,
                 onOpenAi = onOpenAi,
                 onOpenMcp = onOpenMcp,
+                onOpenSetup = onOpenSetup,
             )
         }
     }

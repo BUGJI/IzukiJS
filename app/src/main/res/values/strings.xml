@@ -263,16 +263,12 @@
     <string name="perm_adb_con_1">需要 Android 11+，并手动开启开发者选项与无线调试</string>
     <string name="perm_adb_con_2">重启后通常需重新开启；不支持虚拟屏与 Shizuku 特权解锁</string>
     <string name="perm_action_adb_setup">去连接</string>
-    <string name="perm_action_adb_connected">已连接</string>
     <string name="perm_root_desc">通过 Root 权限注入手势 / 按键 / 文本，截图、执行 Shell 及系统级操作。</string>
     <string name="perm_root_pro_1">提供手势 / 按键 / 文本 / 截图 / Shell 及系统级能力</string>
     <string name="perm_root_pro_2">Root 设备用户可自行处理环境与检测，不易被风控识别</string>
     <string name="perm_root_con_1">需设备已 Root，门槛高</string>
     <string name="perm_action_detect_root">检测 Root</string>
     <string name="perm_action_revoke">撤销权限</string>
-    <string name="perm_floating_title">悬浮窗</string>
-    <string name="perm_floating_desc">以悬浮窗显示控制条与调试面板，方便随时运行脚本、可视化控件树与 OCR 坐标。</string>
-    <string name="perm_floating_tip">建议配合任意控制权限使用，便于运行脚本与调试。</string>
     <string name="perm_floating_control">显示悬浮控制条</string>
     <string name="perm_floating_debug">显示布局 / OCR 调试面板</string>
     <string name="perm_floating_debug_desc">抓取布局 / OCR 时会自动隐藏，避免被截入画面。</string>
@@ -337,7 +333,6 @@
     <string name="unlock_testing">正在测试…</string>
     <string name="unlock_test_locked_hint">设备未处于锁屏状态，测试会自动锁屏后再尝试解锁。</string>
     <string name="unlock_risk">PIN 错误或录制内容不正确可能触发系统限流或清空；请仅在自己拥有的设备上使用，并优先使用 PIN。</string>
-    <string name="unlock_pattern_record_title">手动录制解锁动作</string>
     <string name="unlock_pattern_record_hint">会先自动锁屏并点亮；请完成平时的解锁动作并录制下来，进入系统后自动结束录制。结果仅在本机加密保存。</string>
     <string name="unlock_result_ok">解锁成功</string>
     <string name="unlock_result_already">当前未锁屏</string>
@@ -355,10 +350,6 @@
     <string name="unlock_result_no_input">未录制到触摸动作</string>
     <string name="unlock_result_recording_timeout">录制超时，请重新录制</string>
     <string name="unlock_result_cancelled">录制已取消</string>
-    <string name="perm_unlock_title">自主解锁</string>
-    <string name="perm_unlock_desc">在运行脚本或定时任务前自动唤醒并解锁设备，凭据在「设置 → 安全解锁」中配置。</string>
-    <string name="perm_unlock_status_incomplete">已启用，未配置凭据</string>
-    <string name="perm_unlock_open_settings">前往设置</string>
     <string name="perm_timeout_title">运行超时</string>
     <string name="perm_timeout_desc">脚本运行超过设定时长后自动中断，避免死循环或卡死长期占用设备；选择「不限制」则只在手动停止时中断。</string>
     <string name="perm_timeout_unlimited">不限制</string>
@@ -371,7 +362,6 @@
     <string name="perm_tile_title">快捷磁贴</string>
     <string name="perm_tile_desc">在下拉快捷设置中显示一键运行 / 停止固定脚本的磁贴。</string>
     <string name="perm_tile_enable">启用快捷磁贴</string>
-    <string name="perm_tile_enabled_unbound">已启用 · 未绑定脚本</string>
     <string name="perm_tile_pinned">已绑定脚本：%1$s</string>
     <string name="perm_tile_pick_hint">尚未绑定脚本，请在脚本中心将某个脚本「钉到磁贴」。</string>
     <string name="perm_tile_add">添加到快捷设置</string>
@@ -418,7 +408,7 @@
     <string name="settings_control_summary">读取 %1$s · 操作 %2$s</string>
     <string name="settings_vision_summary">截图 %1$d%% · OCR %2$s</string>
     <string name="settings_run_summary">超时 %1$s · 保持唤醒 %2$s</string>
-    <string name="settings_display_summary">悬浮窗 %1$s · 虚拟屏%2$s</string>
+    <string name="settings_display_summary">悬浮窗 %1$s · 虚拟屏 %2$s</string>
     <string name="settings_unlock_summary">%1$s · %2$s</string>
     <string name="settings_unlock_credential_configured">凭据已配置</string>
     <string name="settings_unlock_credential_missing">未配置凭据</string>
@@ -431,6 +421,7 @@
     <string name="settings_version_short">v%1$s</string>
     <string name="settings_group_automation">自动化</string>
     <string name="settings_group_extensions">扩展</string>
+    <string name="settings_permissions_summary">后端授权、系统权限与附加能力</string>
     <string name="settings_group_security">安全</string>
     <string name="settings_group_data">数据</string>
 
@@ -463,7 +454,6 @@
     <string name="virtual_screen_height">高度</string>
     <string name="virtual_screen_dpi">DPI</string>
     <string name="virtual_screen_range">宽高范围 %1$d–%2$d，dpi 范围 %3$d–%4$d。</string>
-    <string name="virtual_screen_custom_invalid">当前输入超出范围，暂未保存；修正后自动生效。</string>
     <string name="virtual_screen_pip_on_home">后台运行时自动画中画</string>
     <string name="virtual_screen_pip_desc">停在运行页按 Home 时自动缩为系统画中画，继续显示虚拟屏画面；小窗内只读，不能操作。</string>
     <string name="virtual_screen_status_idle">状态：未运行</string>

@@ -263,16 +263,12 @@
     <string name="perm_adb_con_1">Requires Android 11+ and manual Developer options / Wireless debugging</string>
     <string name="perm_adb_con_2">Usually needs re-enabling after reboot; no virtual display or privileged unlock</string>
     <string name="perm_action_adb_setup">Connect</string>
-    <string name="perm_action_adb_connected">Connected</string>
     <string name="perm_root_desc">Inject gestures / keys / text, take screenshots, run Shell and system-level operations with Root privileges.</string>
     <string name="perm_root_pro_1">Provides gesture / key / text / screenshot / Shell and system-level capabilities</string>
     <string name="perm_root_pro_2">Rooted users can manage the environment and detection themselves, hard to flag by risk control</string>
     <string name="perm_root_con_1">Device must be rooted, high barrier</string>
     <string name="perm_action_detect_root">Detect Root</string>
     <string name="perm_action_revoke">Revoke</string>
-    <string name="perm_floating_title">Floating window</string>
-    <string name="perm_floating_desc">Show the control bar and debug panel as floating windows to run scripts anytime and visualize the node tree and OCR coordinates.</string>
-    <string name="perm_floating_tip">Recommended with any control permission to run and debug scripts easily.</string>
     <string name="perm_floating_control">Show floating control bar</string>
     <string name="perm_floating_debug">Show layout / OCR debug panel</string>
     <string name="perm_floating_debug_desc">Automatically hides while capturing layout / OCR so it is not captured on screen.</string>
@@ -337,7 +333,6 @@
     <string name="unlock_testing">Testing…</string>
     <string name="unlock_test_locked_hint">The device is not locked. It will be locked automatically and unlocked again.</string>
     <string name="unlock_risk">A wrong PIN or incorrect recording may trigger system throttling or a wipe. Use only on your own device, and prefer PIN.</string>
-    <string name="unlock_pattern_record_title">Manually record unlock actions</string>
     <string name="unlock_pattern_record_hint">The screen will be locked automatically; record your normal unlock and recording stops when the device unlocks. The recording is encrypted locally.</string>
     <string name="unlock_result_ok">Unlocked</string>
     <string name="unlock_result_already">Already unlocked</string>
@@ -355,10 +350,6 @@
     <string name="unlock_result_no_input">No touch input recorded</string>
     <string name="unlock_result_recording_timeout">Recording timed out; please try again</string>
     <string name="unlock_result_cancelled">Recording cancelled</string>
-    <string name="perm_unlock_title">Automatic unlock</string>
-    <string name="perm_unlock_desc">Wake and unlock the device before manual runs and scheduled tasks; configure the credential under Settings → Secure unlock.</string>
-    <string name="perm_unlock_status_incomplete">Enabled, credential missing</string>
-    <string name="perm_unlock_open_settings">Open settings</string>
     <string name="perm_timeout_title">Run timeout</string>
     <string name="perm_timeout_desc">Stop the script automatically after the selected duration to avoid runaway loops or a stuck device. Choose \"Unlimited\" to stop only manually.</string>
     <string name="perm_timeout_unlimited">Unlimited</string>
@@ -371,7 +362,6 @@
     <string name="perm_tile_title">Quick Settings tile</string>
     <string name="perm_tile_desc">Show a tile in Quick Settings to run / stop a fixed script with one tap.</string>
     <string name="perm_tile_enable">Enable Quick Settings tile</string>
-    <string name="perm_tile_enabled_unbound">On · no script pinned</string>
     <string name="perm_tile_pinned">Pinned script: %1$s</string>
     <string name="perm_tile_pick_hint">No script pinned yet. Pin one from the Scripts screen.</string>
     <string name="perm_tile_add">Add to Quick Settings</string>
@@ -431,6 +421,7 @@
     <string name="settings_version_short">v%1$s</string>
     <string name="settings_group_automation">Automation</string>
     <string name="settings_group_extensions">Extensions</string>
+    <string name="settings_permissions_summary">Backend grants, system permissions and optional capabilities</string>
     <string name="settings_group_security">Security</string>
     <string name="settings_group_data">Data</string>
 
@@ -463,7 +454,6 @@
     <string name="virtual_screen_height">Height</string>
     <string name="virtual_screen_dpi">DPI</string>
     <string name="virtual_screen_range">Width/height range %1$d–%2$d, dpi range %3$d–%4$d.</string>
-    <string name="virtual_screen_custom_invalid">Input is out of range and has not been saved; it applies automatically once corrected.</string>
     <string name="virtual_screen_pip_on_home">Auto picture-in-picture in background</string>
     <string name="virtual_screen_pip_desc">When you press Home while on the Run page, the preview shrinks into system picture-in-picture. The PiP window is view-only.</string>
     <string name="virtual_screen_status_idle">Status: idle</string>

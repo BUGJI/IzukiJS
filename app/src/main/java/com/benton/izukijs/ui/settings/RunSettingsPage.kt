@@ -1,18 +1,24 @@
 package com.benton.izukijs.ui.settings
 
 import com.benton.izukijs.ui.common.SectionGap
+import android.Manifest
 import android.app.StatusBarManager
 import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,9 +30,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
-import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.service.ScriptTileService
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LocalSnackbarController
@@ -38,28 +47,26 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 脚本运行：超时、唤醒、通知、快捷磁贴与性能基线。 */
+/** 脚本运行：超时、唤醒、通知与快捷磁贴。 */
 @Composable
 internal fun RunSettings() {
-    TimeoutSettingsSection()
+    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+
+    TimeoutSettingsSection(ui, viewModel)
 
     Spacer(Modifier.height(SectionGap))
-    WakeSettingsSection()
+    WakeSettingsSection(ui, viewModel)
 
     Spacer(Modifier.height(SectionGap))
-    NotificationSettingsSection()
+    NotificationSettingsSection(ui, viewModel)
 
     Spacer(Modifier.height(SectionGap))
-    TileSettingsSection()
-
-    Spacer(Modifier.height(SectionGap))
-    PerfBaselineSettingsSection()
+    TileSettingsSection(ui, viewModel)
 }
 
 @Composable
-private fun TimeoutSettingsSection() {
-    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
-    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+private fun TimeoutSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
     val settings = ui.runtimeSettings
 
     SectionCard(stringResource(R.string.perm_timeout_title)) {
@@ -92,12 +99,10 @@ private fun TimeoutSettingsSection() {
 }
 
 @Composable
-private fun WakeSettingsSection() {
-    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
-    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+private fun WakeSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
     val settings = ui.runtimeSettings
 
-    SectionCard(stringResource(R.string.perm_wake_title)) {
+    SectionCard {
         SwitchRow(
             label = stringResource(R.string.perm_wake_title),
             checked = settings.keepAwake,
@@ -114,9 +119,81 @@ private fun WakeSettingsSection() {
 }
 
 @Composable
-private fun TileSettingsSection() {
-    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
-    val ui by viewModel.uiState.collectAsStateWithLifecycle()
+private fun NotificationSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
+    val context = LocalContext.current
+    var granted by remember { mutableStateOf(hasPostNotifications(context)) }
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted = it }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                granted = hasPostNotifications(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    SectionCard(stringResource(R.string.settings_notifications)) {
+        Text(
+            stringResource(R.string.settings_notifications_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            label = stringResource(R.string.settings_progress_notification),
+            description = stringResource(R.string.settings_progress_notification_desc),
+            checked = ui.runtimeSettings.progressNotification,
+            onChange = {
+                viewModel.saveRuntimeSettings(
+                    ui.runtimeSettings.copy(progressNotification = it),
+                )
+            },
+        )
+        if (!granted) {
+            Spacer(Modifier.height(SectionGap))
+            Text(
+                stringResource(R.string.settings_notification_permission_denied),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    } else {
+                        context.startActivity(
+                            Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(
+                                    android.provider.Settings.EXTRA_APP_PACKAGE,
+                                    context.packageName,
+                                ),
+                        )
+                    }
+                },
+            ) {
+                Text(stringResource(R.string.settings_notification_permission_action))
+            }
+        }
+    }
+}
+
+private fun hasPostNotifications(context: Context): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+    } else {
+        true
+    }
+
+@Composable
+private fun TileSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
     val container = rememberAppContainer()
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -195,34 +272,6 @@ private fun TileSettingsSection() {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        }
-    }
-}
-
-@Composable
-private fun PerfBaselineSettingsSection() {
-    val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
-    val ui by viewModel.uiState.collectAsStateWithLifecycle()
-    SectionCard(stringResource(R.string.settings_perf_baseline)) {
-        Text(
-            stringResource(R.string.settings_perf_baseline_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(8.dp))
-        SwitchRow(
-            label = stringResource(R.string.settings_perf_baseline_toggle),
-            description = stringResource(R.string.settings_perf_baseline_toggle_desc),
-            checked = ui.runtimeSettings.perfBaseline,
-            onChange = {
-                viewModel.saveRuntimeSettings(ui.runtimeSettings.copy(perfBaseline = it))
-            },
-        )
-        if (ui.runtimeSettings.perfBaseline) {
-            Spacer(Modifier.height(8.dp))
-            TextButton(onClick = { PerfMetrics.reportNow() }) {
-                Text(stringResource(R.string.settings_perf_baseline_report_now))
-            }
         }
     }
 }

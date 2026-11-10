@@ -22,6 +22,7 @@
   <img src="docs/images/run.png" width="22%" alt="运行页" />
   <img src="docs/images/editor.png" width="22%" alt="脚本编辑器" />
   <img src="docs/images/logs.png" width="22%" alt="日志页" />
+  <!-- TODO: 设置页已重排，当前截图为旧版占位，待补拍 -->
   <img src="docs/images/settings.png" width="22%" alt="设置页" />
 </p>
 

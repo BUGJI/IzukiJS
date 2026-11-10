@@ -1,12 +1,8 @@
 package com.benton.izukijs.ui.settings
 
 import com.benton.izukijs.ui.common.SectionGap
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -19,7 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -29,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.SectionCard
@@ -127,20 +123,16 @@ internal fun StorageSettings() {
             }
         }
         Spacer(Modifier.height(SectionGap))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.storage_usage, formatFileSize(logFileSize)),
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+        Text(
+            stringResource(R.string.storage_usage, formatFileSize(logFileSize)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ActionButtons {
             OutlinedButton(onClick = { confirmClearLog = true }) {
                 Text(stringResource(R.string.storage_clear_now))
             }
-            Spacer(Modifier.width(8.dp))
             OutlinedButton(onClick = {
                 scope.launch {
                     val file = newCacheExportFile(context, "izukijs_log", "log")
