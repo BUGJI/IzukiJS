@@ -45,7 +45,7 @@ gauge log.buffer=200
 | `capture.screen.cached` | 没有新帧、直接使用上一帧缓存的次数 |
 | `capture.screen.fallback` | 持续录屏不可用、回退到其它截图后端的次数 |
 | `capture.virtual` | 虚拟屏取帧耗时 |
-| `image.findImage` / `image.findColor` | 找图 / 找色整体耗时 |
+| `image.findImage` / `image.findColor` / `image.findColorRegions` | 找图 / 找色 / 区域找色整体耗时 |
 | `image.matchTemplate` / `image.findColorScan` | OpenCV 模板匹配 / 像素扫描耗时 |
 | `overlay.hideWait` | 截图前等待悬浮层隐藏的耗时 |
 | `script.prepare` | 脚本启动的参数解析 / 历史记录 / 通知与悬浮窗拉起耗时（后台线程） |

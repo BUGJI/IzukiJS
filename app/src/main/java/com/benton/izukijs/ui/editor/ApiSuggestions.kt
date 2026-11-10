@@ -62,9 +62,10 @@ object ApiSuggestions {
         ),
         "images" to listOf(
             "findImage(", "findAllImages(", "findColor(", "findAllColors(",
-            "findImageInRaw(", "saveTemplate(", "available(",
+            "findColorRegions(", "findColorRegionsInRaw(", "findColorInRaw(",
+            "findImageInRaw(", "findColorRaw(", "findImageRaw(", "saveTemplate(", "available(",
         ),
-        "ocr" to listOf("recognize(", "recognizePath(", "find("),
+        "ocr" to listOf("recognize(", "recognizePath(", "recognizeBlocksJson(", "find("),
         "http" to listOf("request(", "get(", "post(", "postJson(", "available(", "isAllowed("),
         "clipboard" to listOf("get(", "set(", "clear("),
         "notify" to listOf(

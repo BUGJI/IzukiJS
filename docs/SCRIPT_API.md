@@ -308,11 +308,21 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `images.findAllImages(template, threshold=0.8, region?, limit=20)` | 找全部匹配，返回数组 |
 | `images.findColor(color, threshold=4, region?)` | 找色，返回 `{x, y}` 或 `null`，`color` 形如 `"#RRGGBB"` |
 | `images.findAllColors(color, threshold=4, region?, limit=100)` | 找全部同色像素，返回 `[{x,y}]`（按扫描顺序截断到 limit） |
-| `images.findImageInRaw(screenPath, template, threshold)` | 在指定截图上找图 |
+| `images.findColorRegions(color, threshold=4, options?)` | 按颜色做连通域聚类，返回 `[{x,y,w,h,pixels,cx,cy}]`（按 `pixels` 降序） |
+| `images.findColorRegionsInRaw(screenPath, color, threshold=4, options?)` | 在指定截图上做连通域找色，返回同上 |
+| `images.findColorInRaw(screenPath, color, threshold=4)` | 在指定截图上找色，返回 `{x, y}` 或 `null` |
+| `images.findImageInRaw(screenPath, template, threshold)` | 在指定截图上找图，返回 `"x,y,confidence"` 字符串或 `null` |
+| `images.findColorRaw(color, threshold)` | 低层找色，返回 `"x,y"` 字符串或 `null` |
+| `images.findImageRaw(template, threshold)` | 低层找图，返回 `"x,y,confidence"` 字符串或 `null` |
 | `images.saveTemplate(path, x, y, width, height)` | 从当前屏幕裁剪区域保存为 PNG 模板，返回路径；`path` 传 `""` 存到缓存目录 |
 | `images.available()` | OpenCV 是否可用 |
 
 `region` 为 `{x, y, width, height}`（屏幕像素），省略时搜索整屏。`limit` 上限 200。
+
+`findColorRegions` 的 `options` 为
+`{minPixels=1, maxRegions=20, region?: {x, y, width, height}}`。返回区域的 `x/y` 是包围盒左上角，
+`w/h` 是尺寸，`pixels` 是命中像素数，`cx/cy` 是像素质心；`minPixels` 用来过滤小杂点，
+`maxRegions` 上限 200。
 
 ```js
 var p = images.findImage("/sdcard/tpl.png", 0.85, { x: 0, y: 300, width: 1080, height: 1500 });
@@ -321,6 +331,19 @@ if (p) click(p.x, p.y);
 images.saveTemplate("/sdcard/tpl/ok.png", 420, 1800, 240, 80);
 var hits = images.findAllImages("/sdcard/tpl/item.png", 0.9, null, 10);
 hits.forEach(function (hit) { log(hit.x + "," + hit.y); });
+
+// 区域找色：过滤小杂点后，按面积从大到小依次点击区域中心
+var regions = images.findColorRegions("#BEF74F", 40, {
+  minPixels: 10000,
+  maxRegions: 10,
+  region: { x: 0, y: 200, width: 1200, height: 1500 }
+});
+regions.forEach(function (r) { click(r.cx, r.cy); });
+
+// 同一张截图复用：先截图，再做多种找色判断
+var shot = captureScreen("");
+var hit = images.findColorInRaw(shot, "#BEF74F", 40);
+if (hit) click(hit.x, hit.y);
 ```
 
 ## `ocr`（本地 / 在线可切换）
@@ -337,11 +360,20 @@ hits.forEach(function (hit) { log(hit.x + "," + hit.y); });
 |---|---|
 | `ocr.recognize()` | 识别当前屏幕，返回全文 |
 | `ocr.recognizePath(path)` | 识别指定图片 |
+| `ocr.recognizeBlocksJson()` | 识别当前屏幕，返回结构化 JSON 字符串：`{text, image:{w,h}, blocks:[...]}` |
 | `ocr.find(text)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null`（x/y 为中心） |
+
+`blocks` 每项为 `{text, x, y, w, h, left, top, right, bottom, conf?, suspicious?}`，
+其中 `x/y` 是包围盒中心，`left/top/right/bottom` 是四边坐标。
 
 ```js
 var hit = ocr.find("登录");
 if (hit) click(hit.x, hit.y);
+
+var result = JSON.parse(ocr.recognizeBlocksJson());
+result.blocks.forEach(function (block) {
+  log(block.text + " @ " + block.x + "," + block.y);
+});
 ```
 
 ## `permissions`（权限查询）

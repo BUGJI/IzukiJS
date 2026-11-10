@@ -106,6 +106,35 @@
       );
       try { return JSON.parse(raw); } catch (e) { return []; }
     };
+    images.findColorRegions = function (color, threshold, options) {
+      var raw = images.findColorRegionsRaw(
+        color,
+        (threshold == null ? 4 : threshold),
+        JSON.stringify(options || {})
+      );
+      try { return JSON.parse(raw); } catch (e) { return []; }
+    };
+    var __findColorRegionsInRaw = images.findColorRegionsInRaw;
+    images.findColorRegionsInRaw = function (screenPath, color, threshold, options) {
+      var raw = __findColorRegionsInRaw(
+        screenPath,
+        color,
+        (threshold == null ? 4 : threshold),
+        JSON.stringify(options || {})
+      );
+      try { return JSON.parse(raw); } catch (e) { return []; }
+    };
+    var __findColorInRaw = images.findColorInRaw;
+    images.findColorInRaw = function (screenPath, color, threshold) {
+      var raw = __findColorInRaw(
+        screenPath,
+        color,
+        (threshold == null ? 4 : threshold)
+      );
+      if (!raw) return null;
+      var p = raw.split(',');
+      return { x: parseInt(p[0], 10), y: parseInt(p[1], 10) };
+    };
   }
   if (typeof http !== 'undefined' && http.requestRaw) {
     var __httpOptions = function (options) {

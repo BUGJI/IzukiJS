@@ -7,6 +7,13 @@
 
 ## [未发布]
 
+### 新增
+
+- 脚本新增图色区域识别：`images.findColorRegions()` / `images.findColorRegionsInRaw()` 按连通域返回
+  `{x,y,w,h,pixels,cx,cy}`，支持 `minPixels` / `maxRegions` / `region` 过滤；新增
+  `images.findColorInRaw()`，可复用指定截图找色。`docs/SCRIPT_API.md` 同步补充
+  `ocr.recognizeBlocksJson()` 与原始截图找图/找色接口（#24）。
+
 ### 修复
 
 - Root / Shizuku 等不支持完整轨迹的后端，`gesture()` 多点轨迹不再被拆成多次独立滑动。
