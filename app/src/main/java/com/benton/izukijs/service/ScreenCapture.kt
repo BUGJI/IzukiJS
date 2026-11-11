@@ -17,6 +17,7 @@ import android.view.Display
 import com.benton.izukijs.core.image.ImageToBitmapConverter
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.developer.DeveloperTuning
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -133,7 +134,8 @@ class ScreenCapture(private val logBus: LogBus) {
         // 已有缓存时不再为等新帧阻塞：有新帧就取，没有就立刻返回上一帧。
         val waitForFirstFrame = synchronized(captureLock) { lastFrame == null }
         // 等待新帧的 retry-sleep 与位图转换都不在锁内，避免阻塞主线程的 stop()/resize()。
-        val image = acquireLatest(reader, if (waitForFirstFrame) FIRST_CAPTURE_RETRY else 1)
+        val retries = if (waitForFirstFrame) DeveloperTuning.current.firstCaptureRetry else 1
+        val image = acquireLatest(reader, retries)
         if (image == null) {
             PerfMetrics.count("capture.screen.cached")
             return@measure cachedCopy()
@@ -242,7 +244,11 @@ class ScreenCapture(private val logBus: LogBus) {
         repeat(retries) { attempt ->
             val image = runCatching { reader.acquireLatestImage() }.getOrNull()
             if (image != null) return image
-            if (attempt < retries - 1) runCatching { Thread.sleep(CAPTURE_RETRY_DELAY_MS) }
+            if (attempt < retries - 1) {
+                runCatching {
+                    Thread.sleep(DeveloperTuning.current.captureRetryDelayMs.toLong())
+                }
+            }
         }
         return null
     }
@@ -262,12 +268,4 @@ class ScreenCapture(private val logBus: LogBus) {
         return intArrayOf(metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
     }
 
-    private companion object {
-        /**
-         * 首次取帧（尚无缓存）最多等约 50ms，给刚启动的虚拟显示器一点出帧时间；
-         * 之后只要没有新帧就立即复用缓存，避免静态画面每次截图都白等。
-         */
-        const val FIRST_CAPTURE_RETRY = 6
-        const val CAPTURE_RETRY_DELAY_MS = 10L
-    }
 }

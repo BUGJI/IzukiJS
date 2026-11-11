@@ -3,6 +3,7 @@ package com.benton.izukijs.controller.hid
 import android.view.KeyEvent
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GestureStroke
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
@@ -32,7 +33,13 @@ class HidController(
     override fun isReady(): Boolean = client.isReady
 
     override fun click(x: Float, y: Float): Boolean =
-        client.send(HidProtocol.tap(x.toInt(), y.toInt(), TAP_DURATION_MS))
+        client.send(
+            HidProtocol.tap(
+                x.toInt(),
+                y.toInt(),
+                DeveloperTuning.current.hidTapDurationMs,
+            ),
+        )
 
     override fun longClick(x: Float, y: Float, durationMs: Long): Boolean =
         client.send(HidProtocol.tap(x.toInt(), y.toInt(), durationMs.toInt()))
@@ -159,8 +166,6 @@ class HidController(
     }
 
     private companion object {
-        const val TAP_DURATION_MS = 50
-
         /** 单帧文本上限（字节）。预留 MTU 余量，同时避免协议 u16 长度回绕。 */
         const val MAX_TEXT_CHUNK_BYTES = 512
 

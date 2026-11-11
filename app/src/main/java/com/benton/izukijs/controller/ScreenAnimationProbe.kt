@@ -1,6 +1,7 @@
 package com.benton.izukijs.controller
 
 import android.graphics.Bitmap
+import com.benton.izukijs.developer.DeveloperTuning
 
 /**
  * 轻量帧差探测：连续两帧抽样像素变化明显时，判定界面仍在动画中。
@@ -9,10 +10,14 @@ import android.graphics.Bitmap
  */
 object ScreenAnimationProbe {
 
-    fun isAnimating(capture: () -> Bitmap?, intervalMs: Long = DEFAULT_INTERVAL_MS): Boolean {
+    fun isAnimating(
+        capture: () -> Bitmap?,
+        intervalMs: Long = DeveloperTuning.current.animationProbeIntervalMs.toLong(),
+        cacheMs: Long = DeveloperTuning.current.animationProbeCacheMs.toLong(),
+    ): Boolean {
         val now = System.currentTimeMillis()
         val cached = lastResult
-        if (cached != null && now - lastProbeAt < CACHE_MS) return cached
+        if (cached != null && now - lastProbeAt < cacheMs) return cached
         val first = capture() ?: return false.also { remember(false) }
         val firstSamples = try {
             sample(first)
@@ -66,6 +71,4 @@ object ScreenAnimationProbe {
     private const val SAMPLE_ROWS = 32
     private const val MIN_CHANGED_SAMPLES = 4
     private const val CHANGE_DIVISOR = 200
-    private const val DEFAULT_INTERVAL_MS = 120L
-    private const val CACHE_MS = 300L
 }

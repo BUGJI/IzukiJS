@@ -4,6 +4,7 @@ import android.webkit.JavascriptInterface
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.net.HttpSettings
 import com.benton.izukijs.core.net.isHttpHostAllowed
+import com.benton.izukijs.developer.DeveloperTuning
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -17,7 +18,7 @@ import org.json.JSONObject
  *
  * 只支持 http / https；域名白名单为空时放行任意主机，填写后按主机或子域匹配。
  * 请求方法、Header、请求体、超时与是否跟随重定向均由脚本指定。为避免脚本误读超大响应，
- * 单次响应体上限 [MAX_BODY_BYTES]，超出会截断并标记 `truncated`。
+ * 单次响应体上限由开发者选项控制，超出会截断并标记 `truncated`。
  */
 class HttpApi(
     private val logBus: LogBus,
@@ -58,7 +59,7 @@ class HttpApi(
             }
 
             val method = options.optString("method", "GET").trim().uppercase()
-            val timeout = options.optInt("timeoutMs", DEFAULT_TIMEOUT_MS)
+            val timeout = options.optInt("timeoutMs", DeveloperTuning.current.httpDefaultTimeoutMs)
                 .coerceIn(MIN_TIMEOUT_MS, MAX_TIMEOUT_MS)
             val body = if (method == "GET" || method == "HEAD") {
                 null
@@ -133,18 +134,19 @@ class HttpApi(
     private data class LimitedBody(val text: String, val truncated: Boolean)
 
     private fun readLimited(stream: InputStream, charset: Charset): LimitedBody {
+        val limit = DeveloperTuning.current.httpMaxBodyBytes
         val output = ByteArrayOutputStream()
         val buffer = ByteArray(8192)
         var total = 0
         while (true) {
             val read = stream.read(buffer)
             if (read < 0) break
-            val remaining = MAX_BODY_BYTES - total
+            val remaining = limit - total
             if (remaining > 0) {
                 output.write(buffer, 0, minOf(read, remaining))
             }
             total += read
-            if (total >= MAX_BODY_BYTES) {
+            if (total >= limit) {
                 return LimitedBody(output.toString(charset.name()), true)
             }
         }
@@ -163,12 +165,8 @@ class HttpApi(
         if (!has(key) || isNull(key)) null else optString(key)
 
     private companion object {
-        const val DEFAULT_TIMEOUT_MS = 15_000
         const val MIN_TIMEOUT_MS = 1_000
         const val MAX_TIMEOUT_MS = 60_000
-
-        /** 单次响应体上限，避免脚本读入超大文件。 */
-        const val MAX_BODY_BYTES = 2 * 1024 * 1024
 
         val CHARSET_REGEX = Regex("""charset\s*=\s*"?([^";\s]+)""", RegexOption.IGNORE_CASE)
     }

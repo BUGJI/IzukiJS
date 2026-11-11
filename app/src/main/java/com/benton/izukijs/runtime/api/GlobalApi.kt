@@ -7,6 +7,7 @@ import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.widget.Toast
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.virtualscreen.ScreenTarget
 
 /**
@@ -84,6 +85,6 @@ class GlobalApi(
 
     private companion object {
         const val SLEEP_SLICE_MS = 40L
-        const val CAPTURE_WAIT_MS = 1_000L
+        val CAPTURE_WAIT_MS: Long get() = DeveloperTuning.current.captureWaitMs.toLong()
     }
 }

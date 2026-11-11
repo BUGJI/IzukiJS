@@ -1,9 +1,17 @@
 package com.benton.izukijs.flow
 
 import android.content.Context
+import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.notification.NotifyEvent
+import com.benton.izukijs.core.notification.NotifyKind
+import com.benton.izukijs.core.notification.NotifyLevel
+import com.benton.izukijs.core.notification.NotifySource
+import com.benton.izukijs.core.notification.NotifyTemplate
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.model.UnlockResult
+import com.benton.izukijs.notification.NotificationDispatcher
+import com.benton.izukijs.runtime.RunTrigger
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.ScriptRunOutcome
 import com.benton.izukijs.schedule.ScheduleEvent
@@ -33,6 +41,7 @@ class FlowRunner(
     private val screenUnlock: ScreenUnlockController,
     private val foregroundProvider: () -> String?,
     private val logBus: LogBus,
+    private val notificationDispatcher: NotificationDispatcher,
 ) {
 
     private val appContext = context.applicationContext
@@ -122,6 +131,7 @@ class FlowRunner(
         }
         activeFlowId = runFlow.id
         stopRequested = false
+        val startedAt = System.currentTimeMillis()
         logBus.info(
             "▶ 编排开始: ${runFlow.name}（${steps.size} 步，${orderLabel(runFlow.order)}）",
         )
@@ -158,7 +168,54 @@ class FlowRunner(
             } else {
                 logBus.warn("编排结束: ${runFlow.name}（$summary）")
             }
+            dispatchSummary(runFlow, results.size, succeeded, steps.size, allSucceeded, startedAt)
             if (!manual) flowManager.onFinished(runFlow, allSucceeded)
+        }
+    }
+
+    private fun dispatchSummary(
+        flow: ScriptFlow,
+        executed: Int,
+        succeeded: Int,
+        total: Int,
+        allSucceeded: Boolean,
+        startedAt: Long,
+    ) {
+        val durationMs = System.currentTimeMillis() - startedAt
+        val statusKey = if (allSucceeded) "succeeded" else "failed"
+        val level = when {
+            allSucceeded -> NotifyLevel.SUCCESS
+            succeeded > 0 -> NotifyLevel.WARN
+            else -> NotifyLevel.ERROR
+        }
+        val title = appContext.getString(
+            if (allSucceeded) R.string.notif_flow_finished_title else R.string.notif_flow_failed_title,
+            flow.name,
+        )
+        val text = appContext.getString(
+            R.string.notif_flow_text,
+            succeeded,
+            total,
+            NotifyTemplate.formatDuration(durationMs),
+        )
+        val event = NotifyEvent(
+            level = level,
+            kind = NotifyKind.FLOW_SUMMARY,
+            title = title,
+            text = text,
+            source = NotifySource.FLOW,
+            scriptName = flow.name,
+            runStatus = statusKey,
+            durationMs = durationMs,
+            tags = setOf(NotifyKind.FLOW_SUMMARY.key, statusKey),
+            data = mapOf(
+                "succeeded" to succeeded.toString(),
+                "executed" to executed.toString(),
+                "total" to total.toString(),
+            ),
+        )
+        runCatching { notificationDispatcher.dispatch(event) }.onFailure {
+            logBus.warn("编排结果通知派发失败：${it.message}")
         }
     }
 
@@ -175,6 +232,7 @@ class FlowRunner(
                 scriptId = script.id,
                 scriptName = script.name,
                 source = scriptRepository.read(script),
+                trigger = RunTrigger.FLOW,
             )
         } catch (c: CancellationException) {
             // 取消必须向上传播，否则编排停止后仍会继续执行后续步骤。

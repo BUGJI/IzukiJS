@@ -1,7 +1,10 @@
 package com.benton.izukijs.mcp.tools
 
-internal const val MAX_SCRIPT_BYTES = 1024 * 1024
-internal const val CAPTURE_WAIT_MS = 1_000L
+import com.benton.izukijs.developer.DeveloperTuning
+
+internal val MAX_SCRIPT_BYTES: Int get() = DeveloperTuning.current.maxScriptBytes
+internal const val MAX_SEARCH_PATTERN = 300
+internal val CAPTURE_WAIT_MS: Long get() = DeveloperTuning.current.captureWaitMs.toLong()
 internal const val DEFAULT_INPUT_FRAME_WAIT_MS = 600
 internal const val MAX_INPUT_FRAME_WAIT_MS = 3_000
 internal const val DEFAULT_CAPTURE_FRAME_WAIT_MS = 1_000

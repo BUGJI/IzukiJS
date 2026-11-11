@@ -62,6 +62,7 @@ class ScriptTileService : TileService() {
                         loaded.first.id,
                         loaded.first.name,
                         loaded.second,
+                        trigger = com.benton.izukijs.runtime.RunTrigger.TILE,
                     )
                 }
                 updateTile()

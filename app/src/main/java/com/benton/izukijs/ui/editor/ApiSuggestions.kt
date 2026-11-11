@@ -19,6 +19,7 @@ object ApiSuggestions {
         ApiSuggestion("http."),
         ApiSuggestion("clipboard."),
         ApiSuggestion("notify."),
+        ApiSuggestion("push."),
         ApiSuggestion("fs."),
         ApiSuggestion("shell."),
         ApiSuggestion("ai."),
@@ -72,6 +73,7 @@ object ApiSuggestions {
             "available(", "list(", "latest(", "clear(",
             "progress(", "update(", "reset(", "progressEnabled(",
         ),
+        "push" to listOf("available(", "channels(", "send("),
         "fs" to listOf(
             "readText(", "writeText(", "exists(", "isDirectory(", "list(", "size(",
             "mkdirs(", "delete(", "copy(", "move(", "readBase64(", "writeBase64(",

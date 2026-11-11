@@ -9,6 +9,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.security.MessageDigest
+
+/** 脚本内容在一次原子更新中的前后状态。 */
+data class ScriptUpdateResult(
+    val script: ScriptInfo,
+    val previousSha256: String,
+    val sha256: String,
+    val previousLines: Int,
+    val lines: Int,
+    val changed: Boolean,
+)
+
+/** `expectedSha256` 与当前内容不一致：说明脚本在读取后被其他人改过。 */
+class ScriptStaleException(
+    message: String,
+    val actualSha256: String,
+) : IllegalStateException(message)
 
 /**
  * 基于应用私有目录的脚本仓库。脚本以 .js 文件形式保存在 files/scripts 下。
@@ -89,6 +106,43 @@ class ScriptRepository(
         }
     }
 
+    /**
+     * 在 [fileLock] 内完成“读取 → 校验 → 变换 → 写回”，避免增量编辑与编辑器自动保存
+     * 并发时丢失更新。只有内容真正变化时才写盘并留档。
+     */
+    fun update(
+        script: ScriptInfo,
+        expectedSha256: String? = null,
+        transform: (String) -> String,
+    ): ScriptUpdateResult = synchronized(fileLock) {
+        if (!script.file.exists()) {
+            throw IllegalStateException("脚本文件不存在：${script.id}")
+        }
+        val previous = script.file.readText()
+        val previousHash = sha256(previous)
+        if (!expectedSha256.isNullOrBlank() && expectedSha256 != previousHash) {
+            throw ScriptStaleException(
+                "脚本内容已在别处修改，请重新读取后再编辑",
+                actualSha256 = previousHash,
+            )
+        }
+        val updated = transform(previous)
+        val changed = updated != previous
+        if (changed) {
+            history.record(script.id, previous, force = true)
+            AtomicFile.writeText(script.file, updated)
+            bumpRevision()
+        }
+        ScriptUpdateResult(
+            script = script.file.toScriptInfo(),
+            previousSha256 = previousHash,
+            sha256 = sha256(updated),
+            previousLines = lineCount(previous),
+            lines = lineCount(updated),
+            changed = changed,
+        )
+    }
+
     fun delete(script: ScriptInfo) {
         script.file.delete()
         history.deleteFor(script.id)
@@ -147,6 +201,15 @@ class ScriptRepository(
 
     companion object {
         const val EXTENSION = ".js"
+
+        /** 内容 SHA-256（十六进制小写），用于增量编辑的乐观并发校验。 */
+        fun sha256(text: String): String = MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString("") { (it.toInt() and 0xFF).toString(16).padStart(2, '0') }
+
+        /** 行数：空文本为 0；末尾换行会多计一个空行，与 `text.lines()` 语义一致。 */
+        fun lineCount(text: String): Int =
+            if (text.isEmpty()) 0 else text.count { it == '\n' } + 1
 
         private const val BUNDLED_DIR = "scripts"
         private const val PREFS = "izukijs_scripts"

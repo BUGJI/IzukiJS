@@ -14,6 +14,9 @@ import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.ocr.OcrConfig
 import com.benton.izukijs.ocr.OcrConfigRepository
+import com.benton.izukijs.core.notification.NotificationSettings
+import com.benton.izukijs.core.notification.NotificationSettingsCodec
+import com.benton.izukijs.notification.NotificationSettingsRepository
 import com.benton.izukijs.core.net.HttpSettings
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogSettings
@@ -48,6 +51,7 @@ object ConfigSections {
         update: UpdateSettingsRepository,
         globalEnv: GlobalEnvRepository,
         virtualScreen: VirtualScreenSettingsRepository,
+        notification: NotificationSettingsRepository,
     ): List<ConfigSection> = listOf(
         aiSection(ai),
         ocrSection(ocr),
@@ -60,6 +64,7 @@ object ConfigSections {
         updateSection(update),
         globalEnvSection(globalEnv),
         virtualScreenSection(virtualScreen),
+        notificationSection(notification),
     )
 
     private fun aiSection(repository: AiConfigRepository) = ConfigSectionAdapter(
@@ -323,6 +328,16 @@ object ConfigSections {
                     o.keys().forEach { key -> put(key, o.optString(key, "")) }
                 }
             },
+        )
+
+    private fun notificationSection(repository: NotificationSettingsRepository) =
+        ConfigSectionAdapter(
+            key = "notification",
+            current = repository::current,
+            save = repository::save,
+            defaultValue = NotificationSettings(),
+            encode = NotificationSettingsCodec::encode,
+            decode = { o, base -> NotificationSettingsCodec.decode(o, base) },
         )
 
     private fun virtualScreenSection(repository: VirtualScreenSettingsRepository) = ConfigSectionAdapter(

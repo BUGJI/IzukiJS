@@ -16,6 +16,9 @@
   脚本运行状态等指标，详见 [`docs/PERF.md`](docs/PERF.md)。
 - 新增「设置 → 悬浮窗与虚拟屏 → 悬浮控制条」显示模式：不弹出 / 折叠显示 / 展开显示（默认）。
   折叠时只保留标题栏与停止按钮；关闭自动弹出不影响脚本保活与通知栏控制。
+- 新增通知系统：设置 → 通知 支持本地系统通知、Webhook、Bark、Telegram、ntfy 多渠道；
+  脚本可用 `// @need push` + `push.send()` 主动发送；手动 / 定时 / 编排 / MCP 运行结果
+  按级别与来源统一通知（默认仅失败），编排默认只发汇总。渠道密钥经 Keystore 加密并纳入配置备份。
 - 脚本新增图色区域识别：`images.findColorRegions()` / `images.findColorRegionsInRaw()` 按连通域返回
   `{x,y,w,h,pixels,cx,cy}`，支持 `minPixels` / `maxRegions` / `region` 过滤；新增
   `images.findColorInRaw()`，可复用指定截图找色。`docs/SCRIPT_API.md` 同步补充

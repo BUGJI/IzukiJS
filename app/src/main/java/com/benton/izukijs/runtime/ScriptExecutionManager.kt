@@ -1,6 +1,7 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
+import com.benton.izukijs.R
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.NodeTreeResult
@@ -11,11 +12,16 @@ import com.benton.izukijs.core.log.RunLogRegistry
 import com.benton.izukijs.core.log.RunStatus
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.runtime.RunControl
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.runtime.api.ImageApi
+import com.benton.izukijs.core.notification.NotifyEvent
+import com.benton.izukijs.core.notification.NotifyLevel
+import com.benton.izukijs.core.notification.NotifyTemplate
 import com.benton.izukijs.core.notification.ScriptNotificationCenter
+import com.benton.izukijs.notification.NotificationDispatcher
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.ScreenUnlockController
@@ -57,6 +63,7 @@ class ScriptExecutionManager(
     private val virtualScreenSettings: VirtualScreenSettingsRepository,
     private val runPreparer: RunPreparer,
     private val moduleSourceProvider: (String) -> String?,
+    private val notificationDispatcher: NotificationDispatcher,
 ) : RunControl {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -97,6 +104,7 @@ class ScriptExecutionManager(
         source: String,
         values: Map<String, String> = emptyMap(),
         onFinished: ((Boolean) -> Unit)? = null,
+        trigger: RunTrigger = RunTrigger.MANUAL,
     ): Boolean {
         val needs = ScriptNeeds.parse(source)
         if (needs != null) {
@@ -142,11 +150,12 @@ class ScriptExecutionManager(
                     }
                 } catch (t: Throwable) {
                     logBus.error("✘ 启动脚本失败: ${t.message}")
-                    rollbackStart(session, t, onFinished)
+                    rollbackStart(session, t, onFinished, scriptId, scriptName, trigger)
                     return@withContext
                 }
                 executeRun(
                     session = session,
+                    scriptId = scriptId,
                     needs = needs,
                     source = source,
                     scriptName = scriptName,
@@ -154,6 +163,7 @@ class ScriptExecutionManager(
                     virtualSettings = prepared.virtualSettings,
                     scriptEnv = prepared.scriptEnv,
                     onFinished = onFinished,
+                    trigger = trigger,
                 )
             }
         }
@@ -171,6 +181,7 @@ class ScriptExecutionManager(
         scriptName: String,
         source: String,
         values: Map<String, String> = emptyMap(),
+        trigger: RunTrigger = RunTrigger.MANUAL,
     ): ScriptRunOutcome {
         val finished = CompletableDeferred<Boolean>()
         val started = run(
@@ -179,6 +190,7 @@ class ScriptExecutionManager(
             source = source,
             values = values,
             onFinished = { success -> finished.complete(success) },
+            trigger = trigger,
         )
         if (!started) return ScriptRunOutcome.Busy
         val success = finished.await()
@@ -188,6 +200,7 @@ class ScriptExecutionManager(
 
     private suspend fun executeRun(
         session: RunSession,
+        scriptId: String,
         needs: Set<String>?,
         source: String,
         scriptName: String,
@@ -195,7 +208,9 @@ class ScriptExecutionManager(
         virtualSettings: VirtualScreenSettings,
         scriptEnv: ScriptEnvSession,
         onFinished: ((Boolean) -> Unit)?,
+        trigger: RunTrigger,
     ) {
+        val startedAt = System.currentTimeMillis()
         var failure: Throwable? = null
         val settings = runtimeSettings.current()
         try {
@@ -253,6 +268,9 @@ class ScriptExecutionManager(
                 moduleSourceProvider,
                 virtualScreen,
                 effectiveRunMode,
+                scriptId = scriptId,
+                scriptName = scriptName,
+                pushDispatcher = notificationDispatcher,
             )
             // 发布引擎与检查停止请求必须在同一把锁下完成：否则 requestStop 可能看到
             // engine 仍为 null 只置了 stopRequested，而这里已经检查过该标志，导致停止丢失。
@@ -301,8 +319,18 @@ class ScriptExecutionManager(
                     failure != null -> RunStatus.FAILED
                     else -> RunStatus.SUCCEEDED
                 }
-                val error = failure?.let { it.stackTraceToString().take(MAX_RUN_ERROR_CHARS) }
+                val error = failure?.let {
+                    it.stackTraceToString().take(DeveloperTuning.current.maxRunErrorChars)
+                }
                 RunLogRegistry.finish(session.runId, status, error)
+                dispatchRunResult(
+                    runId = session.runId,
+                    scriptId = scriptId,
+                    scriptName = scriptName,
+                    trigger = trigger,
+                    status = status,
+                    durationMs = System.currentTimeMillis() - startedAt,
+                )
                 when (status) {
                     RunStatus.SUCCEEDED -> PerfMetrics.count("script.succeeded")
                     RunStatus.FAILED -> PerfMetrics.count("script.failed")
@@ -329,11 +357,20 @@ class ScriptExecutionManager(
         session: RunSession,
         error: Throwable,
         onFinished: ((Boolean) -> Unit)?,
+        scriptId: String,
+        scriptName: String,
+        trigger: RunTrigger,
     ) {
-        RunLogRegistry.finish(
-            session.runId,
-            RunStatus.FAILED,
-            error.stackTraceToString().take(MAX_RUN_ERROR_CHARS),
+        val message = error.stackTraceToString().take(DeveloperTuning.current.maxRunErrorChars)
+        RunLogRegistry.finish(session.runId, RunStatus.FAILED, message)
+        dispatchRunResult(
+            runId = session.runId,
+            scriptId = scriptId,
+            scriptName = scriptName,
+            trigger = trigger,
+            status = RunStatus.FAILED,
+            durationMs = 0L,
+            error = message,
         )
         PerfMetrics.count("script.failed")
         session.releaseWakeLock()
@@ -342,6 +379,56 @@ class ScriptExecutionManager(
         ScriptNotificationCenter.clear()
         runCatching { onFinished?.invoke(false) }.onFailure {
             logBus.warn("运行结束回调失败：${it.message}")
+        }
+    }
+
+    /** 把运行结果转换为统一通知事件；实际发送由 [NotificationDispatcher] 异步完成。 */
+    private fun dispatchRunResult(
+        runId: String,
+        scriptId: String,
+        scriptName: String,
+        trigger: RunTrigger,
+        status: RunStatus,
+        durationMs: Long,
+        error: String? = null,
+    ) {
+        val level = when (status) {
+            RunStatus.SUCCEEDED -> NotifyLevel.SUCCESS
+            RunStatus.STOPPED -> NotifyLevel.INFO
+            RunStatus.TIMEOUT, RunStatus.FAILED -> NotifyLevel.ERROR
+            RunStatus.RUNNING -> NotifyLevel.INFO
+        }
+        val titleRes = when (status) {
+            RunStatus.SUCCEEDED -> R.string.notif_run_success_title
+            RunStatus.STOPPED -> R.string.notif_run_stopped_title
+            RunStatus.TIMEOUT -> R.string.notif_run_timeout_title
+            RunStatus.FAILED -> R.string.notif_run_failed_title
+            RunStatus.RUNNING -> R.string.notif_run_success_title
+        }
+        val statusKey = status.name.lowercase()
+        val event = NotifyEvent(
+            level = level,
+            kind = trigger.kind,
+            title = appContext.getString(titleRes, scriptName),
+            text = appContext.getString(
+                R.string.notif_run_text,
+                NotifyTemplate.formatDuration(durationMs),
+            ),
+            source = trigger.source,
+            scriptId = scriptId,
+            scriptName = scriptName,
+            runId = runId,
+            runStatus = statusKey,
+            durationMs = durationMs,
+            errorTail = error ?: RunLogRegistry.find(runId)?.error,
+            tags = setOf(trigger.kind.key, statusKey),
+            data = mapOf(
+                "status" to statusKey,
+                "trigger" to trigger.name.lowercase(),
+            ),
+        )
+        runCatching { notificationDispatcher.dispatch(event) }.onFailure {
+            logBus.warn("运行结果通知派发失败：${it.message}")
         }
     }
 
@@ -455,8 +542,5 @@ class ScriptExecutionManager(
     private companion object {
         /** KEYCODE_WAKEUP：点亮屏幕。 */
         const val KEYCODE_WAKEUP = 224
-
-        /** 单次运行保留的错误堆栈上限，避免内存与返回体过大。 */
-        const val MAX_RUN_ERROR_CHARS = 4_000
     }
 }

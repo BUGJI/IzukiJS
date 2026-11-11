@@ -4,6 +4,7 @@ import com.benton.izukijs.mcp.net.HttpRequest
 import com.benton.izukijs.mcp.net.HttpResponse
 import com.benton.izukijs.mcp.protocol.McpProtocolHandler
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.developer.DeveloperTuning
 import org.json.JSONObject
 import java.security.MessageDigest
 import java.util.UUID
@@ -70,8 +71,9 @@ class McpHttpHandler(
         }
         sessions[sessionId] = System.currentTimeMillis()
         // 容量保护：极端情况下清理最旧的会话。
-        if (sessions.size > MAX_SESSIONS) {
-            sessions.entries.sortedBy { it.value }.take(sessions.size - MAX_SESSIONS)
+        val maxSessions = DeveloperTuning.current.mcpMaxSessions
+        if (sessions.size > maxSessions) {
+            sessions.entries.sortedBy { it.value }.take(sessions.size - maxSessions)
                 .forEach { sessions.remove(it.key) }
         }
 
@@ -99,7 +101,8 @@ class McpHttpHandler(
      */
     private fun pruneSessions() {
         if (sessions.size < PRUNE_THRESHOLD) return
-        val cutoff = System.currentTimeMillis() - SESSION_TTL_MS
+        val ttlMs = DeveloperTuning.current.mcpSessionTtlMinutes * 60_000L
+        val cutoff = System.currentTimeMillis() - ttlMs
         sessions.entries.removeIf { it.value < cutoff }
     }
 
@@ -117,12 +120,6 @@ class McpHttpHandler(
         const val ENDPOINT = "/mcp"
 
         private const val BEARER = "Bearer "
-
-        /** 会话空闲过期时长；仅在容量接近上限时才会据此清理。 */
-        private const val SESSION_TTL_MS = 24 * 60 * 60 * 1000L
-
-        /** 会话表容量上限。 */
-        private const val MAX_SESSIONS = 256
 
         /** 达到该数量后才开始按空闲时间清理，避免误踢长时间停顿的会话。 */
         private const val PRUNE_THRESHOLD = 128

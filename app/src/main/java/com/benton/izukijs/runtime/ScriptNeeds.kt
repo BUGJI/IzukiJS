@@ -13,6 +13,7 @@ object ScriptNeeds {
         "shell",
         "fs",
         "notify",
+        "push",
         "http",
         "clipboard",
         "ai",

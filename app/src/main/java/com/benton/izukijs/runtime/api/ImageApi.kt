@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.developer.DeveloperTuning
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -388,7 +389,7 @@ class ImageApi(
             }
             result = Mat()
             Imgproc.matchTemplate(regionMat, template, result, Imgproc.TM_CCOEFF_NORMED)
-            val max = limit.coerceIn(1, MAX_MATCHES)
+            val max = limit.coerceIn(1, DeveloperTuning.current.maxImageMatches)
             val templateWidth = template.cols()
             val templateHeight = template.rows()
             // 先用一次 native minMaxLoc 快速判断是否有命中；单结果时直接返回。
@@ -567,7 +568,7 @@ class ImageApi(
         val tg = (target shr 8) and 0xFF
         val tb = target and 0xFF
         val tol = tolerance.coerceIn(0, 255)
-        val max = limit.coerceIn(1, MAX_MATCHES)
+        val max = limit.coerceIn(1, DeveloperTuning.current.maxImageMatches)
         val matches = ArrayList<ColorMatch>(max)
         for (rowIndex in 0 until regionHeight) {
             val row = rowIndex * regionWidth
@@ -646,7 +647,10 @@ class ImageApi(
         val region = parseRegion(regionJson, width, height, "找色区域") ?: return null
         return ColorRegionOptions(
             minPixels = obj.optInt("minPixels", 1).coerceAtLeast(1),
-            maxRegions = obj.optInt("maxRegions", DEFAULT_MAX_REGIONS).coerceIn(1, MAX_MATCHES),
+            maxRegions = obj.optInt(
+                "maxRegions",
+                DeveloperTuning.current.defaultMaxRegions,
+            ).coerceIn(1, DeveloperTuning.current.maxImageMatches),
             region = region,
         )
     }
@@ -837,8 +841,6 @@ class ImageApi(
             }
         }
 
-        private const val MAX_MATCHES = 200
-        private const val DEFAULT_MAX_REGIONS = 20
     }
 
     /** 进程级模板缓存：脚本多次运行、循环找图时复用已解码的模板，避免反复读盘解码。 */

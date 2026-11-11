@@ -7,10 +7,13 @@ import com.benton.izukijs.controller.ControllerSettings
 import com.benton.izukijs.data.AppearanceSettings
 import com.benton.izukijs.data.EditorSettings
 import com.benton.izukijs.data.UnlockSettings
+import com.benton.izukijs.developer.DeveloperSettings
 import com.benton.izukijs.di.AppContainer
 import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.mcp.McpStatus
 import com.benton.izukijs.mcp.core.McpConfig
+import com.benton.izukijs.core.notification.NotificationSettings
+import com.benton.izukijs.notification.NotifyReport
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ocr.OcrConfig
@@ -50,7 +53,9 @@ data class SettingsUiState(
     val virtualScreenState: VirtualScreenState = VirtualScreenState.Idle,
     val unlockSettings: UnlockSettings = UnlockSettings(),
     val runtimeSettings: RuntimeSettings = RuntimeSettings(),
+    val notificationSettings: NotificationSettings = NotificationSettings(),
     val editorSettings: EditorSettings = EditorSettings(),
+    val developerSettings: DeveloperSettings = DeveloperSettings(),
 )
 
 /**
@@ -115,8 +120,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.runtimeSettingsRepository.settings.collectInto { state, value ->
             state.copy(runtimeSettings = value)
         }
+        container.notificationSettingsRepository.settings.collectInto { state, value ->
+            state.copy(notificationSettings = value)
+        }
         container.editorSettingsRepository.settings.collectInto { state, value ->
             state.copy(editorSettings = value)
+        }
+        container.developerSettingsRepository.settings.collectInto { state, value ->
+            state.copy(developerSettings = value)
         }
     }
 
@@ -139,9 +150,30 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun saveRuntimeSettings(value: RuntimeSettings) = container.runtimeSettingsRepository.save(value)
 
+    fun saveNotificationSettings(value: NotificationSettings) =
+        container.notificationSettingsRepository.save(value)
+
+    suspend fun sendNotificationTest(channelId: String): NotifyReport = withContext(Dispatchers.IO) {
+        container.notificationDispatcher.sendTest(channelId)
+    }
+
     fun saveLanguage(value: AppLanguage) = container.languageRepository.save(value)
 
     fun saveEditorSettings(value: EditorSettings) = container.editorSettingsRepository.save(value)
+
+    fun saveDeveloperSettings(value: DeveloperSettings) =
+        container.developerSettingsRepository.save(value)
+
+    fun setDeveloperUnlocked(unlocked: Boolean) {
+        val current = container.developerSettingsRepository.current()
+        container.developerSettingsRepository.save(current.copy(unlocked = unlocked))
+    }
+
+    /** 恢复参数默认值，但保留当前解锁状态，避免页面入口突然消失。 */
+    fun resetDeveloperSettings() {
+        val unlocked = container.developerSettingsRepository.current().unlocked
+        container.developerSettingsRepository.save(DeveloperSettings(unlocked = unlocked))
+    }
 
     fun saveLogSettings(value: LogSettings) = container.logSettingsRepository.save(value)
 

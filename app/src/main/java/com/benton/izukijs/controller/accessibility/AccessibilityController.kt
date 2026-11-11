@@ -6,6 +6,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 
@@ -35,7 +36,7 @@ class AccessibilityController(
     override fun capabilities(): Set<Capability> = cachedCapabilities
 
     override fun click(x: Float, y: Float): Boolean =
-        service?.tapAt(x, y, TAP_DURATION_MS) ?: false
+        service?.tapAt(x, y, DeveloperTuning.current.accessibilityTapDurationMs.toLong()) ?: false
 
     override fun longClick(x: Float, y: Float, durationMs: Long): Boolean =
         service?.tapAt(x, y, durationMs) ?: false
@@ -184,7 +185,6 @@ class AccessibilityController(
     }
 
     companion object {
-        private const val TAP_DURATION_MS = 50L
         private const val MAX_DEPTH = 24
 
         const val GLOBAL_BACK = android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_BACK

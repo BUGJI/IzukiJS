@@ -140,6 +140,16 @@ object McpSchemas {
         .put("description", description)
         .put("items", JSONObject().put("type", "integer"))
 
+    /** 对象数组，例如 `[{oldText, newText}, ...]`。 */
+    fun objectArray(
+        description: String,
+        properties: Map<String, JSONObject>,
+        required: List<String> = emptyList(),
+    ): JSONObject = JSONObject()
+        .put("type", "array")
+        .put("description", description)
+        .put("items", objectSchema(properties, required))
+
     fun enum(description: String, values: List<String>): JSONObject = JSONObject()
         .put("type", "string")
         .put("description", description)

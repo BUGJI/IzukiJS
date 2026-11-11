@@ -24,12 +24,16 @@ import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.data.UnlockSettingsRepository
+import com.benton.izukijs.developer.DeveloperSettingsRepository
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.flow.FlowManager
 import com.benton.izukijs.flow.FlowRepository
 import com.benton.izukijs.flow.FlowRunner
 import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
+import com.benton.izukijs.notification.NotificationDispatcher
+import com.benton.izukijs.notification.NotificationSettingsRepository
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
@@ -95,6 +99,14 @@ class AppContainer(private val application: Application) {
 
     val runtimeSettingsRepository = RuntimeSettingsRepository(application)
 
+    val notificationSettingsRepository = NotificationSettingsRepository(application)
+
+    val notificationDispatcher = NotificationDispatcher(
+        context = application,
+        settingsRepository = notificationSettingsRepository,
+        logBus = logBus,
+    )
+
     val virtualScreenSettingsRepository = VirtualScreenSettingsRepository(application)
 
     val virtualScreenManager = VirtualScreenManager(
@@ -144,6 +156,8 @@ class AppContainer(private val application: Application) {
 
     val appearanceRepository = AppearanceRepository(application)
 
+    val developerSettingsRepository = DeveloperSettingsRepository(application)
+
     val updateSettingsRepository = UpdateSettingsRepository(application)
 
     val updateManager = UpdateManager(application, updateSettingsRepository, logBus)
@@ -161,6 +175,7 @@ class AppContainer(private val application: Application) {
             update = updateSettingsRepository,
             globalEnv = globalEnvRepository,
             virtualScreen = virtualScreenSettingsRepository,
+            notification = notificationSettingsRepository,
         ),
         // 锁屏 PIN / 图案使用设备绑定密钥加密，不参与导出 / 导入，仅在重置时清理。
         resetOnly = listOf(unlockSettingsRepository::clear),
@@ -229,6 +244,7 @@ class AppContainer(private val application: Application) {
             val id = raw.trim().removePrefix("./").removeSuffix(".js")
             scriptRepository.find(id)?.let { scriptRepository.read(it) }
         },
+        notificationDispatcher = notificationDispatcher,
     )
 
     /** 面向通知 / 悬浮窗的运行控制端口，避免 service 反向依赖 runtime 实现。 */
@@ -296,12 +312,14 @@ class AppContainer(private val application: Application) {
         screenUnlock = screenUnlockController,
         foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
         logBus = logBus,
+        notificationDispatcher = notificationDispatcher,
     )
 
     /** 初始化控制后端。会注册 Shizuku 监听并异步探测 Root。 */
     fun init() {
         logBus.setSink { logFileStore.append(it) }
         PerfMetrics.setReportSink { logBus.info(it) }
+        DeveloperTuning.update(developerSettingsRepository.current())
         appScope.launch { scriptRepository.seedBundledScripts() }
         shizukuManager.init()
         rootManager.init()
@@ -322,6 +340,9 @@ class AppContainer(private val application: Application) {
         }
         appScope.launch {
             runtimeSettingsRepository.settings.collect { PerfMetrics.setEnabled(it.perfBaseline) }
+        }
+        appScope.launch {
+            developerSettingsRepository.settings.collect { DeveloperTuning.update(it) }
         }
         appScope.launch {
             logFileStore.trim()

@@ -30,6 +30,7 @@ import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.runtime.RunControl
+import com.benton.izukijs.developer.DeveloperTuning
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -312,12 +313,13 @@ class FloatingWindowService : android.app.Service() {
 
     /**
      * 节流渲染：日志可达每秒数十条，原先每条都全量重建 200 行 Spannable 会明显卡主线程。
-     * 这里最多每 [RENDER_INTERVAL_MS] 绘制一次；折叠 / 悬浮窗被截图临时隐藏时直接跳过。
+     * 这里按开发者选项的刷新间隔绘制一次；折叠 / 悬浮窗被截图临时隐藏时直接跳过。
      */
     private fun scheduleRender() {
         if (minimized || rootView?.visibility != View.VISIBLE) return
         if (renderScheduled) return
-        val wait = (RENDER_INTERVAL_MS - (android.os.SystemClock.elapsedRealtime() - lastRenderAt))
+        val interval = DeveloperTuning.current.floatingWindowRefreshMs.toLong()
+        val wait = (interval - (android.os.SystemClock.elapsedRealtime() - lastRenderAt))
             .coerceAtLeast(0L)
         renderScheduled = true
         mainHandler.postDelayed(renderTick, wait)
@@ -336,7 +338,8 @@ class FloatingWindowService : android.app.Service() {
             if (visible.isEmpty()) {
                 builder.append(getString(R.string.floating_waiting_log))
             } else {
-                visible.takeLast(MAX_LOG_LINES).forEach { entry ->
+                visible.takeLast(DeveloperTuning.current.floatingWindowMaxLogLines)
+                    .forEach { entry ->
                     val start = builder.length
                     renderDate.time = entry.timeMillis
                     builder.append(timeFormat.format(renderDate))
@@ -407,8 +410,6 @@ class FloatingWindowService : android.app.Service() {
     companion object {
         private const val CHANNEL_ID = "izuki_floating"
         private const val NOTIFICATION_ID = NotificationIds.FLOATING_WINDOW
-        private const val MAX_LOG_LINES = 200
-        private const val RENDER_INTERVAL_MS = 250L
         private const val EXTRA_COLLAPSED = "extra_collapsed"
 
         private val _active = MutableStateFlow(false)

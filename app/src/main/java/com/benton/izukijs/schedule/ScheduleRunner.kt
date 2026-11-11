@@ -3,6 +3,7 @@ package com.benton.izukijs.schedule
 import android.content.Context
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.runtime.RunTrigger
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.service.ScreenUnlockController
 import com.benton.izukijs.model.UnlockResult
@@ -89,6 +90,7 @@ class ScheduleRunner(
             scriptName = script.name,
             source = scriptRepository.read(script),
             onFinished = { success -> scheduleManager.onFinished(updated, success) },
+            trigger = RunTrigger.SCHEDULE,
         )
         if (!started) {
             logBus.warn("定时任务未能启动（已有脚本运行）: ${schedule.scriptName}")

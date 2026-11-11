@@ -8,7 +8,7 @@ import org.json.JSONObject
  * 具体配置项由 [ConfigSection] 注册表提供；新增配置只需在 [ConfigSections.all]
  * 注册一个 section，导出 / 导入 / 重置都会自动包含，不会再出现漏改某一处的情况。
  *
- * 注意：导出的 JSON **包含明文密钥**（AI API Key、OCR 密钥等），请妥善保管。
+ * 注意：导出的 JSON **包含明文密钥**（AI API Key、OCR 密钥、通知渠道 token 等），请妥善保管。
  * 脚本文件不在此范围内。
  *
  * [resetOnly] 用于只参与重置、不参与备份的配置（例如使用设备绑定 Keystore

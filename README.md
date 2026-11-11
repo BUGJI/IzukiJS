@@ -35,7 +35,7 @@
 - **多控制后端，能力协商与降级**：无障碍、Shizuku、无线调试、Root、蓝牙 HID 统一抽象为 `Capability`，
   可全局或按能力指定优先级，自动选择当前真正可用的后端。
 - **JavaScript 脚本运行时**：基于 QuickJS，每个脚本独立运行时；提供输入、`device` / `app` /
-  `selector` / `shell` / `images` / `ocr` / `notify` / `fs` / `http` / `clipboard` /
+  `selector` / `shell` / `images` / `ocr` / `notify` / `push` / `fs` / `http` / `clipboard` /
   `permissions` / `ai` 等接口，并支持用 `// @need` 只暴露脚本真正需要的能力。
 - **混合控制**：推荐「无障碍读控件树 + HID/Shizuku/无线调试 注入输入」——读界面与发指令各取所长。
 - **视觉能力**：OpenCV 找图 / 找色，本地 MLKit 中文 OCR 或在线 OCR（百度 / Google Vision / 自定义），
@@ -54,6 +54,8 @@
   提供运行脚本、读日志、截图资源与脱敏审计日志。
 - **蓝牙 HID 注入**：通过外部 HID 硬件（如 ESP32 数位板狗，固件见
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)）以真实硬件事件控制设备，适用于需要硬件级输入的场景。
+- **通知系统**：脚本用 `push.send()` 主动发送，手动 / 定时 / 编排 / MCP 运行结果自动通知；
+  支持本地系统通知、Webhook、Bark、Telegram、ntfy 多渠道与分级过滤，默认仅失败提醒，编排默认只发汇总。
 - **系统能力扩展**：按需开启通知监听（`notify.*` 读取 / 等待新通知 / 清除）与脚本运行进度通知
   （`notify.progress`，Android 16+ 支持分段、节点、颜色与实时更新，低版本自动降级）、使用情况访问
   （`app.foreground()` 等前台与使用记录）、应用列表（`app.list()` 枚举已安装应用）、全部文件访问

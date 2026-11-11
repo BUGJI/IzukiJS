@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.Hub
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureInPicture
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
@@ -62,11 +64,13 @@ enum class SettingsCategory(
     CONTROL("control", R.string.settings_control, Icons.Filled.Gamepad),
     VISION("vision", R.string.settings_vision, Icons.Filled.Visibility),
     RUN("run", R.string.settings_run, Icons.Filled.Code),
+    NOTIFY("notify", R.string.settings_notify, Icons.Filled.Notifications),
     DISPLAY("display", R.string.settings_display, Icons.Filled.PictureInPicture),
     UNLOCK("unlock", R.string.settings_unlock, Icons.Filled.LockOpen),
     ENV("env", R.string.settings_env, Icons.Filled.Key),
     LOG("log", R.string.settings_storage, Icons.Filled.Article),
     BACKUP("backup", R.string.settings_backup, Icons.Filled.Backup),
+    DEVELOPER("developer", R.string.settings_developer, Icons.Filled.Build),
     ABOUT("about", R.string.settings_about, Icons.Filled.Info),
     ;
 
@@ -140,6 +144,16 @@ fun SettingsScreen(
                         stringResource(if (ui.runtimeSettings.keepAwake) R.string.common_on else R.string.common_off),
                     ),
                 ) { onOpenCategory(SettingsCategory.RUN) }
+                CategoryRow(
+                    category = SettingsCategory.NOTIFY,
+                    summary = stringResource(
+                        R.string.settings_notify_summary,
+                        ui.notificationSettings.channels.size,
+                        stringResource(
+                            if (ui.notificationSettings.enabled) R.string.common_on else R.string.common_off,
+                        ),
+                    ),
+                ) { onOpenCategory(SettingsCategory.NOTIFY) }
                 CategoryRow(
                     category = SettingsCategory.DISPLAY,
                     summary = stringResource(
@@ -221,6 +235,15 @@ fun SettingsScreen(
                     summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
             }
+            if (ui.developerSettings.unlocked) {
+                Spacer(Modifier.height(SectionGap))
+                CategoryGroup(stringResource(R.string.settings_group_developer)) {
+                    CategoryRow(
+                        category = SettingsCategory.DEVELOPER,
+                        summary = stringResource(R.string.settings_developer_summary),
+                    ) { onOpenCategory(SettingsCategory.DEVELOPER) }
+                }
+            }
             Spacer(Modifier.height(SectionGap))
             CategoryGroup {
                 CategoryRow(
@@ -256,11 +279,13 @@ fun SettingsDetailScreen(
             SettingsCategory.CONTROL -> ControlSettings(onOpenSetup = onOpenSetup)
             SettingsCategory.VISION -> VisionSettings()
             SettingsCategory.RUN -> RunSettings()
+            SettingsCategory.NOTIFY -> NotificationSettingsPage()
             SettingsCategory.DISPLAY -> DisplaySettings(onOpenSetup = onOpenSetup)
             SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
             SettingsCategory.ENV -> GlobalEnvSettings()
             SettingsCategory.LOG -> StorageSettings()
             SettingsCategory.BACKUP -> BackupSettingsScreen()
+            SettingsCategory.DEVELOPER -> DeveloperSettings(onBack = onBack)
             SettingsCategory.ABOUT -> AboutSettings()
             null -> Text(
                 stringResource(R.string.settings_unknown_category),

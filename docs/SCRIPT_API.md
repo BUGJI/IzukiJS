@@ -161,6 +161,42 @@ notify.update({ text: "正在收尾", stage: "第 3/5 阶段" });
 notify.reset();
 ```
 
+## `push`（发送通知）
+
+把消息投递到「设置 → 通知」里启用的渠道（本地系统通知、Webhook、Bark、Telegram、ntfy）。
+只负责发送，**不需要通知使用权**；需 `POST_NOTIFICATIONS` 并开启通知系统。
+使用 `// @need push` 时才会暴露该命名空间。
+
+| 方法 | 说明 |
+|---|---|
+| `push.available()` | 通知系统是否启用 |
+| `push.channels()` | 渠道概要数组 `[{id,name,type,enabled}]`，不含密钥 |
+| `push.send(options)` | 发送通知，返回 `{ok, delivered:[渠道 id], failed:[{channel,error}]}` |
+
+**options 字段**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `title` / `text` | string | 标题 / 正文，至少提供一个 |
+| `level` | string | `info` / `success` / `warn` / `error`，默认 `info` |
+| `channels` | string \| array | 只投递到指定渠道 id，可逗号分隔 |
+| `tags` | string \| array | 标签，用于渠道过滤（如 `deploy`） |
+| `data` | object | 自定义键值，可在 Webhook 模板中用 `{{data.KEY}}` 引用 |
+| `key` | string | 本地通知去重键；相同 key 会覆盖上一条 |
+
+```js
+push.send({
+  title: "部署完成",
+  text: "3 个步骤全部成功",
+  level: "success",
+  tags: ["deploy"],
+  data: { branch: "main" }
+});
+```
+
+运行结果（手动 / 定时 / 编排 / MCP）由应用统一生成事件，无需脚本调用 `push.send`；
+默认仅失败时通知，可在「设置 → 通知」中调整级别、手动 / 自动开关与编排汇总策略。
+
 ## `fs`（文件读写）
 
 访问共享存储中的任意路径需在「权限与能力」页开启「全部文件访问」；未授权时受限路径的操作
@@ -527,7 +563,7 @@ virtualScreen.target("virtual");
 ```
 
 - 声明后，**只有列出的命名空间会被注册**；未声明的 `shell` / `fs` / `notify` /
-  `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` /
+  `push` / `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` /
   `virtualscreen` 在脚本里不存在。
 - 没有 `@need` 时保持旧行为：暴露所有已启用的命名空间。
 - 支持逗号、分号或空格分隔，大小写不敏感；多行会合并。

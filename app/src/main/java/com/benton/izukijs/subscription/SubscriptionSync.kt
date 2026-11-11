@@ -10,7 +10,7 @@ object SubscriptionSync {
     const val DEFAULT_INTERVAL_MINUTES = 24L * 60L
 
     /** 单个订阅脚本的下载上限，防止异常链接或错误配置把整段内容读进内存。 */
-    const val MAX_SCRIPT_BYTES = HttpScript.MAX_SCRIPT_BYTES
+    val MAX_SCRIPT_BYTES: Int get() = HttpScript.MAX_SCRIPT_BYTES
 
     /** 订阅与扫码导入都只接受带主机的 http/https 链接。 */
     fun isHttpUrl(raw: String): Boolean = HttpScript.isHttpUrl(raw)

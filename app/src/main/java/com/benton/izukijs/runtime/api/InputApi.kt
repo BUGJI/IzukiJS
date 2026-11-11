@@ -7,6 +7,7 @@ import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GesturePoint
 import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.TextInputMethod
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
@@ -176,7 +177,7 @@ class InputApi(
         for (i in 0 until array.length()) {
             val point = parsePoint(array.opt(i), autoTime) ?: continue
             points.add(point)
-            autoTime = point.timeMs + DEFAULT_STEP_MS
+            autoTime = point.timeMs + DeveloperTuning.current.inputDefaultStepMs.toLong()
         }
         return if (points.isEmpty()) null else GestureStroke(points)
     }
@@ -305,8 +306,6 @@ class InputApi(
         if (length <= max) this else take(max) + "…"
 
     private companion object {
-        const val DEFAULT_STEP_MS = 16L
-
         /** 解析失败时回显原始 JSON 的最大长度。 */
         const val GESTURE_JSON_PREVIEW = 300
 
@@ -315,12 +314,6 @@ class InputApi(
         const val GLOBAL_RECENTS = 3 // AccessibilityService.GLOBAL_ACTION_RECENTS
     }
 }
-
-/** 同点段落时长 ≤ 该值视为「点击」，更长视为「长按」。 */
-private const val TAP_MAX_MS = 180L
-
-/** 点击实际下发的按压时长下限，避免 0ms 的瞬时 tap 过短而不被部分应用识别。 */
-private const val TAP_MIN_MS = 70L
 
 /** 降级执行的手势统计，用于日志告知脚本作者轨迹是否被压缩失真。 */
 internal data class GestureFallbackResult(
@@ -338,7 +331,7 @@ internal data class GestureFallbackResult(
  * - 连续移动段合并为**一次** [DeviceController.swipe]（起点 → 终点，时长求和）：中间点在
  *   这些后端上无法表达，若逐段下发，一次手势会变成 N-1 次独立 swipe，对分页型 UI 就会
  *   一次滑动翻多页。
- * - 同点段且时长 ≤ [TAP_MAX_MS]：视为**点击**，下发一段 [TAP_MIN_MS]~[TAP_MAX_MS] 的同点短按压
+ * - 同点段且时长不超过点击上限：视为**点击**，下发一段最短~最长点击时长的同点短按压
  *   （用同点 swipe 而非 longClick，才能控制按压时长；直接 longClick 会被后端抬到长按阈值）。
  * - 同点段且时长更长：视为**按住停顿**，走 [DeviceController.longClick]。
  *
@@ -353,6 +346,8 @@ internal fun applyGestureFallback(
     var taps = 0
     var holds = 0
     var droppedPoints = 0
+    val tapMinMs = DeveloperTuning.current.inputTapMinMs.toLong()
+    val tapMaxMs = DeveloperTuning.current.inputTapMaxMs.toLong()
     for (stroke in strokes) {
         val points = stroke.points
         var i = 0
@@ -378,13 +373,13 @@ internal fun applyGestureFallback(
                 i = j
             } else {
                 val duration = (to.timeMs - from.timeMs).coerceAtLeast(1L)
-                val ok = if (duration <= TAP_MAX_MS) {
+                val ok = if (duration <= tapMaxMs) {
                     controller.swipe(
                         from.x,
                         from.y,
                         from.x,
                         from.y,
-                        duration.coerceIn(TAP_MIN_MS, TAP_MAX_MS),
+                        duration.coerceIn(tapMinMs, tapMaxMs),
                     ).also { taps++ }
                 } else {
                     controller.longClick(from.x, from.y, duration).also { holds++ }

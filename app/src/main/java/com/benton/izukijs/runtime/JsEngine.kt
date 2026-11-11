@@ -17,9 +17,11 @@ import com.benton.izukijs.runtime.api.HttpApi
 import com.benton.izukijs.runtime.api.ImageApi
 import com.benton.izukijs.runtime.api.ModuleApi
 import com.benton.izukijs.runtime.api.PermissionsApi
+import com.benton.izukijs.runtime.api.PushApi
 import com.benton.izukijs.runtime.api.ScreenshotStore
 import com.benton.izukijs.runtime.api.StateApi
 import com.benton.izukijs.runtime.api.VirtualScreenApi
+import com.benton.izukijs.notification.NotificationDispatcher
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.service.CaptureSettingsRepository
@@ -46,6 +48,9 @@ class JsEngine(
     private val moduleSourceProvider: (String) -> String?,
     private val virtualScreen: VirtualScreenManager? = null,
     private val runMode: RunMode = RunMode.FOREGROUND,
+    private val scriptId: String = "",
+    private val scriptName: String = "",
+    private val pushDispatcher: NotificationDispatcher? = null,
 ) : Closeable {
 
     private var runtime: QuickJS? = null
@@ -194,6 +199,17 @@ class JsEngine(
         }
         if (allowed("ocr")) ctx.addJavascriptInterface(ocrApi, "ocr")
         if (allowed("notify")) ctx.addJavascriptInterface(bundle.notificationApi, "notify")
+        if (allowed("push") && pushDispatcher != null) {
+            ctx.addJavascriptInterface(
+                PushApi(
+                    dispatcher = pushDispatcher,
+                    logBus = logBus,
+                    scriptId = scriptId,
+                    scriptName = scriptName,
+                ),
+                "push",
+            )
+        }
         if (allowed("fs")) ctx.addJavascriptInterface(FileApi(logBus), "fs")
         if (allowed("selector")) ctx.addJavascriptInterface(selectorApi, "selector")
         if (allowed("clipboard")) {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.accessibility.AccessibilityController
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.core.log.LogBus
@@ -53,7 +54,8 @@ class DeviceApiBundle(
     )
 
     companion object {
-        private const val DEFAULT_CAPTURE_WAIT_MS = 1_000L
+        private val DEFAULT_CAPTURE_WAIT_MS: Long
+            get() = DeveloperTuning.current.captureWaitMs.toLong()
 
         fun create(
             context: Context,

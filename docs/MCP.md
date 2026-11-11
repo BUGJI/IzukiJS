@@ -105,10 +105,54 @@ adb forward tcp:8765 tcp:8765
 | 工具 | 开关 | 说明 |
 |---|---|---|
 | `shell` | 允许 Shell | 执行 Shell 命令（需 Shizuku / 无线调试 / Root），返回 `{ok, stdout, stderr, exit_code, elapsed_ms}`；高危命令默认拦截 |
-| `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理；`run_script` 返回 `run_id`，用 `get_run_log` 取回配对输出 |
+| `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理；`read_script` 支持 `offset` / `limit` / `line_numbers` / `meta` 分页读取并返回 `sha256`；`run_script` 返回 `run_id`，用 `get_run_log` 取回配对输出 |
 | `script_write` | 允许运行脚本 | 新建或覆盖脚本源码（上限 1 MiB）；覆盖前旧内容进入历史，返回真实脚本 id |
+| `script_edit` | 允许运行脚本 | 增量编辑：按顺序用 `newText` 精确替换 `oldText`，支持多编辑原子应用、`dry_run` 预演与 `expectedSha256` 并发校验；失败返回 `reason` 与候选行 |
+| `script_search` | 允许运行脚本 | 在单个或全部脚本中搜索文本（`literal` / `regex`），返回行号、列号与上下文；建议先搜索定位再编辑 |
 | `delete_script` / `rename_script` | 允许运行脚本 | 删除（含历史）/ 重命名脚本；运行中的脚本拒绝操作 |
 | `unlock` | 允许解锁工具 | 触发一次锁屏自主解锁，复用「设置 → 安全解锁」中保存的凭据；不会主动锁屏。需同时开启该页的总开关 |
+
+## 脚本增量编辑
+
+修改脚本不需要重新生成整份源码。推荐流程是「搜索定位 → 分页读取 → 增量编辑」：
+
+```json
+// 1) 先定位，避免整文件读取
+{ "tool": "script_search", "arguments": { "id": "demo", "pattern": "click(" } }
+
+// 2) 读取目标附近的行，并拿到 sha256
+{ "tool": "read_script", "arguments": { "id": "demo", "offset": 20, "limit": 40, "meta": true } }
+
+// 3) 预演（可选），只返回 diff 不写盘
+{ "tool": "script_edit", "arguments": {
+  "id": "demo",
+  "dry_run": true,
+  "edits": [
+    { "oldText": "click(540, 1200)", "newText": "click(540, 1600)" }
+  ]
+} }
+
+// 4) 落盘
+{ "tool": "script_edit", "arguments": {
+  "id": "demo",
+  "expectedSha256": "<上一步 read_script 返回的 sha256>",
+  "edits": [
+    { "oldText": "click(540, 1200)", "newText": "click(540, 1600)" },
+    { "oldText": "swipe(540, 1600, 540, 600, 300)", "newText": "swipe(540, 1600, 540, 600, 400)" }
+  ]
+} }
+```
+
+- `oldText` 必须与原文**完全一致**（含缩进、空行与换行）；`read_script` 的行号前缀只用于阅读，
+  不要复制进 `oldText`。
+- 多条 `edits` 按顺序应用，后一条看到前一条的结果；任一条失败则整批不落盘。
+  一次调用只产生一个历史版本，方便回滚。
+- `oldText` 命中多处时默认报错并返回候选行；确认要全部替换时传 `replaceAll=true`。
+- `expectedSha256` 可防止覆盖编辑器或其他客户端在此期间做的修改；不匹配时返回 `reason=stale`
+  和当前 `actual_sha256`，重新读取后再试即可。
+- 失败结果包含 `reason`（`invalid` / `not_found` / `ambiguous` / `stale`）、`edit_index` 与
+  `occurrences`，可直接据此修正。
+- 允许编辑正在运行的脚本；已启动的实例继续使用启动时的源码，下次运行才生效。
 
 ## 坐标与截图
 

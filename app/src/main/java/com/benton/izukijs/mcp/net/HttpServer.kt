@@ -15,6 +15,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
+import com.benton.izukijs.developer.DeveloperTuning
 import org.json.JSONObject
 
 /** 一个已解析的 HTTP 请求。 */
@@ -66,13 +67,13 @@ class HttpServer(
     private var running = false
 
     /**
-     * keep-alive 连接会长时间占用工作线程（最长 [IDLE_TIMEOUT_MS]），因此不能用无上限的
-     * 缓存线程池：异常 / 恶意客户端可直接把线程数打上去。改用带并发上限的线程池，
-     * 超出上限的请求由 [ThreadPoolExecutor.AbortPolicy] 拒绝（连接随即可被关闭）。
+     * keep-alive 连接会长时间占用工作线程（最长由开发者选项的 MCP 空闲超时控制），
+     * 因此不能用无上限的缓存线程池：异常 / 恶意客户端可直接把线程数打上去。改用带并发
+     * 上限的线程池，超出上限的请求由 [ThreadPoolExecutor.AbortPolicy] 拒绝（连接随即可被关闭）。
      */
     private val clients: ExecutorService = ThreadPoolExecutor(
         0,
-        MAX_CLIENT_THREADS,
+        DeveloperTuning.current.mcpMaxClientThreads,
         CLIENT_IDLE_SECONDS,
         TimeUnit.SECONDS,
         SynchronousQueue(),
@@ -173,7 +174,7 @@ class HttpServer(
 
     private fun serveConnection(client: Socket) {
             // 空闲超时：keep-alive 连接在无新请求时于该时限后关闭。
-            runCatching { client.soTimeout = IDLE_TIMEOUT_MS }
+            runCatching { client.soTimeout = DeveloperTuning.current.mcpIdleTimeoutMs }
             val input = BufferedInputStream(client.getInputStream())
             val output = BufferedOutputStream(client.getOutputStream())
             while (running) {
@@ -347,12 +348,6 @@ class HttpServer(
     }
 
     private companion object {
-        /** keep-alive 连接的空闲超时；超过则关闭连接。 */
-        const val IDLE_TIMEOUT_MS = 120_000
-
-        /** 并发处理的连接上限；超出则拒绝并关闭新连接。 */
-        const val MAX_CLIENT_THREADS = 32
-
         /** 空闲工作线程的存活时长（秒）。 */
         const val CLIENT_IDLE_SECONDS = 60L
 

@@ -36,8 +36,8 @@ OCR and AI-Agent recovery.
   Root and Bluetooth HID are unified behind a `Capability` abstraction; set a global or per-capability
   priority and the runtime picks the backend that is actually available.
 - **JavaScript script runtime**: based on QuickJS with an isolated runtime per script; exposes input
-  and the `device` / `app` / `selector` / `shell` / `images` / `ocr` / `notify` / `fs` / `http` /
-  `clipboard` / `permissions` / `ai` interfaces, with `// @need` to expose only what a script uses.
+  and the `device` / `app` / `selector` / `shell` / `images` / `ocr` / `notify` / `push` / `fs` /
+  `http` / `clipboard` / `permissions` / `ai` interfaces, with `// @need` to expose only what a script uses.
 - **Hybrid control**: the recommended setup is "read the view tree via Accessibility + inject input
   via HID/Shizuku" — each backend does what it does best.
 - **Vision**: OpenCV image / color matching, local MLKit Chinese OCR or online OCR (Baidu /
@@ -61,6 +61,9 @@ OCR and AI-Agent recovery.
 - **Bluetooth HID injection**: drives the device with real hardware events through an external HID
   device (e.g. an ESP32 digitizer dongle, firmware at
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)) for scenarios that need hardware-level input.
+- **Notification system**: scripts send with `push.send()`, and manual / scheduled / flow / MCP run
+  results are notified automatically; supports local system notifications, Webhook, Bark, Telegram and
+  ntfy channels with level filtering. Failures only by default, and flows send one summary by default.
 - **System capability extensions**: opt-in notification listening (`notify.*` read / wait for new /
   clear) and script progress notifications (`notify.progress`; Android 16+ supports segments,
   points, colors and live updates, with automatic fallback on older versions), usage access

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.virtualscreen.ScreenTarget
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.benton.izukijs.virtualscreen.VirtualScreenOptions
@@ -139,6 +140,6 @@ class VirtualScreenApi(
     }
 
     private companion object {
-        const val CAPTURE_WAIT_MS = 1_000L
+        val CAPTURE_WAIT_MS: Long get() = DeveloperTuning.current.captureWaitMs.toLong()
     }
 }

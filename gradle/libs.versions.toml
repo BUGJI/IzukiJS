@@ -20,6 +20,7 @@ opencv = "5.0.0.1"
 mlkitTextChinese = "16.0.1"
 mlkitBarcode = "17.3.0"
 material = "1.14.0"
+json = "20240303"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -53,6 +54,7 @@ opencv = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
 mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitTextChinese" }
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
+json = { group = "org.json", name = "json", version.ref = "json" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
