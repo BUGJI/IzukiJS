@@ -7,6 +7,7 @@
 
 ## [未发布]
 
+## [1.1.12] - 2026-11-10
 ### 新增
 
 - 日志设置页（设置 → 数据 → 日志 → 性能基线）新增性能基线开关与「立即输出」；报告接入应用内日志：
@@ -405,7 +406,8 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.11...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.12...HEAD
+[1.1.12]: https://github.com/BUGJI/IzukiJS/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/BUGJI/IzukiJS/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/BUGJI/IzukiJS/compare/v1.1.9...v1.1.10
 [1.1.9]: https://github.com/BUGJI/IzukiJS/compare/v1.1.8...v1.1.9

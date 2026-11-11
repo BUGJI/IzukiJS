@@ -840,7 +840,6 @@ class ImageApi(
                 return openCvReady
             }
         }
-
     }
 
     /** 进程级模板缓存：脚本多次运行、循环找图时复用已解码的模板，避免反复读盘解码。 */
