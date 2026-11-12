@@ -15,6 +15,9 @@ sealed interface ScriptRunOutcome {
     /** 已有脚本在运行，本次未启动。 */
     data object Busy : ScriptRunOutcome
 
+    /** 脚本声明无效（例如未知 @need），本次未启动。 */
+    data class Invalid(val reason: String) : ScriptRunOutcome
+
     /** 脚本已结束；[success] 与现有 onFinished 回调语义一致。 */
     data class Finished(val success: Boolean) : ScriptRunOutcome
 

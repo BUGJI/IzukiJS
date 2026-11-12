@@ -19,7 +19,7 @@ class RunHistoryRepository(context: Context) {
     private val _recent = MutableStateFlow(load())
     val recent: StateFlow<List<RecentRun>> = _recent.asStateFlow()
 
-    /** 记录一次运行，把脚本移到最前，最多保留 [MAX] 条。以 id 去重，重命名后仍能命中。 */
+    /** 记录一次运行，把脚本移到最前，最多保留 [MAX] 条。 */
     fun record(id: String, name: String) {
         if (id.isBlank() || name.isBlank()) return
         val next = buildList {
@@ -31,6 +31,17 @@ class RunHistoryRepository(context: Context) {
                     .take(MAX - 1),
             )
         }
+        _recent.value = next
+        persist(next)
+    }
+
+    /** 脚本重命名后迁移快捷启动记录，保留原有运行时间。 */
+    fun move(oldId: String, newId: String, name: String) {
+        if (oldId == newId || oldId.isBlank() || newId.isBlank()) return
+        val next = _recent.value.map { record ->
+            if (record.id == oldId) record.copy(id = newId, name = name) else record
+        }
+        if (next == _recent.value) return
         _recent.value = next
         persist(next)
     }

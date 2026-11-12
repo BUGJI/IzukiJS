@@ -221,12 +221,17 @@ class RecordingReplay(
         }
         if (remaining.isNotEmpty()) {
             val first = remaining.first()
-            mismatch(
-                expected = "end",
-                actual = RecordEvent.kindOf(first)?.name ?: first.javaClass.simpleName,
-                message = "录制还有 ${remaining.size} 条未消费事件",
-                event = first,
-            )
+            if (options.strict) {
+                mismatch(
+                    expected = "end",
+                    actual = RecordEvent.kindOf(first)?.name ?: first.javaClass.simpleName,
+                    message = "录制还有 ${remaining.size} 条未消费事件",
+                    event = first,
+                )
+            } else {
+                // 宽容模式允许流水线提前结束；剩余事件只是提示，不应判为失败。
+                note("回放提前结束，剩余 ${remaining.size} 条事件未消费")
+            }
         }
         return ReplayReport(
             mismatches = _mismatches.toList(),

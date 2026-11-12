@@ -30,7 +30,7 @@ internal fun hasNotificationListener(context: Context): Boolean =
 
 /** 是否已忽略电池优化（加入白名单），用于后台保活。 */
 internal fun isIgnoringBatteryOptimizations(context: Context): Boolean {
-    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
+    val manager = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return false
     return manager.isIgnoringBatteryOptimizations(context.packageName)
 }
 

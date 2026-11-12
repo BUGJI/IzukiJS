@@ -39,6 +39,8 @@ class UpdateManager(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    private var downloadJob: Job? = null
+
     private val checker = UpdateChecker(logBus)
 
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
@@ -84,8 +86,9 @@ class UpdateManager(
             openOnGitHub()
             return
         }
+        if (downloadJob?.isActive == true) return
         _prompt.value = null
-        scope.launch {
+        downloadJob = scope.launch {
             _state.value = UpdateState.Downloading(-1)
             val result = withContext(Dispatchers.IO) {
                 runCatching {
@@ -96,11 +99,9 @@ class UpdateManager(
             }
             result.fold(
                 onSuccess = { file ->
-                    _state.value = if (ApkInstaller.install(context, file)) {
-                        UpdateState.Idle
-                    } else {
-                        UpdateState.Downloaded(file)
-                    }
+                    val installed = file.exists() && file.length() > 0L &&
+                        runCatching { ApkInstaller.install(context, file) }.getOrDefault(false)
+                    _state.value = if (installed) UpdateState.Idle else UpdateState.Downloaded(file)
                 },
                 onFailure = {
                     logBus?.warn("更新下载失败: ${it.message}")
@@ -112,7 +113,15 @@ class UpdateManager(
 
     fun installDownloaded() {
         val file = (_state.value as? UpdateState.Downloaded)?.file ?: return
-        if (ApkInstaller.install(context, file)) _state.value = UpdateState.Idle
+        if (!file.exists() || file.length() <= 0L) {
+            _state.value = UpdateState.DownloadFailed("安装包不存在，请重新下载")
+            return
+        }
+        if (runCatching { ApkInstaller.install(context, file) }.getOrDefault(false)) {
+            _state.value = UpdateState.Idle
+        } else {
+            _state.value = UpdateState.DownloadFailed("无法启动安装程序")
+        }
     }
 
     fun openOnGitHub() {

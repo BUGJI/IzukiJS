@@ -186,7 +186,8 @@ class VisionEngine(
                 val sub = spec.allOf.getOrNull(spec.boxIndex)
                 val result = subResults.getOrNull(spec.boxIndex).orEmpty()
                 val chosen = if (sub == null) null else selectIndex(result, sub.spec.index)
-                if (chosen == null) emptyList() else listOf(chosen)
+                val selected = if (chosen == null) emptyList() else listOf(chosen)
+                constrainToRoi(selected, spec.roi, refs, screen.width, screen.height)
             }
         }
 
@@ -200,7 +201,7 @@ class VisionEngine(
                     break
                 }
             }
-            hit
+            constrainToRoi(hit, spec.roi, refs, screen.width, screen.height)
         }
 
         is NeuralClassifySpec -> {
@@ -223,6 +224,24 @@ class VisionEngine(
                     finalize(spec, neuralEngine.detect(screenMat.value, rois, spec))
                 }
             }
+        }
+    }
+
+    /** And / Or 自身的 roi 用于约束组合结果，避免子识别扫描整屏。 */
+    private fun constrainToRoi(
+        results: List<VisionResult>,
+        roi: RoiSpec?,
+        refs: Map<String, List<VisionResult>>,
+        width: Int,
+        height: Int,
+    ): List<VisionResult> {
+        if (roi == null || results.isEmpty()) return results
+        val rois = RoiResolver.resolve(roi, refs, width, height)
+        if (rois.isEmpty()) return emptyList()
+        return results.filter { result ->
+            val cx = result.box.centerX
+            val cy = result.box.centerY
+            rois.any { cx >= it.left && cx < it.left + it.width && cy >= it.top && cy < it.top + it.height }
         }
     }
 

@@ -75,7 +75,7 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
     private var requestJob: Job? = null
 
     init {
-        container.controllerManager.readyModes.collectInto { state, value ->
+        container.controllerManager.effectiveReadyModes.collectInto { state, value ->
             state.copy(readyModes = value)
         }
         container.screenCapture.active.collectInto { state, value ->

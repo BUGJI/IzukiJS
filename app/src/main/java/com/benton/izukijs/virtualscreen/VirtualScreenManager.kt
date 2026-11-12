@@ -16,6 +16,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -208,7 +209,14 @@ class VirtualScreenManager(
         logBus.info("正在创建后台虚拟屏（${resolution.width}x${resolution.height}@${resolution.dpi}）")
 
         val source = VirtualScreenFrameSource(resolution.width, resolution.height, logBus)
-        source.start()
+        try {
+            source.start()
+        } catch (t: Throwable) {
+            source.close()
+            if (t is CancellationException) throw t
+            fail("虚拟屏帧源创建失败：${t.message}")
+            return@withLock false
+        }
         val displayId = try {
             client.create(
                 resolution.width,
@@ -220,7 +228,11 @@ class VirtualScreenManager(
         } catch (t: Throwable) {
             source.close()
             if (t is CancellationException) {
-                _state.value = VirtualScreenState.Idle
+                // 取消可能发生在远程 display 已创建之后；尽力清理，避免遗留虚拟屏。
+                withContext(NonCancellable) {
+                    runCatching { client.destroyDisplay() }
+                    _state.value = VirtualScreenState.Idle
+                }
                 throw t
             }
             fail("虚拟屏创建失败：${t.message}")
@@ -263,7 +275,12 @@ class VirtualScreenManager(
         }
 
     suspend fun stop(reason: String = STOP_USER) {
-        startMutex.withLock { cleanupInternal(destroyRemote = true, reason = reason) }
+        startMutex.withLock {
+            // 页面退出会取消发起 stop 的协程；清理必须跑完，否则 remote display 会泄漏。
+            withContext(NonCancellable) {
+                cleanupInternal(destroyRemote = true, reason = reason)
+            }
+        }
     }
 
     fun stopBlocking(reason: String = STOP_USER) {

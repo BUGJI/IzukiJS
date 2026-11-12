@@ -141,7 +141,13 @@ class DevicePipelineActions(
         box: Box?,
         resolveTarget: (TargetSpec, Box?) -> Box?,
     ): PipelineActionResult {
-        val begin = resolveBox(param, "begin", "begin_offset", box, resolveTarget)
+        // Maa 配置里起点写作 starting；运行时统一按 begin 读取。
+        val beginParam = if (!param.has("begin") && param.has("starting")) {
+            JSONObject(param.toString()).apply { put("begin", param.opt("starting")) }
+        } else {
+            param
+        }
+        val begin = resolveBox(beginParam, "begin", "begin_offset", box, resolveTarget)
             ?: return fail(node, "Swipe 起点无效")
         val ends = targetItems(param.opt("end") ?: true)
         if (ends.isEmpty()) return fail(node, "Swipe 终点为空")

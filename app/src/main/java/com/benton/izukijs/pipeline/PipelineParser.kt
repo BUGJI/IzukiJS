@@ -97,7 +97,13 @@ object PipelineParser {
     ): TargetSpec {
         val raw = if (input.has(key) && !input.isNull(key)) input.opt(key) else null
         val base = if (raw == null) default else parseTargetValue(raw)
-        val offsetRaw = if (input.has(offsetKey) && !input.isNull(offsetKey)) input.opt(offsetKey) else null
+        // 配置校验同时接受 snake_case / camelCase；运行时也要读同一个别名。
+        val camelOffsetKey = offsetKey.replace("_offset", "Offset")
+        val offsetRaw = when {
+            input.has(offsetKey) && !input.isNull(offsetKey) -> input.opt(offsetKey)
+            input.has(camelOffsetKey) && !input.isNull(camelOffsetKey) -> input.opt(camelOffsetKey)
+            else -> null
+        }
         val offset = if (offsetRaw == null) base.offset else parseRectArray(offsetRaw, offsetKey)
         return base.copy(offset = offset)
     }

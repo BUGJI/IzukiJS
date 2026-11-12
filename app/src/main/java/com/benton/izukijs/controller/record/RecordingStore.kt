@@ -669,6 +669,8 @@ class RecordingWriter internal constructor(
                             frame = previousPath,
                             width = width,
                             height = height,
+                            // 画面与上一帧相同而复用旧图，标记为 stale 便于消费方区分。
+                            stale = true,
                             source = source,
                             elapsedMs = elapsedMs,
                         ),

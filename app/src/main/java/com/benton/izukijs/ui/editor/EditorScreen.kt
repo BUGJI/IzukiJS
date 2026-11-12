@@ -425,6 +425,15 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
+    /** 查找栏打开时优先关闭查找，而不是直接保存退出编辑器。 */
+    fun requestBack() {
+        if (findVisible) {
+            findVisible = false
+        } else {
+            saveAndThen(onBack)
+        }
+    }
+
     fun startRun(runText: String, message: Int? = null) {
         haptics.tap()
         val fullText = editorValue.text
@@ -448,7 +457,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         return text.substring(lineStart)
     }
 
-    BackHandler { saveAndThen(onBack) }
+    BackHandler { requestBack() }
 
     IzukiPageScaffold(
         title = {
@@ -469,7 +478,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 }
             }
         },
-        onBack = { saveAndThen(onBack) },
+        onBack = { requestBack() },
         actions = {
                     IconButton(onClick = { findVisible = !findVisible }) {
                         Icon(

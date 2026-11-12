@@ -28,6 +28,7 @@ import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.formatFileSize
@@ -48,6 +49,8 @@ internal fun StorageSettings() {
     var cacheImages by remember { mutableStateOf(CacheImageStore.Stats(0, 0L)) }
     var confirmClearLog by remember { mutableStateOf(false) }
     var confirmClearCacheImages by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    val snackbar = LocalSnackbarController.current
 
     fun refreshLogSize() {
         scope.launch {
@@ -142,22 +145,38 @@ internal fun StorageSettings() {
         )
         Spacer(Modifier.height(8.dp))
         ActionButtons {
-            OutlinedButton(onClick = { confirmClearLog = true }) {
+            OutlinedButton(
+                onClick = { confirmClearLog = true },
+                enabled = !busy,
+            ) {
                 Text(stringResource(R.string.storage_clear_now))
             }
-            OutlinedButton(onClick = {
-                scope.launch {
-                    val file = newCacheExportFile(context, "izukijs_log", "log")
-                    val ok = viewModel.exportLogs(file)
-                    if (ok) {
-                        shareFile(
-                            context = context,
-                            file = file,
-                            chooserTitle = resources.getString(R.string.storage_export_log_chooser),
-                        )
+            OutlinedButton(
+                enabled = !busy,
+                onClick = {
+                    busy = true
+                    scope.launch {
+                        try {
+                            val file = newCacheExportFile(context, "izukijs_log", "log")
+                            val ok = viewModel.exportLogs(file)
+                            if (ok) {
+                                shareFile(
+                                    context = context,
+                                    file = file,
+                                    chooserTitle = resources.getString(
+                                        R.string.storage_export_log_chooser,
+                                    ),
+                                )
+                            } else {
+                                runCatching { file.delete() }
+                                snackbar.show(resources.getString(R.string.record_page_failed))
+                            }
+                        } finally {
+                            busy = false
+                        }
                     }
-                }
-            }) { Text(stringResource(R.string.storage_export_log)) }
+                },
+            ) { Text(stringResource(R.string.storage_export_log)) }
         }
     }
 
@@ -219,11 +238,19 @@ internal fun StorageSettings() {
             destructive = true,
             onDismiss = { confirmClearLog = false },
             onConfirm = {
-                scope.launch {
-                    viewModel.clearLogs()
-                    logFileSize = viewModel.logFileSizeBytes()
-                }
                 confirmClearLog = false
+                busy = true
+                scope.launch {
+                    try {
+                        viewModel.clearLogs()
+                        logFileSize = viewModel.logFileSizeBytes()
+                        snackbar.show(resources.getString(R.string.storage_log_cleared))
+                    } catch (t: Throwable) {
+                        snackbar.show(resources.getString(R.string.record_page_failed))
+                    } finally {
+                        busy = false
+                    }
+                }
             },
         )
     }

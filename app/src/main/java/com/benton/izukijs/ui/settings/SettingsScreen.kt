@@ -289,7 +289,7 @@ fun SettingsDetailScreen(
             SettingsCategory.NOTIFY -> NotificationSettingsPage()
             SettingsCategory.DISPLAY -> DisplaySettings(onOpenSetup = onOpenSetup)
             SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
-            SettingsCategory.ENV -> GlobalEnvSettings()
+            SettingsCategory.ENV -> GlobalEnvSettings(onBack = onBack)
             SettingsCategory.LOG -> StorageSettings()
             SettingsCategory.RECORD -> RecordingSettingsPage(onOpenDetail = onOpenRecordingDetail)
             SettingsCategory.BACKUP -> BackupSettingsScreen()

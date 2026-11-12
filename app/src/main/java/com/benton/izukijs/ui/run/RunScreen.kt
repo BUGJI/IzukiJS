@@ -34,10 +34,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -122,6 +124,27 @@ fun RunScreen(
                 autoEnter = false,
                 request = PipRequest(resolution ?: ui.virtualScreenSettings.resolution),
             )
+        }
+    }
+
+    // 页面被销毁时 LaunchedEffect 只会取消，不会执行 else 分支；必须显式解除 PiP，
+    // 否则从其它标签按 Home 仍会进入空的画中画。
+    val latestPipHost by rememberUpdatedState(pipHost)
+    val latestPipResolution by rememberUpdatedState(
+        activeVirtualScreen?.resolution ?: ui.virtualScreenSettings.resolution,
+    )
+    DisposableEffect(Unit) {
+        onDispose {
+            val host = latestPipHost ?: return@onDispose
+            host.pipRequest = null
+            val target = host as? android.app.Activity ?: return@onDispose
+            runCatching {
+                PipController.updateParams(
+                    target,
+                    autoEnter = false,
+                    request = PipRequest(latestPipResolution),
+                )
+            }
         }
     }
 

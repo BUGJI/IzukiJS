@@ -76,7 +76,7 @@ fun PermissionScreen(
     onOpenAdb: () -> Unit,
 ) {
     val container = rememberAppContainer()
-    val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
+    val readyModes by container.controllerManager.effectiveReadyModes.collectAsStateWithLifecycle()
     val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
     val context = LocalContext.current
 

@@ -343,7 +343,7 @@ data class ScreenshotEvent(
     val width: Int,
     val height: Int,
     /**
-     * true 表示这次截图已超过录制帧上限，[frame] 实际指向上一帧旧图；
+     * true 表示 [frame] 复用了上一帧旧图（超过录制帧上限，或画面采样去重）；
      * 消费方（时间线 / MCP / 回放）据此避免把旧画面当成当前屏幕。
      */
     val stale: Boolean = false,

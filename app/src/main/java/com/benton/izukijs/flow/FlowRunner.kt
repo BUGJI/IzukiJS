@@ -256,6 +256,11 @@ class FlowRunner(
                 StepResult(step, success = false, elapsedMs = elapsed, busy = true)
             }
 
+            is ScriptRunOutcome.Invalid -> {
+                logBus.error("编排步骤 $index/$total 声明无效: ${outcome.reason}")
+                StepResult(step, success = false, elapsedMs = elapsed)
+            }
+
             ScriptRunOutcome.Stopped -> {
                 logBus.warn("⏹ 步骤已停止: ${script.name}（${elapsed}ms）")
                 StepResult(step, success = false, elapsedMs = elapsed, stopped = true)

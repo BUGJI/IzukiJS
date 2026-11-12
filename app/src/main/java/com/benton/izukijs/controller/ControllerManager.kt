@@ -21,6 +21,10 @@ class ControllerManager {
     private val _readyModes = MutableStateFlow<Set<ControlMode>>(emptySet())
     val readyModes: StateFlow<Set<ControlMode>> = _readyModes.asStateFlow()
 
+    /** 扣除用户主动停用后端后的就绪集合，供权限 / 运行页展示真实可用状态。 */
+    private val _effectiveReadyModes = MutableStateFlow<Set<ControlMode>>(emptySet())
+    val effectiveReadyModes: StateFlow<Set<ControlMode>> = _effectiveReadyModes.asStateFlow()
+
     /** 读取能力（截图 / 控件树）全局优先使用的模式；为空时按注册顺序。 */
     @Volatile
     var readMode: ControlMode? = null
@@ -55,6 +59,7 @@ class ControllerManager {
 
     fun setDisabledModes(modes: Set<ControlMode>) {
         disabledModes = modes
+        publishEffectiveReady()
     }
 
     fun isDisabled(mode: ControlMode): Boolean = mode in disabledModes
@@ -88,6 +93,11 @@ class ControllerManager {
 
     fun refresh() {
         _readyModes.value = controllers.filter { it.isReady() }.map { it.mode }.toSet()
+        publishEffectiveReady()
+    }
+
+    private fun publishEffectiveReady() {
+        _effectiveReadyModes.value = _readyModes.value - disabledModes
     }
 
     fun all(): List<DeviceController> = controllers.toList()

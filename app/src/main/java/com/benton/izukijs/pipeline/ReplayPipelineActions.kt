@@ -129,7 +129,7 @@ class ReplayPipelineActions(
                 val event = replay.expectAction(RecordActionKind.INPUT_TEXT)
                 if (event !is InputTextEvent) return missing(node, RecordActionKind.INPUT_TEXT)
                 consume(event)
-                if (text != null && text != event.text) {
+                if (replay.options.compareText && text != null && text != event.text) {
                     val ok = report(
                         node,
                         "InputText 不一致，录制=\"${event.text}\" 回放=\"$text\"",
@@ -187,6 +187,21 @@ class ReplayPipelineActions(
                         "Shell",
                         expectedValue = cmd,
                         actualValue = event.cmd,
+                    )
+                    if (!ok) return PipelineActionResult(false)
+                }
+                val expectedOut = stringValue(param, "stdout", "expected_stdout")
+                if (replay.options.compareShellOutput &&
+                    expectedOut != null &&
+                    expectedOut != event.stdout
+                ) {
+                    val ok = report(
+                        node,
+                        "Shell 输出不一致，录制=\"${event.stdout}\" 回放=\"$expectedOut\"",
+                        "Shell",
+                        "Shell",
+                        expectedValue = expectedOut,
+                        actualValue = event.stdout,
                     )
                     if (!ok) return PipelineActionResult(false)
                 }
@@ -248,8 +263,8 @@ class ReplayPipelineActions(
                     "Swipe",
                 )
                 if (!ok) return PipelineActionResult(false)
+                success = false
             }
-            success = success && event.success
         }
         return PipelineActionResult(success)
     }
@@ -259,7 +274,12 @@ class ReplayPipelineActions(
         box: Box?,
         resolveTarget: (TargetSpec, Box?) -> Box?,
     ): List<Pair<Box, Box>>? {
-        val begin = resolveActionTarget(param, "begin", "begin_offset", box, resolveTarget)
+        val beginParam = if (!param.has("begin") && param.has("starting")) {
+            JSONObject(param.toString()).apply { put("begin", param.opt("starting")) }
+        } else {
+            param
+        }
+        val begin = resolveActionTarget(beginParam, "begin", "begin_offset", box, resolveTarget)
             ?: return null
         val ends = targetItems(param.opt("end") ?: true)
         if (ends.isEmpty()) return null

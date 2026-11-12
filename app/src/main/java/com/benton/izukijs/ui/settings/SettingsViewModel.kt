@@ -62,6 +62,7 @@ data class SettingsUiState(
     val developerSettings: DeveloperSettings = DeveloperSettings(),
     val recordingActive: Boolean = false,
     val recordingKind: String = "script",
+    val screenCaptureActive: Boolean = false,
 )
 
 /**
@@ -78,7 +79,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.controllerSettingsRepository.settings.collectInto { state, value ->
             state.copy(controllerSettings = value)
         }
-        container.controllerManager.readyModes.collectInto { state, value ->
+        container.controllerManager.effectiveReadyModes.collectInto { state, value ->
             state.copy(readyModes = value)
         }
         container.ocrConfigRepository.config.collectInto { state, value ->
@@ -140,6 +141,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         container.recordingSession.activeKind.collectInto { state, value ->
             state.copy(recordingKind = value)
+        }
+        container.screenCapture.active.collectInto { state, value ->
+            state.copy(screenCaptureActive = value)
         }
     }
 

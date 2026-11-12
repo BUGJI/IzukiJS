@@ -405,6 +405,8 @@
     <string name="settings_env_desc">Shared by all scripts by default; same-name script variables take precedence.</string>
     <string name="settings_env_placeholder">Global variables</string>
     <string name="settings_env_saved">Global variables saved</string>
+    <string name="env_clear_confirm_title">Clear all variables?</string>
+    <string name="env_clear_confirm_message">Saving will delete all current global variables; scripts will no longer inherit them.</string>
     <string name="env_example">KEY=VALUE</string>
     <string name="env_hint">One per line; blank lines and lines starting with # are ignored.</string>
     <string name="env_invalid_line">Line %1$d is invalid; expected KEY=VALUE</string>
@@ -620,6 +622,7 @@
     <string name="storage_clear_now">Clear now</string>
     <string name="storage_clear_confirm">Clear all log files? This cannot be undone.</string>
     <string name="storage_export_log">Export</string>
+    <string name="storage_log_cleared">Logs cleared</string>
     <string name="storage_export_log_chooser">Export log</string>
     <string name="storage_days">%1$d days</string>
     <string name="storage_cache_images_title">Cached images</string>
@@ -680,6 +683,7 @@
     <string name="record_page_cleared">All recordings cleared</string>
     <string name="record_page_failed">Operation failed</string>
     <string name="record_page_active_delete_blocked">Cannot delete or clear while recording</string>
+    <string name="record_page_script_recording_hint">A script is recording; it ends when the script stops</string>
     <string name="record_detail_back">Back to list</string>
     <string name="record_detail_loading">Loading recording…</string>
     <string name="record_detail_missing">Recording not found or corrupted</string>

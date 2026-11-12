@@ -198,6 +198,8 @@ private fun frameRecording(session: RecordingSession, args: JSONObject): McpTool
     } finally {
         if (annotated !== decoded) annotated.recycle()
         decoded.recycle()
+        // reader 缓存最多持有 8 张全屏 Bitmap；MCP 每次调用都应尽快释放。
+        reader.clearFrameCache()
     }
 }
 

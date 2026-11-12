@@ -1,8 +1,11 @@
 package com.benton.izukijs.ui.settings
 
 import android.Manifest
+import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -69,7 +72,8 @@ internal fun NotificationSettingsPage() {
     val snackbar = LocalSnackbarController.current
 
     var editing by remember { mutableStateOf<NotifyChannel?>(null) }
-    var creating by remember { mutableStateOf(false) }
+    // 保留同一个草稿实例：每次重组都 newChannel() 会生成新 UUID 并重置已输入内容。
+    var creating by remember { mutableStateOf<NotifyChannel?>(null) }
     var deleting by remember { mutableStateOf<NotifyChannel?>(null) }
 
     fun save(next: com.benton.izukijs.core.notification.NotificationSettings) =
@@ -180,7 +184,10 @@ internal fun NotificationSettingsPage() {
     SectionCard(
         title = stringResource(R.string.notif_section_channels),
         trailing = {
-            TextButton(onClick = { creating = true }, enabled = settings.enabled) {
+            TextButton(
+                onClick = { creating = NotifyChannel.newChannel(NotifyChannelType.WEBHOOK) },
+                enabled = settings.enabled,
+            ) {
                 Text(stringResource(R.string.notif_channel_add))
             }
         },
@@ -232,13 +239,13 @@ internal fun NotificationSettingsPage() {
         }
     }
 
-    if (creating) {
+    creating?.let { draft ->
         ChannelEditDialog(
-            initial = NotifyChannel.newChannel(NotifyChannelType.WEBHOOK),
+            initial = draft,
             isNew = true,
-            onDismiss = { creating = false },
+            onDismiss = { creating = null },
             onConfirm = { channel ->
-                creating = false
+                creating = null
                 save(settings.copy(channels = settings.channels + channel))
             },
         )
@@ -328,6 +335,13 @@ private fun ChannelEditDialog(
         NotifyChannelType.entries.filter { it != NotifyChannelType.LOCAL }
     } else {
         NotifyChannelType.entries
+    }
+    val canSave = when (draft.type) {
+        NotifyChannelType.LOCAL -> true
+        NotifyChannelType.WEBHOOK -> draft.url.isNotBlank()
+        NotifyChannelType.BARK -> draft.deviceKey.isNotBlank()
+        NotifyChannelType.TELEGRAM -> draft.botToken.isNotBlank() && draft.chatId.isNotBlank()
+        NotifyChannelType.NTFY -> draft.topic.isNotBlank()
     }
 
     AlertDialog(
@@ -445,7 +459,10 @@ private fun ChannelEditDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(draft) }) {
+            TextButton(
+                onClick = { onConfirm(draft) },
+                enabled = canSave,
+            ) {
                 Text(stringResource(R.string.common_save))
             }
         },
@@ -604,7 +621,25 @@ private fun rememberNotificationPermission(): Pair<Boolean, () -> Unit> {
     var granted by remember { mutableStateOf(hasPostNotifications(context)) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted = it }
+    ) { allowed ->
+        granted = allowed
+        // 用户选择“不再询问”后再次申请会静默失败，直接跳到系统通知设置。
+        if (!allowed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val activity = context as? Activity
+            if (activity != null &&
+                !activity.shouldShowRequestPermissionRationale(
+                    Manifest.permission.POST_NOTIFICATIONS,
+                )
+            ) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                    )
+                }
+            }
+        }
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->

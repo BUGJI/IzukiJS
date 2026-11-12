@@ -21,6 +21,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -41,10 +43,13 @@ class McpServerService : Service() {
      */
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /** 启停 / 重建串行执行，避免旧的 stop 落在新 start 之后。 */
+    private val lifecycleMutex = Mutex()
+
     /** 防抖后的重建任务：合并短时间内的连续配置改动，避免同一秒内多次 stop/start。 */
     private val pendingRestart = Runnable {
         ioScope.launch {
-            controller.restart()
+            lifecycleMutex.withLock { controller.restart() }
             withContext(Dispatchers.Main) { updateNotification() }
         }
     }
@@ -58,6 +63,8 @@ class McpServerService : Service() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacks(pendingRestart)
+        // 服务被系统回收时也必须关闭监听，避免 socket 存活但没有前台服务。
+        runCatching { controller.stop() }
         ioScope.cancel()
         super.onDestroy()
     }
@@ -68,7 +75,7 @@ class McpServerService : Service() {
                 mainHandler.removeCallbacks(pendingRestart)
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 ioScope.launch {
-                    controller.stop()
+                    lifecycleMutex.withLock { controller.stop() }
                     stopSelf()
                 }
                 return START_NOT_STICKY
@@ -88,7 +95,7 @@ class McpServerService : Service() {
                 mainHandler.removeCallbacks(pendingRestart)
                 startForegroundInternal()
                 ioScope.launch {
-                    controller.start()
+                    lifecycleMutex.withLock { controller.start() }
                     withContext(Dispatchers.Main) { updateNotification() }
                 }
                 return START_STICKY

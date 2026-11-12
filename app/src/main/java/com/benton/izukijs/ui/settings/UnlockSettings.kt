@@ -63,6 +63,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
         SecretCipher.decrypt(unlockSettings.pinCipher)
     }
     var showRecordConfirm by remember { mutableStateOf(false) }
+    var showTestConfirm by remember { mutableStateOf(false) }
     var testRunning by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<UnlockResult?>(null) }
     val lockedHint = stringResource(R.string.unlock_test_locked_hint)
@@ -196,22 +197,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
             ) {
                 OutlinedButton(
                     enabled = !testRunning && unlockReady,
-                    onClick = {
-                        testRunning = true
-                        testResult = null
-                        scope.launch {
-                            val result = runCatching {
-                                withContext(Dispatchers.IO) {
-                                    container.screenUnlockController.testUnlock()
-                                }
-                            }.getOrElse { UnlockResult.UNSUPPORTED }
-                            testRunning = false
-                            testResult = result
-                            if (result == UnlockResult.ALREADY_UNLOCKED) {
-                                snackbar.show(lockedHint)
-                            }
-                        }
-                    },
+                    onClick = { showTestConfirm = true },
                 ) {
                     Text(
                         stringResource(
@@ -266,6 +252,35 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
         TextButton(onClick = onOpenMcp) {
             Text(stringResource(R.string.unlock_mcp_open_settings))
         }
+    }
+
+    if (showTestConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.unlock_test),
+            message = lockedHint,
+            confirmLabel = stringResource(R.string.unlock_test),
+            onConfirm = {
+                showTestConfirm = false
+                testRunning = true
+                testResult = null
+                scope.launch {
+                    try {
+                        val result = runCatching {
+                            withContext(Dispatchers.IO) {
+                                container.screenUnlockController.testUnlock()
+                            }
+                        }.getOrElse { UnlockResult.UNSUPPORTED }
+                        testResult = result
+                        if (result == UnlockResult.ALREADY_UNLOCKED) {
+                            snackbar.show(lockedHint)
+                        }
+                    } finally {
+                        testRunning = false
+                    }
+                }
+            },
+            onDismiss = { showTestConfirm = false },
+        )
     }
 
     if (showRecordConfirm) {

@@ -31,6 +31,10 @@ object ScriptNeeds {
             }
             .map { it.trim().lowercase() }
             .filter { it.isNotEmpty() }
+            // 单空格后的中文说明（如 `// @need shell 执行命令`）不是能力名；遇到非 ASCII
+            // 文本就停止解析，避免把说明当成未知能力而拒绝运行脚本。ASCII 未知 token 仍保留，
+            // 让拼写错误得到明确的 @need 报错。
+            .takeWhile { token -> token.all { it.code < 128 } }
             .toSet()
     }
 }

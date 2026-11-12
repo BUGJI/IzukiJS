@@ -171,15 +171,26 @@ class ScreenshotPipelineVision(
         resolveNode: (String) -> PipelineNode?,
         resolveTarget: (TargetSpec, Box?) -> Box?,
         depth: Int,
+        recognitionType: RecognitionType = node.recognition.type,
     ): Boolean {
         if (depth > DeveloperTuning.current.pipelineMaxRecognitionDepth.coerceAtLeast(1)) {
             logBus.warn("Pipeline 子识别嵌套过深: ${node.name}")
             return false
         }
-        if (!resolveRoi(param, node, resolveTarget)) return false
+        if (!resolveRoi(param, node, resolveTarget, recognitionType)) return false
         resolveColorFilter(param)
-        if (node.recognition.type == RecognitionType.And || node.recognition.type == RecognitionType.Or) {
-            if (!expandSubRecognitions(param, node, resolveNode, resolveTarget, depth)) return false
+        if (recognitionType == RecognitionType.And || recognitionType == RecognitionType.Or) {
+            if (!expandSubRecognitions(
+                    param,
+                    node,
+                    resolveNode,
+                    resolveTarget,
+                    depth,
+                    recognitionType,
+                )
+            ) {
+                return false
+            }
         }
         return true
     }
@@ -188,6 +199,7 @@ class ScreenshotPipelineVision(
         param: JSONObject,
         node: PipelineNode,
         resolveTarget: (TargetSpec, Box?) -> Box?,
+        recognitionType: RecognitionType,
     ): Boolean {
         val raw = param.opt("roi") ?: return true
         if (raw is Boolean) {
@@ -199,7 +211,7 @@ class ScreenshotPipelineVision(
         }
         if (raw !is String) return true
 
-        val subNames = collectSubNames(param, node.recognition.type)
+        val subNames = collectSubNames(param, recognitionType)
         if (raw in subNames) return true
 
         val target = try {
@@ -242,8 +254,9 @@ class ScreenshotPipelineVision(
         resolveNode: (String) -> PipelineNode?,
         resolveTarget: (TargetSpec, Box?) -> Box?,
         depth: Int,
+        recognitionType: RecognitionType,
     ): Boolean {
-        val key = when (node.recognition.type) {
+        val key = when (recognitionType) {
             RecognitionType.And -> if (param.has("all_of")) "all_of" else "allOf"
             RecognitionType.Or -> if (param.has("any_of")) "any_of" else "anyOf"
             else -> return true
@@ -270,6 +283,21 @@ class ScreenshotPipelineVision(
 
                 is JSONObject -> {
                     val flattened = flattenInline(item) ?: continue
+                    val subType = RecognitionType.from(flattened.optString("type"))
+                        ?: return false.also {
+                            logBus.warn("Pipeline 内联子识别类型无效: ${flattened.optString("type")}")
+                        }
+                    if (!prepareRecognition(
+                            flattened,
+                            node,
+                            resolveNode,
+                            resolveTarget,
+                            depth + 1,
+                            subType,
+                        )
+                    ) {
+                        return false
+                    }
                     array.put(index, flattened)
                 }
 

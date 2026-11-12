@@ -31,13 +31,16 @@ class RootShell(private val context: Context) : ShellRunner {
     override fun run(command: String): ShellResult? = runSu(command)
 
     override fun screenshotPng(displayId: Int?): ByteArray? = runCatching {
-        val file = File(context.cacheDir, "izuki_shot.png")
-        val display = if (displayId != null && displayId >= 0) "-d $displayId " else ""
-        runSu("screencap -p ${display}'${file.absolutePath}'") ?: return null
-        if (!file.exists()) return null
-        val bytes = file.readBytes()
-        file.delete()
-        bytes
+        // 并发截图不能共用固定文件名，否则会读到别人的帧或把文件提前删掉。
+        val file = File(context.cacheDir, "izuki_shot_${System.nanoTime()}.png")
+        try {
+            val display = if (displayId != null && displayId >= 0) "-d $displayId " else ""
+            runSu("screencap -p ${display}'${file.absolutePath}'")
+            if (!file.exists()) return null
+            file.readBytes()
+        } finally {
+            runCatching { file.delete() }
+        }
     }.getOrNull()
 
     private fun runSu(command: String): ShellResult? = runCatching {

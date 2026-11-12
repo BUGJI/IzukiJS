@@ -144,6 +144,7 @@ private fun UpdateSettingsSection(ui: SettingsUiState, viewModel: SettingsViewMo
                             viewModel.openUpdateOnGitHub()
                         }
                     },
+                    enabled = !busy,
                 ) {
                     Text(
                         stringResource(

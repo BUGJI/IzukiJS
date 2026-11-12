@@ -405,6 +405,8 @@
     <string name="settings_env_desc">所有脚本默认共享这些变量；脚本内同名变量优先。</string>
     <string name="settings_env_placeholder">全局变量</string>
     <string name="settings_env_saved">全局变量已保存</string>
+    <string name="env_clear_confirm_title">清空全部变量？</string>
+    <string name="env_clear_confirm_message">保存后会删除当前全部全局变量，脚本将不再继承这些值。</string>
     <string name="env_example">KEY=VALUE</string>
     <string name="env_hint">每行一条，空行与 # 开头的注释会被忽略。</string>
     <string name="env_invalid_line">第 %1$d 行格式无效，应为 KEY=VALUE</string>
@@ -620,6 +622,7 @@
     <string name="storage_clear_now">立即清空</string>
     <string name="storage_clear_confirm">确定清空全部日志文件吗？此操作不可撤销。</string>
     <string name="storage_export_log">导出</string>
+    <string name="storage_log_cleared">日志已清空</string>
     <string name="storage_export_log_chooser">导出日志</string>
     <string name="storage_days">%1$d 天</string>
     <string name="storage_cache_images_title">缓存图片</string>
@@ -680,6 +683,7 @@
     <string name="record_page_cleared">已清空全部录制</string>
     <string name="record_page_failed">操作失败</string>
     <string name="record_page_active_delete_blocked">录制进行中，无法删除或清空</string>
+    <string name="record_page_script_recording_hint">脚本正在录制，停止脚本后会自动结束</string>
     <string name="record_detail_back">返回列表</string>
     <string name="record_detail_loading">正在读取录制…</string>
     <string name="record_detail_missing">录制不存在或已损坏</string>

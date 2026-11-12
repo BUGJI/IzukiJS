@@ -191,6 +191,14 @@ class ScriptExecutionManager(
         values: Map<String, String> = emptyMap(),
         trigger: RunTrigger = RunTrigger.MANUAL,
     ): ScriptRunOutcome {
+        val unknownNeeds = ScriptNeeds.parse(source)
+            ?.minus(ScriptNeeds.KNOWN)
+            .orEmpty()
+        if (unknownNeeds.isNotEmpty()) {
+            return ScriptRunOutcome.Invalid(
+                "未知 @need 能力: ${unknownNeeds.sorted().joinToString(", ")}",
+            )
+        }
         val finished = CompletableDeferred<RunCompletion>()
         val started = run(
             scriptId = scriptId,

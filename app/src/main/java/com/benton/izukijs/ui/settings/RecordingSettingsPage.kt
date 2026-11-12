@@ -62,16 +62,20 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
 
     fun refresh() {
         scope.launch {
-            entries = viewModel.loadRecordings()
-            totalBytes = viewModel.recordingUsageBytes()
+            runCatching {
+                entries = viewModel.loadRecordings()
+                totalBytes = viewModel.recordingUsageBytes()
+            }
         }
     }
 
     // 首次进入、录制状态变化、以及从详情页返回（重新进入组合）时都刷新列表与占用。
     LaunchedEffect(ui.recordingActive) { refresh() }
 
-    val canCaptureInput = viewModel.canCaptureUserInput()
-    val screenCaptureActive = viewModel.isScreenCaptureActive()
+    // 引用 ui.readyModes 让后端变化触发重组；实际判断仍由 controllerFor 过滤停用后端。
+    val canCaptureInput = ui.readyModes.isNotEmpty() && viewModel.canCaptureUserInput()
+    val screenCaptureActive = ui.screenCaptureActive
+    val userRecording = ui.recordingActive && ui.recordingKind == "user"
     val activeId = viewModel.currentRecordingId()
     val activeEntry = entries.firstOrNull { entry -> entry.meta.id == activeId }
     val activeName = activeEntry?.meta?.name ?: activeId.orEmpty()
@@ -112,22 +116,19 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                 onClick = { confirmClear = true },
                 enabled = !busy && !ui.recordingActive && entries.isNotEmpty(),
             ) { Text(stringResource(R.string.record_page_clear)) }
-            if (ui.recordingActive) {
+            if (userRecording) {
                 OutlinedButton(
                     onClick = {
                         busy = true
-                        if (viewModel.isUserRecording()) {
+                        try {
                             viewModel.stopUserRecording()
-                        } else {
-                            scope.launch {
-                                snackbar.show(resources.getString(R.string.record_page_active_short))
-                            }
+                        } finally {
+                            busy = false
                         }
-                        busy = false
                     },
-                    enabled = !busy && viewModel.isUserRecording(),
+                    enabled = !busy,
                 ) { Text(stringResource(R.string.record_page_stop_user)) }
-            } else {
+            } else if (!ui.recordingActive) {
                 OutlinedButton(
                     onClick = {
                         viewModel.startUserRecording(
@@ -143,6 +144,13 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
         }
         if (ui.recordingActive) {
             Spacer(Modifier.height(8.dp))
+            if (!userRecording) {
+                Text(
+                    stringResource(R.string.record_page_script_recording_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Text(
                 stringResource(R.string.record_page_active_delete_blocked),
                 style = MaterialTheme.typography.bodySmall,
@@ -231,14 +239,19 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                 pendingDelete = null
                 busy = true
                 scope.launch {
-                    val ok = viewModel.deleteRecording(entry.meta.id)
-                    busy = false
-                    refresh()
-                    snackbar.show(
-                        resources.getString(
-                            if (ok) R.string.record_page_deleted else R.string.record_page_failed,
-                        ),
-                    )
+                    try {
+                        val ok = runCatching {
+                            viewModel.deleteRecording(entry.meta.id)
+                        }.getOrDefault(false)
+                        refresh()
+                        snackbar.show(
+                            resources.getString(
+                                if (ok) R.string.record_page_deleted else R.string.record_page_failed,
+                            ),
+                        )
+                    } finally {
+                        busy = false
+                    }
                 }
             },
         )
@@ -254,14 +267,19 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                 confirmClear = false
                 busy = true
                 scope.launch {
-                    val removed = viewModel.clearRecordings()
-                    busy = false
-                    refresh()
-                    snackbar.show(
-                        resources.getString(
-                            if (removed >= 0) R.string.record_page_cleared else R.string.record_page_failed,
-                        ),
-                    )
+                    try {
+                        val removed = runCatching { viewModel.clearRecordings() }
+                            .getOrDefault(-1)
+                        refresh()
+                        snackbar.show(
+                            resources.getString(
+                                if (removed >= 0) R.string.record_page_cleared
+                                else R.string.record_page_failed,
+                            ),
+                        )
+                    } finally {
+                        busy = false
+                    }
                 }
             },
         )
