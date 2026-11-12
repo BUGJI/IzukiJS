@@ -409,7 +409,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
-    // 保存后再执行后续动作（返回 / 运行）。写盘失败也继续动作，但给出提示。
+    // 保存成功后再执行后续动作（返回 / 运行）；写盘失败时留在编辑器，避免丢失内容。
     fun saveAndThen(action: () -> Unit) {
         val content = editorValue.text
         if (content == savedCode) {
@@ -419,6 +419,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         scope.launch {
             if (!persist(content)) {
                 snackbar.show(resources.getString(R.string.editor_save_failed))
+                return@launch
             }
             action()
         }

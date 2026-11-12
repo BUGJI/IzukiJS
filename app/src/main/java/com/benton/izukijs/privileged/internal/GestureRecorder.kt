@@ -113,7 +113,7 @@ internal class GestureRecorder(
                     rawEvents.incrementAndGet()
                     if (collecting.get()) {
                         collectedEvents.incrementAndGet()
-                        val tMs = (atMs - startedAt.get()).toInt()
+                        val tMs = (atMs - startedAt.get()).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
                         synchronized(parser) { parser.onEvent(type, code, value, tMs) }
                     }
                 }

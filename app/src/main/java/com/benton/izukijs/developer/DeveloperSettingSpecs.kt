@@ -332,6 +332,96 @@ object DeveloperSettingSpecs {
         set = { s, v -> s.copy(agentSettleMaxMs = v) },
     )
 
+    val visionTemplateCacheEntries = DeveloperIntSpec(
+        key = "vision_template_cache_entries",
+        labelRes = R.string.developer_vision_template_cache,
+        descRes = R.string.developer_vision_template_cache_desc,
+        default = 8,
+        range = 1..64,
+        get = { it.visionTemplateCacheEntries },
+        set = { s, v -> s.copy(visionTemplateCacheEntries = v) },
+    )
+
+    val visionNeuralSessions = DeveloperIntSpec(
+        key = "vision_neural_sessions",
+        labelRes = R.string.developer_vision_neural_sessions,
+        descRes = R.string.developer_vision_neural_sessions_desc,
+        default = 3,
+        range = 1..16,
+        get = { it.visionNeuralSessions },
+        set = { s, v -> s.copy(visionNeuralSessions = v) },
+    )
+
+    val visionNeuralThreads = DeveloperIntSpec(
+        key = "vision_neural_threads",
+        labelRes = R.string.developer_vision_neural_threads,
+        descRes = R.string.developer_vision_neural_threads_desc,
+        default = 2,
+        range = 1..8,
+        get = { it.visionNeuralThreads },
+        set = { s, v -> s.copy(visionNeuralThreads = v) },
+    )
+
+    val pipelineDefaultMaxSteps = DeveloperIntSpec(
+        key = "pipeline_default_max_steps",
+        labelRes = R.string.developer_pipeline_default_max_steps,
+        descRes = R.string.developer_pipeline_default_max_steps_desc,
+        default = 10_000,
+        range = 100..1_000_000,
+        get = { it.pipelineDefaultMaxSteps },
+        set = { s, v -> s.copy(pipelineDefaultMaxSteps = v) },
+    )
+
+    val pipelineDefaultTimeoutSec = DeveloperIntSpec(
+        key = "pipeline_default_timeout_sec",
+        labelRes = R.string.developer_pipeline_default_timeout,
+        descRes = R.string.developer_pipeline_default_timeout_desc,
+        default = 0,
+        range = 0..86_400,
+        get = { it.pipelineDefaultTimeoutSec },
+        set = { s, v -> s.copy(pipelineDefaultTimeoutSec = v) },
+    )
+
+    val pipelineMaxRecognitionDepth = DeveloperIntSpec(
+        key = "pipeline_max_recognition_depth",
+        labelRes = R.string.developer_pipeline_max_depth,
+        descRes = R.string.developer_pipeline_max_depth_desc,
+        default = 8,
+        range = 1..32,
+        get = { it.pipelineMaxRecognitionDepth },
+        set = { s, v -> s.copy(pipelineMaxRecognitionDepth = v) },
+    )
+
+    val recordingMaxUniqueFrames = DeveloperIntSpec(
+        key = "recording_max_unique_frames",
+        labelRes = R.string.developer_recording_max_frames,
+        descRes = R.string.developer_recording_max_frames_desc,
+        default = 800,
+        range = 50..5_000,
+        get = { it.recordingMaxUniqueFrames },
+        set = { s, v -> s.copy(recordingMaxUniqueFrames = v) },
+    )
+
+    val recordingFrameQuality = DeveloperIntSpec(
+        key = "recording_frame_quality",
+        labelRes = R.string.developer_recording_frame_quality,
+        descRes = R.string.developer_recording_frame_quality_desc,
+        default = 88,
+        range = 50..100,
+        get = { it.recordingFrameQuality },
+        set = { s, v -> s.copy(recordingFrameQuality = v) },
+    )
+
+    val recordingFrameMaxDimension = DeveloperIntSpec(
+        key = "recording_frame_max_dimension",
+        labelRes = R.string.developer_recording_frame_max_dimension,
+        descRes = R.string.developer_recording_frame_max_dimension_desc,
+        default = 0,
+        range = 0..4_320,
+        get = { it.recordingFrameMaxDimension },
+        set = { s, v -> s.copy(recordingFrameMaxDimension = v) },
+    )
+
     val sections: List<DeveloperSection> = listOf(
         DeveloperSection(
             titleRes = R.string.developer_section_control,
@@ -387,6 +477,25 @@ object DeveloperSettingSpecs {
                 agentSettleDefaultMs,
                 agentSettlePollMs,
                 agentSettleMaxMs,
+                visionTemplateCacheEntries,
+                visionNeuralSessions,
+                visionNeuralThreads,
+            ),
+        ),
+        DeveloperSection(
+            titleRes = R.string.developer_section_pipeline,
+            specs = listOf(
+                pipelineDefaultMaxSteps,
+                pipelineDefaultTimeoutSec,
+                pipelineMaxRecognitionDepth,
+            ),
+        ),
+        DeveloperSection(
+            titleRes = R.string.developer_section_recording,
+            specs = listOf(
+                recordingMaxUniqueFrames,
+                recordingFrameQuality,
+                recordingFrameMaxDimension,
             ),
         ),
     )

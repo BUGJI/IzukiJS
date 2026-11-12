@@ -69,10 +69,10 @@ class RunPreparer(
             useGlobal = useGlobal,
         )
         if (values.isNotEmpty()) {
-            // 只持久化本次表单输入与已有脚本参数，避免把全局变量快照写进脚本参数。
+            // 只持久化用户实际改动 / 已有脚本参数；脚本默认值与全局变量在运行时解析。
             scriptEnvRepository.saveValues(
                 scriptId,
-                spec.defaults() + scriptEnvRepository.values(scriptId) + values,
+                scriptEnvRepository.values(scriptId) + values,
             )
         }
         val scriptEnv = ScriptEnvSession(scriptId, resolved, scriptEnvRepository)

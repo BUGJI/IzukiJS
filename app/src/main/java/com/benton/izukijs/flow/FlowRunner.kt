@@ -149,6 +149,10 @@ class FlowRunner(
                     logBus.warn("⏹ 编排已停止: ${runFlow.name}")
                     break
                 }
+                if (result.stopped) {
+                    logBus.warn("编排已停止：当前步骤被用户终止")
+                    break
+                }
                 if (result.busy) {
                     logBus.warn("编排中止：已有其他脚本在运行")
                     break
@@ -252,6 +256,11 @@ class FlowRunner(
                 StepResult(step, success = false, elapsedMs = elapsed, busy = true)
             }
 
+            ScriptRunOutcome.Stopped -> {
+                logBus.warn("⏹ 步骤已停止: ${script.name}（${elapsed}ms）")
+                StepResult(step, success = false, elapsedMs = elapsed, stopped = true)
+            }
+
             is ScriptRunOutcome.Finished -> {
                 if (outcome.success) {
                     logBus.success("✔ 步骤完成: ${script.name}（${elapsed}ms）")
@@ -273,6 +282,7 @@ class FlowRunner(
         val success: Boolean,
         val elapsedMs: Long,
         val busy: Boolean = false,
+        val stopped: Boolean = false,
     )
 
     private companion object {

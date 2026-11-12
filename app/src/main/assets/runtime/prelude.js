@@ -25,6 +25,7 @@
     }
     return mod.exports;
   };
+  // ---- virtualScreen ----
   if (typeof virtualScreen !== 'undefined') {
     __builtins['virtualScreen'] = virtualScreen;
     __builtins['virtualscreen'] = virtualScreen;
@@ -56,6 +57,7 @@
       );
     };
   }
+  // ---- captureScreen ----
   if (typeof captureScreenSource === 'function') {
     var __izukiCaptureScreen = captureScreen;
     global.captureScreen = function (path, source) {
@@ -64,6 +66,7 @@
       return captureScreenSource(target, String(source));
     };
   }
+  // ---- images ----
   if (typeof images !== 'undefined') {
     var __regionJson = function (region) {
       return region == null ? "" : JSON.stringify(region);
@@ -135,6 +138,107 @@
       var p = raw.split(',');
       return { x: parseInt(p[0], 10), y: parseInt(p[1], 10) };
     };
+    var __visionSpecJson = function (spec) {
+      return JSON.stringify(spec || {});
+    };
+    images.recognize = function (spec) {
+      var raw = images.recognizeRaw(__visionSpecJson(spec));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    images.recognizeAll = function (spec) {
+      var raw = images.recognizeAllRaw(__visionSpecJson(spec));
+      try { return JSON.parse(raw); } catch (e) { return []; }
+    };
+    images.recognizeIn = function (screenPath, spec) {
+      var raw = images.recognizeInRaw(screenPath, __visionSpecJson(spec));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    images.recognizeAllIn = function (screenPath, spec) {
+      var raw = images.recognizeAllInRaw(screenPath, __visionSpecJson(spec));
+      try { return JSON.parse(raw); } catch (e) { return []; }
+    };
+    images.compare = function (lhs, rhs, options) {
+      var raw = images.compareRaw(lhs, rhs, JSON.stringify(options || {}));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+  }
+  // ---- pipeline ----
+  if (typeof pipeline !== 'undefined') {
+    pipeline.run = function (spec, entry, options) {
+      var specJson = typeof spec === 'string' ? spec : JSON.stringify(spec || {});
+      var optionsJson = options == null ? "" : JSON.stringify(options);
+      var raw = pipeline.runRaw(specJson, entry == null ? "" : String(entry), optionsJson);
+      if (typeof shouldExit === 'function' && shouldExit()) throw new Error("IZUKI_SCRIPT_EXIT");
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, error: String(e) }; }
+    };
+    pipeline.validate = function (spec) {
+      var specJson = typeof spec === 'string' ? spec : JSON.stringify(spec || {});
+      var raw = pipeline.validateRaw(specJson);
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, issues: [] }; }
+    };
+    pipeline.dump = function (spec) {
+      var specJson = typeof spec === 'string' ? spec : JSON.stringify(spec || {});
+      var raw = pipeline.dumpRaw(specJson);
+      var result;
+      try { result = JSON.parse(raw); } catch (e) { throw new Error("pipeline.dump 失败"); }
+      if (!result.ok) throw new Error(result.error || "pipeline.dump 失败");
+      return result.spec;
+    };
+    pipeline.registerRecognition = function (name, fn) {
+      if (typeof fn !== "function") return false;
+      return pipeline.registerRecognitionRaw(String(name), function (paramJson, roisJson) {
+        var result = fn(JSON.parse(paramJson), JSON.parse(roisJson));
+        return result == null ? "" : JSON.stringify(result);
+      });
+    };
+    pipeline.registerAction = function (name, fn) {
+      if (typeof fn !== "function") return false;
+      return pipeline.registerActionRaw(String(name), function (paramJson, boxJson) {
+        var result = fn(JSON.parse(paramJson), boxJson ? JSON.parse(boxJson) : null);
+        return result == null ? "true" : JSON.stringify(result);
+      });
+    };
+    pipeline.replay = function (recordingId, spec, entry, options) {
+      var specJson = typeof spec === 'string' ? spec : JSON.stringify(spec || {});
+      var optionsJson = options == null ? "" : JSON.stringify(options);
+      var raw = pipeline.replayRaw(
+        String(recordingId),
+        specJson,
+        entry == null ? "" : String(entry),
+        optionsJson
+      );
+      if (typeof shouldExit === 'function' && shouldExit()) throw new Error("IZUKI_SCRIPT_EXIT");
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, error: String(e) }; }
+    };
+  }
+  // ---- record ----
+  if (typeof record !== 'undefined') {
+    record.start = function (name) {
+      var raw = record.startRaw(name == null ? "recording" : String(name));
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, error: String(e) }; }
+    };
+    record.stop = function () {
+      var raw = record.stopRaw();
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, error: String(e) }; }
+    };
+    record.active = function () { return record.activeRaw(); };
+    record.list = function () {
+      var raw = record.listRaw();
+      try { return JSON.parse(raw); } catch (e) { return []; }
+    };
+    record.info = function (id) {
+      var raw = record.infoRaw(String(id));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    record.delete = function (id) { return record.deleteRaw(String(id)); };
+    record.validate = function (id) {
+      var raw = record.validateRaw(String(id));
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, error: String(e) }; }
+    };
   }
   if (typeof http !== 'undefined' && http.requestRaw) {
     var __httpOptions = function (options) {
@@ -183,9 +287,13 @@
       catch (e) { return false; }
     };
   }
+  // ---- ocr ----
   if (typeof ocr !== 'undefined') {
-    ocr.find = function (text) {
-      var raw = ocr.findRaw(text);
+    var __ocrFindRaw = ocr.findRaw;
+    ocr.find = function (text, options) {
+      var raw = (options == null)
+        ? __ocrFindRaw(text)
+        : ocr.findWithOptionsRaw(text, JSON.stringify(options));
       if (!raw) return null;
       var p = raw.split(',');
       return {
@@ -195,7 +303,15 @@
         height: parseInt(p[3], 10)
       };
     };
+    ocr.recognizeBlocks = function (options) {
+      var raw = (options == null)
+        ? ocr.recognizeBlocksJson()
+        : ocr.recognizeBlocksJsonWithOptions(JSON.stringify(options));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
   }
+  // ---- selector ----
   if (typeof selector !== 'undefined' && selector.findRaw) {
     var __selCriteria = function (criteria) {
       if (criteria == null) return {};
@@ -290,6 +406,7 @@
       return selector.waitFor({ textRegex: pattern }, timeoutMs, intervalMs);
     };
   }
+  // ---- waitUntil ----
   global.waitUntil = function (condition, timeoutMs, intervalMs) {
     if (typeof condition !== 'function') {
       throw new Error('waitUntil 需要一个函数参数');
@@ -316,6 +433,7 @@
     }
     return waitUntil(function () { return !condition(); }, timeoutMs, intervalMs) != null;
   };
+  // ---- app / fs / notify / env / state ----
   if (typeof app !== 'undefined' && app.listRaw) {
     app.list = function () {
       try { return JSON.parse(app.listRaw()); } catch (e) { return []; }
@@ -363,6 +481,7 @@
     };
     state.all = function () { return JSON.parse(state.allRaw()); };
   }
+  // ---- 停止 / 退出包装 ----
   // 停止脚本：Java 侧只设标志并尽快返回，绝不抛出 Java 异常（否则 QuickJS JNI 会 abort）。
   // 这里在原生调用返回后检测标志，抛出真正的 JS 异常来中断脚本执行。
   if (typeof shouldExit === 'function') {

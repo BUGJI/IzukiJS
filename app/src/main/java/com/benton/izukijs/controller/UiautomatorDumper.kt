@@ -2,6 +2,7 @@ package com.benton.izukijs.controller
 
 import android.os.Process
 import android.util.Xml
+import com.benton.izukijs.controller.record.RecordingSuppression
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.core.log.LogBus
 import org.xmlpull.v1.XmlPullParser
@@ -73,12 +74,14 @@ object UiautomatorDumper {
             // 界面持续动画时 uiautomator 会一直等 idle，直到其内部超时（实测可达 11s+）。
             // 这里主动放弃并终止该进程，避免把设备队列堵在无意义的空转上。
             logBus.warn("uiautomator dump 超过 ${timeoutMs}ms 未返回，已主动放弃（界面可能持续动画）")
-            runCatching { shell.shell("pkill -9 uiautomator 2>/dev/null || killall -9 uiautomator 2>/dev/null") }
-            runCatching { shell.shell("rm -f $path") }
+            runCatching {
+                internalShell(shell, "pkill -9 uiautomator 2>/dev/null || killall -9 uiautomator 2>/dev/null")
+            }
+            runCatching { internalShell(shell, "rm -f $path") }
             return NodeTreeResult.Failure("uiautomator dump 超时（界面持续动画）")
         }
         // uiautomator dump 的退出码不可靠（不同 ROM 文案不同），以能否读到文件为准。
-        val xml = shell.shell("cat $path; rm -f $path")?.stdout
+        val xml = internalShell(shell, "cat $path; rm -f $path")?.stdout
         if (xml.isNullOrBlank() || !xml.contains("<hierarchy")) {
             val raw = listOf(dumped.stdout, dumped.stderr)
                 .map { it.trim() }
@@ -106,7 +109,8 @@ object UiautomatorDumper {
         val holder = arrayOfNulls<ShellResult>(1)
         val done = AtomicBoolean(false)
         val worker = Thread({
-            holder[0] = shell.shell(command)
+            // 在真正执行命令的线程内抑制录制，避免把 dump 写进用户/脚本录制时间线。
+            holder[0] = RecordingSuppression.withoutRecording { shell.shell(command) }
             done.set(true)
         }, "izuki-uiautomator-dump").apply { isDaemon = true }
         worker.start()
@@ -117,10 +121,15 @@ object UiautomatorDumper {
         }
         if (done.get()) return holder[0]
         // 超时：尽力终止 uiautomator，给后台线程一个短暂窗口自行退出（最多再等 [ABANDON_GRACE_MS]）。
-        runCatching { shell.shell("pkill -9 uiautomator 2>/dev/null || killall -9 uiautomator 2>/dev/null") }
+        runCatching {
+            internalShell(shell, "pkill -9 uiautomator 2>/dev/null || killall -9 uiautomator 2>/dev/null")
+        }
         runCatching { worker.join(ABANDON_GRACE_MS) }
         return null
     }
+
+    private fun internalShell(shell: DeviceController, command: String): ShellResult? =
+        RecordingSuppression.withoutRecording { shell.shell(command) }
 
     private fun parse(xml: String): NodeSnapshot? {
         val parser = Xml.newPullParser()

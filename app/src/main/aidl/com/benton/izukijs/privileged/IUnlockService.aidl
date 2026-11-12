@@ -37,4 +37,12 @@ interface IUnlockService {
     oneway void cancelGestureRecord() = 9;
 
     boolean isScreenOn() = 10;
+
+    /** 开始持续录制用户真实触摸（不锁屏）；timeoutMs<=0 表示直到 stop */
+    oneway void startInteractionRecord(int timeoutMs) = 11;
+
+    /** 拉取自上次 poll 以来的用户触摸增量 */
+    String pollInteractionRecord() = 12;
+
+    oneway void stopInteractionRecord() = 13;
 }

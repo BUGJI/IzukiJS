@@ -97,7 +97,13 @@ fun LogsScreen(
             )
             LogsConsole(
                 logsState = logs,
-                onClear = { container.logBus.clear() },
+                onClear = {
+                    container.logBus.clear()
+                    // 同时清空落盘日志，否则紧接着“导出”仍会带上已清掉的内容。
+                    scope.launch {
+                        withContext(Dispatchers.IO) { container.logFileStore.clear() }
+                    }
+                },
                 modifier = Modifier.weight(1f),
             )
         }

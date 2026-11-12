@@ -38,8 +38,10 @@
   `selector` / `shell` / `images` / `ocr` / `notify` / `push` / `fs` / `http` / `clipboard` /
   `permissions` / `ai` 等接口，并支持用 `// @need` 只暴露脚本真正需要的能力。
 - **混合控制**：推荐「无障碍读控件树 + HID/Shizuku/无线调试 注入输入」——读界面与发指令各取所长。
-- **视觉能力**：OpenCV 找图 / 找色，本地 MLKit 中文 OCR 或在线 OCR（百度 / Google Vision / 自定义），
-  在线失败自动回退本地。
+- **视觉能力**：OpenCV 找图 / 找色 / 特征匹配，统一 `images.recognize()` 参数模型支持
+  ROI、绿色掩码、HSV、排序与 And/Or 链式识别；本地 MLKit 中文 OCR 或在线 OCR
+  （百度 / Google Vision / 自定义），在线失败自动回退本地；可选 ONNX Runtime 本地分类与
+  YOLOv8/v11 目标检测。
 - **持续录屏截图**：一次授权常驻，为截图 / 找图 / OCR 提供无限屏幕帧，绕开无障碍截图限制。
 - **后台虚拟屏与画中画**：在 Shizuku 特权进程创建的虚拟屏上运行目标应用，主屏可正常使用；
   分辨率可在设置中自定义，后台运行中停在运行页按 Home 可缩为系统画中画预览；「运行状态」页
@@ -68,8 +70,10 @@
   日志分文件存储与自动清理；脚本编辑器支持 API 补全、标签、版本历史、从光标处运行与
   变量 / 状态查看，运行支持超时与死循环中断。
 - **中英双语界面**：内置简体中文与英文，跟随系统语言自动切换。
-- **配置备份**：AI / OCR / 控制 / 截图 / 脚本网络 / 日志 / 编辑器偏好一键导出导入，敏感密钥经 Android Keystore 加密。
+- **配置备份**：AI / OCR / 控制 / 截图 / 脚本网络 / 日志 / 运行时 / 语言 / 开发者 / MCP / 磁贴 /
+  通知与编辑器偏好一键导出导入，敏感密钥经 Android Keystore 加密。导出文件含明文密钥，不含脚本与录制文件。
   由于 Keystore 密钥无法跨设备迁移，系统级自动备份已排除含密文的配置；**换机请使用应用内导出 / 导入**。
+- **录制管理**：设置页可查看脚本录制占用、删除单条或清空全部录制。
 
 ## 用途与免责声明
 
@@ -113,13 +117,18 @@ Izuki JS 是一个面向个人设备自动化与无障碍场景的实验性运�
 
 ### 方式一：下载安装（推荐）
 
-从 [Releases](https://github.com/BUGJI/IzukiJS/releases/latest) 下载 APK，按设备架构选择其一：
+从 [Releases](https://github.com/BUGJI/IzukiJS/releases/latest) 下载 APK。绝大多数用户直接装通用版即可，
+无需区分架构：
+
+**[izukijs-universal-release.apk](https://github.com/BUGJI/IzukiJS/releases/latest/download/izukijs-universal-release.apk)**
+
+若想减小下载体积，也可在同一 Release 页按设备架构选择：
 
 | 文件 | 适用设备 |
 |---|---|
-| `app-arm64-v8a-release.apk` | 绝大多数现代手机（首选） |
-| `app-armeabi-v7a-release.apk` | 较老的 32 位设备 |
-| `app-x86_64-release.apk` | 模拟器 / x86 平板 |
+| `izukijs-arm64-v8a-release.apk` | 绝大多数现代手机 |
+| `izukijs-armeabi-v7a-release.apk` | 较老的 32 位设备 |
+| `izukijs-x86_64-release.apk` | 模拟器 / x86 平板 |
 
 安装时若提示「未知来源」，需在系统设置中允许该来源。本 App 会用到无障碍 / Shizuku / 无线调试 / Root
 等较高权限，请只安装可信来源的包。
@@ -152,7 +161,8 @@ cd IzukiJS
 正式签名：复制 `keystore.properties.example` 为 `keystore.properties` 并填入密钥信息
 （该文件已被 `.gitignore` 忽略，不会提交）。
 
-产物按 ABI 拆分：`arm64-v8a` / `armeabi-v7a` / `x86_64`。
+产物包含通用包与按 ABI 拆分包（本地文件名为 `app-universal-release.apk` 与
+`app-<abi>-release.apk`）；发布到 Release 时会统一重命名为 `izukijs-*`。
 
 ### 首次使用
 
@@ -230,6 +240,7 @@ app/src/main/java/com/benton/izukijs/
 ├── runtime/       # QuickJS 运行时与脚本 API 绑定（runtime/api）
 ├── virtualscreen/ # 后台虚拟屏：设置、帧源、预览渲染与生命周期
 ├── ocr/           # 本地 MLKit / 在线 OCR 引擎
+├── vision/        # 统一识别：找图 / 找色 / 特征 / OCR 后处理 / And-Or / ONNX
 ├── service/       # 前台服务：脚本、悬浮窗、调试叠加、录屏、通知监听、快捷磁贴
 ├── schedule/      # 定时任务与开机重注册
 ├── data/          # 脚本仓库、编辑器设置、配置备份

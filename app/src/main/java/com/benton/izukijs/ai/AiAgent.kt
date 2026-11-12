@@ -63,7 +63,10 @@ class AiAgent(
                 }
             } else {
                 val fallback = parseFallbackTool(result.content)
-                if (fallback == null) return result.content
+                // 只有当配置本身允许工具时才执行降级协议；ai.chat() 会把 toolsEnabled
+                // 置为 false，此时必须当作纯对话，不能执行模型给出的设备动作。
+                if (fallback == null || !config.toolsEnabled) return result.content
+                checkCancelled()
                 messages.add(ChatMessage(role = "assistant", content = result.content))
                 onTool?.invoke(fallback.name, fallback.arguments)
                 val output = tools.execute(fallback.name, fallback.arguments)

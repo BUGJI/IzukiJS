@@ -21,6 +21,7 @@ mlkitTextChinese = "16.0.1"
 mlkitBarcode = "17.3.0"
 material = "1.14.0"
 json = "20240303"
+onnxruntime = "1.31.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -55,6 +56,7 @@ mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-reco
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 json = { group = "org.json", name = "json", version.ref = "json" }
+onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

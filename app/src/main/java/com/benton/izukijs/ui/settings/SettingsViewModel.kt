@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.benton.izukijs.ai.AiConfig
 import com.benton.izukijs.controller.ControllerSettings
+import com.benton.izukijs.controller.record.RecordingEntry
+import com.benton.izukijs.controller.record.RecordingReader
 import com.benton.izukijs.data.AppearanceSettings
 import com.benton.izukijs.data.EditorSettings
 import com.benton.izukijs.data.UnlockSettings
@@ -17,9 +19,11 @@ import com.benton.izukijs.notification.NotifyReport
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ocr.OcrConfig
+import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.CaptureSettings
+import com.benton.izukijs.service.UserRecordingService
 import com.benton.izukijs.update.UpdateSettings
 import com.benton.izukijs.update.UpdateState
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
@@ -56,6 +60,8 @@ data class SettingsUiState(
     val notificationSettings: NotificationSettings = NotificationSettings(),
     val editorSettings: EditorSettings = EditorSettings(),
     val developerSettings: DeveloperSettings = DeveloperSettings(),
+    val recordingActive: Boolean = false,
+    val recordingKind: String = "script",
 )
 
 /**
@@ -129,6 +135,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.developerSettingsRepository.settings.collectInto { state, value ->
             state.copy(developerSettings = value)
         }
+        container.recordingSession.active.collectInto { state, value ->
+            state.copy(recordingActive = value)
+        }
+        container.recordingSession.activeKind.collectInto { state, value ->
+            state.copy(recordingKind = value)
+        }
     }
 
     fun saveAppearance(value: AppearanceSettings) = container.appearanceRepository.save(value)
@@ -143,6 +155,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.virtualScreenSettingsRepository.save(value)
 
     fun saveUnlock(value: UnlockSettings) = container.unlockSettingsRepository.save(value)
+
+    /** 基于仓库最新值做局部更新，避免页面快照覆盖刚提交的 PIN 等字段。 */
+    fun updateUnlock(transform: (UnlockSettings) -> UnlockSettings) {
+        val repository = container.unlockSettingsRepository
+        repository.save(transform(repository.current()))
+    }
 
     fun setUnlockPin(pin: String) = container.unlockSettingsRepository.setPin(pin)
 
@@ -200,6 +218,79 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.logFileStore.clear()
     }
 
+    suspend fun cacheImageStats(): CacheImageStore.Stats =
+        withContext(Dispatchers.IO) { container.cacheImageStore.stats() }
+
+    suspend fun clearCacheImages(): CacheImageStore.Stats =
+        withContext(Dispatchers.IO) {
+            val stats = container.cacheImageStore.clear()
+            if (stats.count > 0) {
+                container.logBus.info("清理缓存图片 ${stats.count} 个（${stats.bytes} bytes）")
+            }
+            stats
+        }
+
+    suspend fun loadRecordings(): List<RecordingEntry> =
+        withContext(Dispatchers.IO) { container.recordingSession.store.entries() }
+
+    suspend fun loadRecording(id: String): RecordingReader? =
+        withContext(Dispatchers.IO) { container.recordingSession.store.load(id) }
+
+    suspend fun recordingUsageBytes(): Long =
+        withContext(Dispatchers.IO) { container.recordingSession.store.totalSizeBytes() }
+
+    fun currentRecordingId(): String? = container.recordingSession.currentRecordingId()
+
+    fun isUserRecording(): Boolean = container.recordingSession.isUserRecording()
+
+    fun canCaptureUserInput(): Boolean = container.recordingSession.canCaptureUserInput()
+
+    fun isScreenCaptureActive(): Boolean = container.screenCapture.isActive
+
+    fun startUserRecording(
+        name: String,
+        captureScreenshots: Boolean,
+        sampleIntervalMs: Long,
+        captureContext: Boolean,
+    ) {
+        UserRecordingService.start(
+            context = container.application,
+            name = name.trim().ifBlank { "user-recording" },
+            captureScreenshots = captureScreenshots,
+            sampleIntervalMs = sampleIntervalMs,
+            captureContext = captureContext,
+        )
+    }
+
+    fun stopUserRecording() {
+        UserRecordingService.stop(container.application)
+    }
+
+    suspend fun renameRecording(id: String, name: String): Boolean = withContext(Dispatchers.IO) {
+        // 进行中的录制由 RecordingWriter 持续重写 meta.json，重命名会被覆盖，直接拒绝。
+        if (id == container.recordingSession.currentRecordingId()) {
+            false
+        } else {
+            container.recordingSession.store.rename(id, name)
+        }
+    }
+
+    suspend fun deleteRecording(id: String): Boolean = withContext(Dispatchers.IO) {
+        if (id == container.recordingSession.currentRecordingId()) {
+            false
+        } else {
+            container.recordingSession.store.delete(id)
+        }
+    }
+
+    suspend fun clearRecordings(): Int = withContext(Dispatchers.IO) {
+        if (container.recordingSession.isRecording()) {
+            -1
+        } else {
+            container.recordingSession.store.deleteAll()
+        }
+    }
+
     suspend fun exportConfig(file: File): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             file.writeText(container.configBackupManager.exportJson())
@@ -207,9 +298,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }.getOrDefault(false)
     }
 
-    fun importConfig(json: String) = container.configBackupManager.importJson(json)
+    suspend fun importConfig(json: String) = withContext(Dispatchers.IO) {
+        container.configBackupManager.importJson(json)
+    }
 
-    fun resetConfig() = container.configBackupManager.resetAll()
+    suspend fun resetConfig() = withContext(Dispatchers.IO) {
+        container.configBackupManager.resetAll()
+    }
 
     fun capabilitiesByMode(): Map<ControlMode, Set<Capability>> =
         container.controllerManager.capabilitiesByMode()

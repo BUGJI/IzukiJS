@@ -1,28 +1,19 @@
 package com.benton.izukijs.runtime
 
+import com.benton.izukijs.runtime.api.ScriptApiCatalog
+
 /**
  * 脚本头部的能力声明 `// @need shell, fs`。
  *
  * 没有声明时返回 null，保持旧行为（暴露全部已启用能力）。一旦声明，运行时就只注册
  * 声明过的命名空间，未声明的 `http` / `shell` / `fs` 等 API 在脚本里不存在。
  * 这是「最小暴露」而不是安全沙箱：输入、截图等核心能力仍始终可用。
+ *
+ * 可声明的名字来自 [ScriptApiCatalog.needKeys]，与 API 注册表保持同步。
  */
 object ScriptNeeds {
 
-    val KNOWN: Set<String> = setOf(
-        "shell",
-        "fs",
-        "notify",
-        "push",
-        "http",
-        "clipboard",
-        "ai",
-        "app",
-        "selector",
-        "images",
-        "ocr",
-        "virtualscreen",
-    )
+    val KNOWN: Set<String> = ScriptApiCatalog.needKeys
 
     private val NEED_LINE = Regex("""(?m)^\s*//\s*@need\s*:?\s*(.+?)\s*$""")
 

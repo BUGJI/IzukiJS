@@ -40,6 +40,15 @@ class DeveloperSettingsTest {
         assertEquals(600, settings.agentSettleDefaultMs)
         assertEquals(150, settings.agentSettlePollMs)
         assertEquals(4_000, settings.agentSettleMaxMs)
+        assertEquals(8, settings.visionTemplateCacheEntries)
+        assertEquals(3, settings.visionNeuralSessions)
+        assertEquals(2, settings.visionNeuralThreads)
+        assertEquals(10_000, settings.pipelineDefaultMaxSteps)
+        assertEquals(0, settings.pipelineDefaultTimeoutSec)
+        assertEquals(8, settings.pipelineMaxRecognitionDepth)
+        assertEquals(800, settings.recordingMaxUniqueFrames)
+        assertEquals(88, settings.recordingFrameQuality)
+        assertEquals(0, settings.recordingFrameMaxDimension)
     }
 
     @Test

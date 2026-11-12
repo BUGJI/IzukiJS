@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.StateFlow
 /**
  * 开发者选项持久化。
  *
- * 不注册到 [com.benton.izukijs.backup.ConfigSections]，因此不会随备份导出 / 导入，
- * 「备份与恢复」页的恢复默认也不会清空这里的值。
+ * 参数值会随 [com.benton.izukijs.backup.ConfigSections] 导出 / 导入；[DeveloperSettings.unlocked]
+ * 是本地入口可见性开关，不参与备份，导入与恢复默认都会保留当前状态。
  */
 class DeveloperSettingsRepository(context: Context) : PrefsStateStore<DeveloperSettings>(
     context = context,

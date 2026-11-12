@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.navigation
 
+import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.AnimatedVisibility
@@ -57,7 +58,9 @@ import androidx.navigation.navArgument
 import com.benton.izukijs.R
 import com.benton.izukijs.ui.adb.AdbSetupScreen
 import com.benton.izukijs.ui.ai.AiAgentScreen
+import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
+import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SnackbarController
 import com.benton.izukijs.ui.common.findActivity
 import com.benton.izukijs.ui.editor.EditorScreen
@@ -71,6 +74,7 @@ import com.benton.izukijs.ui.run.RunScreen
 import com.benton.izukijs.ui.schedule.ScheduleScreen
 import com.benton.izukijs.ui.scriptedit.ScriptEditScreen
 import com.benton.izukijs.ui.scripts.ScriptsScreen
+import com.benton.izukijs.ui.settings.RecordingDetailPage
 import com.benton.izukijs.ui.settings.SettingsCategory
 import com.benton.izukijs.ui.settings.SettingsDetailScreen
 import com.benton.izukijs.ui.settings.SettingsScreen
@@ -82,11 +86,13 @@ object Routes {
     const val ARG_SCRIPT_ID = "scriptId"
     const val ARG_SETTINGS_CATEGORY = "category"
     const val ARG_FLOW_ID = "flowId"
+    const val ARG_RECORDING_ID = "recordingId"
 
     /** 主界面占位路由：四个底部标签由 [HorizontalPager] 承载，此路由只作为详情页的返回落点。 */
     const val MAIN = "main"
 
     const val SETTINGS_DETAIL = "settings/{$ARG_SETTINGS_CATEGORY}"
+    const val RECORDING_DETAIL = "recording/{$ARG_RECORDING_ID}"
     const val EDITOR = "editor/{$ARG_SCRIPT_ID}"
     const val SCRIPT_EDIT = "script_edit/{$ARG_SCRIPT_ID}"
     const val SETUP = "setup"
@@ -100,13 +106,16 @@ object Routes {
     const val MCP = "mcp"
     const val VIRTUAL_SCREEN = "virtual_screen"
 
-    fun editor(scriptId: String) = "editor/$scriptId"
+    // 脚本 id 来自文件名，允许 # % 空格等字符；直接拼进路由会被当作 fragment/转义符。
+    fun editor(scriptId: String) = "editor/${Uri.encode(scriptId)}"
 
-    fun scriptEdit(scriptId: String) = "script_edit/$scriptId"
+    fun scriptEdit(scriptId: String) = "script_edit/${Uri.encode(scriptId)}"
 
-    fun flowEdit(flowId: String) = "flow_edit/$flowId"
+    fun flowEdit(flowId: String) = "flow_edit/${Uri.encode(flowId)}"
 
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
+
+    fun recordingDetail(id: String) = "recording/${Uri.encode(id)}"
 }
 
 /** 底部导航的四个主标签，顺序即 [HorizontalPager] 的页序。 */
@@ -431,6 +440,11 @@ private fun DetailNavHost(
                     onOpenMcp = {
                         navController.navigate(Routes.MCP) { launchSingleTop = true }
                     },
+                    onOpenRecordingDetail = { id ->
+                        navController.navigate(Routes.recordingDetail(id)) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
 
@@ -440,6 +454,38 @@ private fun DetailNavHost(
                 }
             } else {
                 SettingsContent()
+            }
+        }
+        composable(
+            route = Routes.RECORDING_DETAIL,
+            arguments = listOf(navArgument(Routes.ARG_RECORDING_ID) { type = NavType.StringType }),
+        ) { entry ->
+            val context = LocalContext.current
+            val settingsOwner = remember(context) {
+                context.findActivity() as? ViewModelStoreOwner
+            }
+            @Composable
+            fun RecordingContent() {
+                IzukiPageScaffold(
+                    title = { Text(stringResource(R.string.settings_record)) },
+                    onBack = { navController.popBackStack() },
+                ) { padding ->
+                    PageColumn(
+                        modifier = Modifier.padding(padding).padding(horizontal = 16.dp),
+                    ) {
+                        RecordingDetailPage(
+                            id = entry.arguments?.getString(Routes.ARG_RECORDING_ID).orEmpty(),
+                            onBack = { navController.popBackStack() },
+                        )
+                    }
+                }
+            }
+            if (settingsOwner != null) {
+                CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
+                    RecordingContent()
+                }
+            } else {
+                RecordingContent()
             }
         }
         composable(

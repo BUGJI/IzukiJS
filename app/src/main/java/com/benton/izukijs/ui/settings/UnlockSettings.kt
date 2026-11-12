@@ -77,9 +77,10 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                 if (unlockReady) R.string.unlock_desc else R.string.unlock_backend_missing,
             ),
             checked = unlockSettings.enabled,
-            enabled = unlockReady,
-        ) {
-            viewModel.saveUnlock(unlockSettings.copy(enabled = it))
+            // 后端暂时不可用时仍允许关闭，避免安全敏感功能被锁死在开启状态。
+            enabled = unlockReady || unlockSettings.enabled,
+        ) { checked ->
+            viewModel.updateUnlock { it.copy(enabled = checked) }
         }
 
         if (unlockSettings.enabled) {
@@ -94,9 +95,8 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                     FilterChip(
                         selected = unlockSettings.method == method,
                         onClick = {
-                            viewModel.saveUnlock(
-                                unlockSettings.copy(method = method),
-                            )
+                            testResult = null
+                            viewModel.updateUnlock { it.copy(method = method) }
                         },
                         label = {
                             Text(
@@ -120,8 +120,10 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                     SecretField(
                         label = stringResource(R.string.unlock_pin_label),
                         value = pinPlain,
+                        commitOnBlur = true,
                         keyboardType = KeyboardType.NumberPassword,
                         onChange = { input ->
+                            testResult = null
                             viewModel.setUnlockPin(input.filter { it.isDigit() })
                         },
                     )
@@ -198,9 +200,11 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                         testRunning = true
                         testResult = null
                         scope.launch {
-                            val result = withContext(Dispatchers.IO) {
-                                container.screenUnlockController.testUnlock()
-                            }
+                            val result = runCatching {
+                                withContext(Dispatchers.IO) {
+                                    container.screenUnlockController.testUnlock()
+                                }
+                            }.getOrElse { UnlockResult.UNSUPPORTED }
                             testRunning = false
                             testResult = result
                             if (result == UnlockResult.ALREADY_UNLOCKED) {

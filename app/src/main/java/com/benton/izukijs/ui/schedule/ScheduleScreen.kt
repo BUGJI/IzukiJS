@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
@@ -59,12 +60,13 @@ import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
 import com.benton.izukijs.ui.automation.TriggerEditor
 import com.benton.izukijs.ui.automation.TriggerEditorState
-import com.benton.izukijs.ui.automation.computeNextTrigger
+
 import com.benton.izukijs.ui.automation.scheduleEventLabel
 import com.benton.izukijs.ui.automation.scheduleKindLabel
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.IzukiPageScaffold
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageMaxWidth
 import com.benton.izukijs.ui.common.formatMonthDayTime
 import com.benton.izukijs.ui.common.rememberAppHaptics
@@ -77,6 +79,8 @@ import java.util.UUID
 fun ScheduleScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var schedules by remember { mutableStateOf<List<Schedule>>(emptyList()) }
@@ -178,11 +182,7 @@ fun ScheduleScreen(onBack: () -> Unit) {
                 editTarget = null
             },
             onConfirm = { draft ->
-                val triggerAt = if (draft.kind == ScheduleKind.EVENT) {
-                    0L
-                } else {
-                    computeNextTrigger(draft.hour, draft.minute)
-                }
+                val triggerAt = draft.triggerAtMillis
                 val schedule = initial?.copy(
                     scriptId = draft.script.id,
                     scriptName = draft.script.name,
@@ -209,11 +209,16 @@ fun ScheduleScreen(onBack: () -> Unit) {
                     retryDelayMinutes = draft.retryDelay,
                 )
                 scope.launch {
-                    initial?.let { container.scheduleManager.cancelAsync(it.id) }
-                    container.scheduleManager.scheduleAsync(schedule)
-                    refresh()
-                    showAdd = false
-                    editTarget = null
+                    try {
+                        // scheduleAsync 按 id 覆盖并重设 alarm，不再先删除旧任务。
+                        container.scheduleManager.scheduleAsync(schedule)
+                        refresh()
+                        showAdd = false
+                        editTarget = null
+                    } catch (t: Throwable) {
+                        if (t is kotlinx.coroutines.CancellationException) throw t
+                        snackbar.show(context.getString(R.string.editor_save_failed))
+                    }
                 }
             },
         )
@@ -313,6 +318,7 @@ private fun AddScheduleDialog(
                         ScheduleDraft(
                             script = script,
                             kind = trigger.kind,
+                            triggerAtMillis = trigger.triggerAtMillis(),
                             hour = trigger.hourInt(),
                             minute = trigger.minuteInt(),
                             interval = trigger.intervalLong(),
@@ -336,6 +342,7 @@ private fun AddScheduleDialog(
 private data class ScheduleDraft(
     val script: ScriptInfo,
     val kind: ScheduleKind,
+    val triggerAtMillis: Long,
     val hour: Int,
     val minute: Int,
     val interval: Long,

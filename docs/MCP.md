@@ -111,6 +111,7 @@ adb forward tcp:8765 tcp:8765
 | `script_search` | 允许运行脚本 | 在单个或全部脚本中搜索文本（`literal` / `regex`），返回行号、列号与上下文；建议先搜索定位再编辑 |
 | `delete_script` / `rename_script` | 允许运行脚本 | 删除（含历史）/ 重命名脚本；运行中的脚本拒绝操作 |
 | `unlock` | 允许解锁工具 | 触发一次锁屏自主解锁，复用「设置 → 安全解锁」中保存的凭据；不会主动锁屏。需同时开启该页的总开关 |
+| `recording` | 默认可用（读取）；控制需「允许录制控制」 | 读取用户操作录制：`action=list\|info\|timeline\|events\|frame\|validate\|export_script`；`start\|stop\|delete` 需在「工具开关」中开启「允许录制控制」。`timeline` 返回紧凑动作时间线（点击 / 滑动 / 手势 / 多指滑动 / 截图 / 命中控件 / 前台包名），`frame` 返回图像块并可用 `annotate=true` 标出点击位置，`validate` 校验录制结构，`export_script` 生成 JS 脚本骨架 |
 
 ## 脚本增量编辑
 
@@ -259,3 +260,30 @@ adb forward tcp:8765 tcp:8765
 - **工具返回失败**：确认对应的控制后端已就绪（见「权限与能力」页）；`shell` / 脚本工具需在
   「工具开关」中开启。
 - **Claude Desktop 无响应**：该客户端仅支持 stdio，请使用上面的 `mcp-remote` 配置。
+
+## 用户操作录制
+
+「设置 → 录制管理 → 开始录制用户操作」会把你在其他应用中的真实点击、滑动、手势、
+多指滑动、截图、命中控件与前台包名写入本地录制（`filesDir/recordings/<id>/`）。
+需要 Shizuku / Root 或无线调试读取触摸；截图需要屏幕录制授权。
+Shizuku 路径支持多指轨迹；Shell `getevent` 回退目前只保证单指，并会在录制元信息中标记 `inputSource=shell`。
+MCP `start` / `stop` 会通过录制前台服务启动与停止，避免录制在后台被系统回收；元信息中的
+`complete=false` 表示录制未正常结束，`truncated=true` 或帧事件 `stale=true` 表示后续画面复用了旧帧。
+
+MCP 的 `recording` 工具用于让 AI 分析这些操作并辅助写脚本：
+
+```json
+{"tool":"recording","arguments":{"action":"list"}}
+{"tool":"recording","arguments":{"action":"timeline","id":"<id>","types":["tap","swipe","gesture","multi_swipe"]}}
+{"tool":"recording","arguments":{"action":"frame","id":"<id>","frame":"frames/frame_00012.jpg","annotate":true}}
+{"tool":"recording","arguments":{"action":"validate","id":"<id>"}}
+{"tool":"recording","arguments":{"action":"export_script","id":"<id>"}}
+```
+
+`timeline` 每行包含：录制内时间 `t`、来源 `source`（user / script / mcp）、动作类型、
+像素与归一化坐标、前台包名 `package`、命中控件 `target`（text / id / desc / bounds）、
+多指手势的 `pointerCount` 以及动作前截图 `frame`。`frame` 默认在图上画出最近动作的位置，
+便于模型对照界面理解点击目标。命中控件通过异步 `context` 事件补全，不阻塞触摸采集。
+
+隐私提示：录制会保存屏幕内容与控件文本，可能包含密码或聊天内容；录制文件仅保存在本机，
+可在「录制管理」中逐条删除或清空。

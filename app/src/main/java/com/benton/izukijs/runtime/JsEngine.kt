@@ -1,31 +1,18 @@
 package com.benton.izukijs.runtime
 
 import android.content.Context
-import com.benton.izukijs.ai.AiApi
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.data.ScriptEnvSession
-import com.benton.izukijs.runtime.api.ClipboardApi
-import com.benton.izukijs.runtime.api.ConsoleApi
-import com.benton.izukijs.runtime.api.DeviceApiBundle
-import com.benton.izukijs.runtime.api.EnvApi
-import com.benton.izukijs.runtime.api.FileApi
-import com.benton.izukijs.runtime.api.GlobalApi
-import com.benton.izukijs.runtime.api.HttpApi
-import com.benton.izukijs.runtime.api.ImageApi
-import com.benton.izukijs.runtime.api.ModuleApi
-import com.benton.izukijs.runtime.api.PermissionsApi
-import com.benton.izukijs.runtime.api.PushApi
-import com.benton.izukijs.runtime.api.ScreenshotStore
-import com.benton.izukijs.runtime.api.StateApi
-import com.benton.izukijs.runtime.api.VirtualScreenApi
-import com.benton.izukijs.notification.NotificationDispatcher
 import com.benton.izukijs.model.RunMode
-import com.benton.izukijs.virtualscreen.VirtualScreenManager
+import com.benton.izukijs.notification.NotificationDispatcher
+import com.benton.izukijs.runtime.api.DeviceApiBundle
+import com.benton.izukijs.runtime.api.ScriptApiEnvironment
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.ScreenCapture
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import com.quickjs.JSContext
 import com.quickjs.QuickJS
 import java.io.Closeable
@@ -51,10 +38,12 @@ class JsEngine(
     private val scriptId: String = "",
     private val scriptName: String = "",
     private val pushDispatcher: NotificationDispatcher? = null,
+    private val recordingSession: com.benton.izukijs.controller.record.RecordingSession? = null,
 ) : Closeable {
 
     private var runtime: QuickJS? = null
     private var jsContext: JSContext? = null
+    private var apiEnvironment: ScriptApiEnvironment? = null
 
     private val preludeSource: String by lazy {
         context.assets.open(PRELUDE_ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
@@ -97,7 +86,30 @@ class JsEngine(
         if (exitRequested) installed?.stop()
         val ctx = rt.createContext()
         jsContext = ctx
-        bindApis(ctx, needs)
+        val env = ScriptApiEnvironment(
+            context = context,
+            controllers = controllers,
+            screenCapture = screenCapture,
+            bundle = deviceApiBundle,
+            nodeTreeProvider = nodeTreeProvider,
+            logBus = logBus,
+            aiConfigRepository = aiConfigRepository,
+            captureSettingsRepository = captureSettingsRepository,
+            scriptEnv = scriptEnv,
+            runtimeSettings = runtimeSettings,
+            httpSettingsRepository = httpSettingsRepository,
+            moduleSourceProvider = moduleSourceProvider,
+            virtualScreen = virtualScreen,
+            runMode = runMode,
+            scriptId = scriptId,
+            scriptName = scriptName,
+            pushDispatcher = pushDispatcher,
+            recordingSession = recordingSession,
+            exitRequested = { exitRequested },
+            onExit = { requestExit() },
+        )
+        apiEnvironment = env
+        env.bind(ctx, needs)
         startWatchdog(timeoutMs)
         try {
             ctx.executeVoidScript(preludeSource, "izuki_prelude.js")
@@ -136,114 +148,10 @@ class JsEngine(
         watchdog = null
     }
 
-    private fun bindApis(ctx: JSContext, needs: Set<String>?) {
-        // 复用容器级 bundle，只替换 SelectorApi 的退出回调，避免每次运行重复组装。
-        val bundle = deviceApiBundle.withExitRequested { exitRequested }
-        val screenshotStore = ScreenshotStore(
-            context = context,
-            settingsProvider = { captureSettingsRepository.current() },
-            logBus = logBus,
-        )
-        val globalApi = GlobalApi(
-            context = context,
-            logBus = logBus,
-            captureProvider = bundle.captureProvider,
-            screenshotStore = screenshotStore,
-            onExit = { requestExit() },
-            isExitRequested = { exitRequested },
-        )
-        val inputApi = bundle.inputApi
-        val deviceApi = bundle.deviceApi
-        val appApi = bundle.appApi
-        val shellApi = bundle.shellApi
-        val ocrApi = bundle.ocrApi
-        val selectorApi = bundle.selectorApi
-        val allowed: (String) -> Boolean = { name -> needs == null || name in needs }
-
-        ctx.appendJavascriptInterface(globalApi)
-        ctx.appendJavascriptInterface(inputApi)
-        ctx.addJavascriptInterface(deviceApi, "device")
-        ctx.addJavascriptInterface(ConsoleApi(logBus), "console")
-        ctx.addJavascriptInterface(
-            PermissionsApi(
-                context,
-                controllers,
-                screenCapture,
-                { runtimeSettings.current().appList },
-                { httpSettingsRepository.current().enabled },
-                virtualScreen,
-                { runMode },
-            ),
-            "permissions",
-        )
-        ctx.addJavascriptInterface(EnvApi(scriptEnv), "env")
-        ctx.addJavascriptInterface(StateApi(scriptEnv), "state")
-        ctx.addJavascriptInterface(ModuleApi(moduleSourceProvider), "modules")
-
-        if (allowed("virtualscreen") && virtualScreen != null) {
-            ctx.addJavascriptInterface(
-                VirtualScreenApi(
-                    manager = virtualScreen,
-                    runModeProvider = { runMode },
-                    captureProvider = bundle.captureProvider,
-                    screenshotStore = screenshotStore,
-                    logBus = logBus,
-                ),
-                "virtualScreen",
-            )
-        }
-        if (allowed("app")) ctx.addJavascriptInterface(appApi, "app")
-        if (allowed("shell")) ctx.addJavascriptInterface(shellApi, "shell")
-        if (allowed("images")) {
-            ctx.addJavascriptInterface(ImageApi(context, bundle.screenshotProvider, logBus), "images")
-        }
-        if (allowed("ocr")) ctx.addJavascriptInterface(ocrApi, "ocr")
-        if (allowed("notify")) ctx.addJavascriptInterface(bundle.notificationApi, "notify")
-        if (allowed("push") && pushDispatcher != null) {
-            ctx.addJavascriptInterface(
-                PushApi(
-                    dispatcher = pushDispatcher,
-                    logBus = logBus,
-                    scriptId = scriptId,
-                    scriptName = scriptName,
-                ),
-                "push",
-            )
-        }
-        if (allowed("fs")) ctx.addJavascriptInterface(FileApi(logBus), "fs")
-        if (allowed("selector")) ctx.addJavascriptInterface(selectorApi, "selector")
-        if (allowed("clipboard")) {
-            ctx.addJavascriptInterface(ClipboardApi(context, logBus), "clipboard")
-        }
-        if (allowed("http")) {
-            ctx.addJavascriptInterface(
-                HttpApi(logBus) { httpSettingsRepository.current() },
-                "http",
-            )
-        }
-        if (allowed("ai")) {
-            ctx.addJavascriptInterface(
-                AiApi(
-                    configRepository = aiConfigRepository,
-                    inputApi = inputApi,
-                    selectorApi = selectorApi,
-                    ocrApi = ocrApi,
-                    appApi = appApi,
-                    shellApi = shellApi,
-                    deviceApi = deviceApi,
-                    notificationApi = bundle.notificationApi,
-                    screenshotPathProvider = { globalApi.captureScreen("") },
-                    nodeTreeProvider = nodeTreeProvider,
-                    logBus = logBus,
-                    isExitRequested = { exitRequested },
-                ),
-                "ai",
-            )
-        }
-    }
-
     override fun close() {
         stopWatchdog()
+        runCatching { apiEnvironment?.close() }
+        apiEnvironment = null
         runCatching { interrupt?.close() }
         interrupt = null
         runCatching { jsContext?.close() }

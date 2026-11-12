@@ -27,6 +27,8 @@ data class McpConfig(
     val allowScripts: Boolean = false,
     /** 向 MCP 客户端暴露 `unlock` 工具，复用自主解锁凭据；默认关闭。 */
     val allowUnlock: Boolean = false,
+    /** 允许 MCP 启动 / 停止 / 删除用户操作录制；读取录制默认可用。 */
+    val allowRecording: Boolean = false,
     /** 执行主屏读屏 / 控制类工具前，若设备锁屏则先尝试自主解锁；默认关闭。 */
     val autoUnlock: Boolean = false,
     /** 允许 Shell 执行高危命令（rm -rf /、mkfs、pm uninstall 等），默认关闭。 */

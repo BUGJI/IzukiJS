@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.flow
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
@@ -42,13 +44,16 @@ import com.benton.izukijs.schedule.ScheduleKind
 import com.benton.izukijs.ui.automation.TriggerEditor
 import com.benton.izukijs.ui.automation.TriggerEditorState
 import com.benton.izukijs.ui.common.ChipFlow
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SectionGap
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.rememberAppContainer
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -60,6 +65,8 @@ fun FlowEditScreen(
 ) {
     val container = rememberAppContainer()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val snackbar = LocalSnackbarController.current
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var flow by remember { mutableStateOf<ScriptFlow?>(null) }
     var triggerState by remember { mutableStateOf<TriggerEditorState?>(null) }
@@ -72,6 +79,27 @@ fun FlowEditScreen(
     var notFound by remember { mutableStateOf(false) }
     var showScriptPicker by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var baselineKey by remember { mutableStateOf<String?>(null) }
+    var showDiscard by remember { mutableStateOf(false) }
+
+    fun draftKey(): String {
+        val trigger = triggerState
+        val triggerKey = trigger?.let {
+            listOf(
+                it.kind, it.hour, it.minute, it.interval, it.cron, it.event,
+                it.conditionCharging, it.conditionWifi, it.conditionUnlocked,
+                it.foregroundPackage,
+            ).joinToString(",", prefix = "[", postfix = "]")
+        }.orEmpty()
+        return listOf(
+            name,
+            steps.joinToString(";") { "${it.id}:${it.scriptId}" },
+            order,
+            continueOnError,
+            enabled,
+            triggerKey,
+        ).joinToString("|")
+    }
 
     LaunchedEffect(flowId) {
         scripts = container.scriptRepository.listAsync()
@@ -91,6 +119,7 @@ fun FlowEditScreen(
                 triggerState = TriggerEditorState.from(existing)
             }
         }
+        baselineKey = draftKey()
         loaded = true
     }
 
@@ -103,41 +132,52 @@ fun FlowEditScreen(
     val trigger = triggerState
     val canSave = loaded && !notFound && trigger != null &&
         name.isNotBlank() && steps.isNotEmpty() && trigger.cronValid
+    val dirty = baselineKey != null && draftKey() != baselineKey
+
+    fun requestBack() {
+        if (saving) return
+        if (dirty) showDiscard = true else onBack()
+    }
+
+    BackHandler { requestBack() }
 
     fun save() {
         val trigger = triggerState ?: return
         if (!canSave || saving) return
         saving = true
         scope.launch {
-            val base = flow ?: ScriptFlow(
-                id = UUID.randomUUID().toString(),
-                name = name.trim(),
-            )
-            val saved = base.copy(
-                name = name.trim(),
-                kind = trigger.kind,
-                triggerAtMillis = if (trigger.kind == ScheduleKind.EVENT) {
-                    0L
-                } else {
-                    trigger.nextTriggerMillis()
-                },
-                intervalMinutes = if (trigger.kind == ScheduleKind.INTERVAL) {
-                    trigger.intervalLong()
-                } else {
-                    0L
-                },
-                cron = trigger.cron.trim(),
-                event = trigger.eventOrNull(),
-                conditions = trigger.conditions(),
-                steps = steps,
-                order = order,
-                continueOnError = continueOnError,
-                enabled = enabled,
-            )
-            flow?.let { container.flowManager.cancelAsync(it.id) }
-            container.flowManager.scheduleAsync(saved)
-            saving = false
-            onBack()
+            try {
+                val base = flow ?: ScriptFlow(
+                    id = UUID.randomUUID().toString(),
+                    name = name.trim(),
+                )
+                val saved = base.copy(
+                    name = name.trim(),
+                    kind = trigger.kind,
+                    triggerAtMillis = trigger.triggerAtMillis(),
+                    intervalMinutes = if (trigger.kind == ScheduleKind.INTERVAL) {
+                        trigger.intervalLong()
+                    } else {
+                        0L
+                    },
+                    cron = trigger.cron.trim(),
+                    event = trigger.eventOrNull(),
+                    conditions = trigger.conditions(),
+                    steps = steps,
+                    order = order,
+                    continueOnError = continueOnError,
+                    enabled = enabled,
+                )
+                // 编辑时 id 不变，scheduleAsync 会按 id 覆盖旧编排并重设 alarm；
+                // 不再先 cancelAsync，避免中间态只删不建。
+                container.flowManager.scheduleAsync(saved)
+                onBack()
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                snackbar.show(context.getString(R.string.editor_save_failed))
+            } finally {
+                saving = false
+            }
         }
     }
 
@@ -149,7 +189,7 @@ fun FlowEditScreen(
                 ),
             )
         },
-        onBack = onBack,
+        onBack = { requestBack() },
         actions = {
             TextButton(onClick = { save() }, enabled = canSave && !saving) {
                 Text(stringResource(R.string.flow_save))
@@ -299,5 +339,19 @@ fun FlowEditScreen(
                 }
             }
         }
+    }
+
+    if (showDiscard) {
+        ConfirmDialog(
+            title = stringResource(R.string.script_edit_discard_title),
+            message = stringResource(R.string.script_edit_discard_message),
+            confirmLabel = stringResource(R.string.script_edit_discard),
+            destructive = true,
+            onConfirm = {
+                showDiscard = false
+                onBack()
+            },
+            onDismiss = { showDiscard = false },
+        )
     }
 }

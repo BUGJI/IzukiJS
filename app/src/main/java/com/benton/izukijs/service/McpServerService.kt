@@ -75,6 +75,9 @@ class McpServerService : Service() {
             }
 
             ACTION_RESTART -> {
+                // 服务可能因用户停止 / 启动失败而处于未运行状态；startForegroundService
+                // 启动后必须在 5 秒内调用 startForeground，否则会被系统直接杀死。
+                startForegroundInternal()
                 mainHandler.removeCallbacks(pendingRestart)
                 mainHandler.postDelayed(pendingRestart, RESTART_DEBOUNCE_MS)
                 updateNotification()

@@ -10,6 +10,8 @@ import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.controller.UiautomatorDumper
 import com.benton.izukijs.controller.adb.AdbManager
 import com.benton.izukijs.controller.hid.HidManager
+import com.benton.izukijs.controller.record.RecordingHooks
+import com.benton.izukijs.controller.record.RecordingSession
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
 import com.benton.izukijs.data.AppearanceRepository
@@ -38,6 +40,7 @@ import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.runtime.RunControl
+import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.LogSettingsRepository
 import com.benton.izukijs.runtime.RunPreparer
@@ -49,6 +52,7 @@ import com.benton.izukijs.schedule.ScheduleRepository
 import com.benton.izukijs.schedule.ScheduleRunner
 import com.benton.izukijs.privileged.PrivilegedUnlockClient
 import com.benton.izukijs.service.CaptureSettingsRepository
+import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.ScreenUnlockController
 import com.benton.izukijs.service.UnlockGestureRecorder
@@ -67,7 +71,7 @@ import kotlinx.coroutines.launch
 /**
  * 轻量手写依赖容器。规模变大后可平滑替换为 Hilt/Koin。
  */
-class AppContainer(private val application: Application) {
+class AppContainer(val application: Application) {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -82,6 +86,8 @@ class AppContainer(private val application: Application) {
     val logSettingsRepository = LogSettingsRepository(application)
 
     val logFileStore = LogFileStore(application, logSettingsRepository)
+
+    val cacheImageStore = CacheImageStore(application)
 
     val scriptRepository = ScriptRepository(application)
 
@@ -162,24 +168,45 @@ class AppContainer(private val application: Application) {
 
     val updateManager = UpdateManager(application, updateSettingsRepository, logBus)
 
-    val configBackupManager = ConfigBackupManager(
-        sections = ConfigSections.all(
-            ai = aiConfigRepository,
-            ocr = ocrConfigRepository,
-            controller = controllerSettingsRepository,
-            capture = captureSettingsRepository,
-            log = logSettingsRepository,
-            http = httpSettingsRepository,
-            editor = editorSettingsRepository,
-            appearance = appearanceRepository,
-            update = updateSettingsRepository,
-            globalEnv = globalEnvRepository,
-            virtualScreen = virtualScreenSettingsRepository,
-            notification = notificationSettingsRepository,
-        ),
-        // 锁屏 PIN / 图案使用设备绑定密钥加密，不参与导出 / 导入，仅在重置时清理。
-        resetOnly = listOf(unlockSettingsRepository::clear),
-    )
+    val configBackupManager by lazy {
+        ConfigBackupManager(
+            sections = ConfigSections.all(
+                ai = aiConfigRepository,
+                ocr = ocrConfigRepository,
+                controller = controllerSettingsRepository,
+                capture = captureSettingsRepository,
+                log = logSettingsRepository,
+                http = httpSettingsRepository,
+                editor = editorSettingsRepository,
+                appearance = appearanceRepository,
+                update = updateSettingsRepository,
+                globalEnv = globalEnvRepository,
+                virtualScreen = virtualScreenSettingsRepository,
+                notification = notificationSettingsRepository,
+                runtime = runtimeSettingsRepository,
+                language = languageRepository,
+                developer = developerSettingsRepository,
+                mcp = mcpConfigRepository,
+                tile = tileSettingsRepository,
+            ),
+            // 锁屏 PIN / 图案使用设备绑定密钥加密，不参与导出 / 导入，仅在重置时清理。
+            resetOnly = listOf(unlockSettingsRepository::clear),
+            // 导入 / 重置可能关闭 MCP 或改掉令牌、端口；已运行的监听必须同步重建或停止。
+            onApplied = {
+                val config = mcpConfigRepository.current()
+                runCatching {
+                    if (config.enabled && config.isConfigured) {
+                        McpServerService.restart(application)
+                    } else {
+                        McpServerService.stop(application)
+                    }
+                }
+            },
+        )
+    }
+
+    /** 截图 / 应用启动的录制观察点，容器内共享同一个实例。 */
+    private val recordingHooks = RecordingHooks()
 
     /** 脚本与 MCP 共用的设备 API 集合；容器内只组装一次。 */
     val deviceApiBundle: DeviceApiBundle by lazy {
@@ -194,8 +221,21 @@ class AppContainer(private val application: Application) {
                 runtimeSettingsRepository.current().progressNotification
             },
             virtualScreen = virtualScreenManager,
+            recordingHooks = recordingHooks,
         )
     }
+
+    /** 控制操作录制；同一时间最多一个录制会话。 */
+    val recordingSession = RecordingSession(
+        context = application,
+        controllers = controllerManager,
+        logBus = logBus,
+        hooks = recordingHooks,
+        privileged = privilegedUnlockClient,
+        captureProvider = { deviceApiBundle.screenshotProvider() },
+        nodeTreeProvider = { timeoutMs -> nodeTreeProvider(timeoutMs) },
+        foregroundProvider = { deviceApiBundle.appApi.foreground() },
+    )
 
     /** 读控件树：无障碍优先，Shizuku / 无线调试 / Root 的 uiautomator dump 兜底。 */
     private val nodeTreeProvider: (Long) -> NodeTreeResult = { timeoutMs ->
@@ -245,6 +285,7 @@ class AppContainer(private val application: Application) {
             scriptRepository.find(id)?.let { scriptRepository.read(it) }
         },
         notificationDispatcher = notificationDispatcher,
+        recordingSession = recordingSession,
     )
 
     /** 面向通知 / 悬浮窗的运行控制端口，避免 service 反向依赖 runtime 实现。 */
@@ -261,6 +302,7 @@ class AppContainer(private val application: Application) {
         logFileStore = logFileStore,
         virtualScreenManager = virtualScreenManager,
         screenUnlockController = screenUnlockController,
+        recordingSession = recordingSession,
     )
 
     val mcpConfigRepository get() = mcp.configRepository

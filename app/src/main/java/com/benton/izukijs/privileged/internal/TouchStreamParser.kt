@@ -15,6 +15,14 @@ internal class TouchStreamParser {
     private val _strokes = mutableListOf<TouchStroke>()
     val strokes: List<TouchStroke> get() = _strokes
 
+    /**
+     * 连续录制模式：每段轨迹闭合就回调，不保留历史，避免 [MAX_STROKES] 上限。
+     * 解锁录制仍使用默认模式，结束后一次性读取 [strokes]。
+     */
+    var streaming: Boolean = false
+
+    var onStrokeClosed: ((TouchStroke) -> Unit)? = null
+
     private var slot = 0
     private var primarySlot = NO_SLOT
     private var usesTrackingId = false
@@ -120,8 +128,13 @@ internal class TouchStreamParser {
         val points = current
         current = null
         if (points == null || points.isEmpty()) return
+        val stroke = TouchStroke(points, tMs.coerceAtLeast(points.last().tMs))
+        if (streaming) {
+            onStrokeClosed?.invoke(stroke)
+            return
+        }
         if (_strokes.size >= MAX_STROKES) return
-        _strokes.add(TouchStroke(points, tMs.coerceAtLeast(points.last().tMs)))
+        _strokes.add(stroke)
     }
 
     companion object {

@@ -14,6 +14,7 @@ internal object NotificationIds {
     const val UNLOCK_RECORDING = 1005
     const val MCP_SERVER = 1006
     const val ADB_PAIRING = 4102
+    const val USER_RECORDING = 1007
 
     /** 通知系统结果 / 脚本消息的起始 ID；实际 ID 在 [5000, 5000 + 0x0FFF] 内按去重键分配。 */
     const val NOTIFY_BASE = 5000

@@ -11,6 +11,7 @@ import com.benton.izukijs.model.UnlockPattern
 import com.benton.izukijs.model.UnlockResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
 
@@ -76,7 +77,8 @@ class PrivilegedUnlockClient(
         if (!ensureConnected()) return false
         return withContext(Dispatchers.IO) {
             runCatching {
-                connector.serviceOrNull()?.startGestureRecord(timeoutMs)
+                val service = connector.serviceOrNull() ?: return@runCatching false
+                service.startGestureRecord(timeoutMs)
                 true
             }.onFailure {
                 logBus.warn("启动特权录制失败: ${it.message}")
@@ -104,6 +106,35 @@ class PrivilegedUnlockClient(
         if (!ensureConnected()) return null
         return withContext(Dispatchers.IO) {
             runCatching { connector.serviceOrNull()?.isScreenOn() }.getOrNull()
+        }
+    }
+
+    /** 开始持续录制用户真实触摸；timeoutMs<=0 表示直到显式 stop。 */
+    suspend fun startInteractionRecord(timeoutMs: Int = 0): Boolean {
+        if (!ensureConnected()) return false
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val service = connector.serviceOrNull() ?: return@runCatching false
+                service.startInteractionRecord(timeoutMs)
+                true
+            }.onFailure {
+                logBus.warn("启动用户触摸录制失败: ${it.message}")
+            }.getOrDefault(false)
+        }
+    }
+
+    suspend fun pollInteractionRecord(): PrivilegedInteractionBatch? {
+        val raw = callString { it.pollInteractionRecord() } ?: return null
+        return runCatching { PrivilegedInteractionBatch.parse(raw) }.getOrNull()
+    }
+
+    fun stopInteractionRecord() {
+        val current = connector.serviceOrNull() ?: return
+        Thread {
+            runCatching { current.stopInteractionRecord() }
+        }.apply {
+            isDaemon = true
+            start()
         }
     }
 
@@ -142,6 +173,37 @@ data class PrivilegedGestureRecord(
                 error = error,
                 pattern = pattern,
                 detail = json.optString("detail").takeIf { it.isNotBlank() },
+            )
+        }
+    }
+}
+
+
+/** 特权侧用户触摸增量批次。 */
+data class PrivilegedInteractionBatch(
+    val status: String,
+    val events: List<JSONObject>,
+    val error: String? = null,
+    val rawEvents: Long = 0L,
+    val startUptime: Long = 0L,
+) {
+    val isTerminal: Boolean get() = status == "STOPPED" || status == "FAILED"
+
+    companion object {
+        fun parse(raw: String): PrivilegedInteractionBatch {
+            val json = JSONObject(raw)
+            val array = json.optJSONArray("events") ?: JSONArray()
+            val events = buildList {
+                for (index in 0 until array.length()) {
+                    array.optJSONObject(index)?.let { add(it) }
+                }
+            }
+            return PrivilegedInteractionBatch(
+                status = json.optString("status", "IDLE"),
+                events = events,
+                error = json.optString("error").takeIf { it.isNotBlank() },
+                rawEvents = json.optLong("rawEvents"),
+                startUptime = json.optLong("startUptime"),
             )
         }
     }

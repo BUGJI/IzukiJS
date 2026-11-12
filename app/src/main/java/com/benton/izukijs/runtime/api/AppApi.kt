@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.webkit.JavascriptInterface
+import com.benton.izukijs.controller.record.RecordingHooks
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.service.IzukiAccessibilityService
 import com.benton.izukijs.virtualscreen.ScreenTarget
@@ -30,12 +31,20 @@ class AppApi(
     private val shellExec: (String) -> String? = { null },
     private val appListEnabled: () -> Boolean = { true },
     private val virtualScreen: VirtualScreenManager? = null,
+    private val recordingHooks: RecordingHooks = RecordingHooks(),
 ) {
+
+    @Volatile
+    private var usageForegroundCache: Pair<String, Long>? = null
+
+    private val foregroundCacheLock = Any()
 
     @JavascriptInterface
     fun launch(packageName: String): Boolean {
+        usageForegroundCache = null
         if (usesVirtualScreen()) {
             val ok = virtualScreen?.launchBlocking(packageName) == true
+            recordingHooks.appObserver?.invoke("start", packageName, ok)
             logBus.debug("启动应用 $packageName（虚拟屏）${if (ok) " ✓" else " ✗"}")
             return ok
         }
@@ -51,12 +60,14 @@ class AppApi(
                 false
             }
         }
+        recordingHooks.appObserver?.invoke("start", packageName, ok)
         logBus.debug("启动应用 $packageName${if (ok) " ✓" else " ✗"}")
         return ok
     }
 
     @JavascriptInterface
     fun openUrl(url: String): Boolean {
+        usageForegroundCache = null
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val ok = if (usesVirtualScreen()) {
@@ -78,10 +89,12 @@ class AppApi(
         if (usesVirtualScreen()) virtualPackage() else mainPackage()
 
     /** 虚拟屏上的前台包名；虚拟屏未激活或读取失败返回 null，不回退到主屏。 */
+    @JavascriptInterface
     fun virtualPackage(): String? =
         virtualScreen?.takeIf { it.isActive() }?.currentPackageBlocking()
 
     /** 主屏前台包名（无障碍 → dumpsys → 使用记录）。 */
+    @JavascriptInterface
     fun mainPackage(): String? {
         IzukiAccessibilityService.instance?.currentPackage()?.let { return it }
         for (cmd in FOREGROUND_COMMANDS) {
@@ -91,6 +104,7 @@ class AppApi(
         return usageForeground()
     }
 
+    @JavascriptInterface
     fun virtualScreenActive(): Boolean = virtualScreen?.isActive() == true
 
     private fun usesVirtualScreen(): Boolean =
@@ -166,26 +180,41 @@ class AppApi(
     /** 主屏当前前台包名（按最近的前台事件推断）。需使用情况访问。 */
     private fun usageForeground(): String? {
         if (!hasUsageAccess()) return null
-        return runCatching {
-            val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return null
-            val now = System.currentTimeMillis()
-            val events = manager.queryEvents(now - FOREGROUND_WINDOW_MS, now)
-            val event = UsageEvents.Event()
-            var latest: String? = null
-            var latestTime = 0L
-            while (events.hasNextEvent()) {
-                events.getNextEvent(event)
-                if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
-                ) {
-                    if (event.timeStamp >= latestTime) {
-                        latestTime = event.timeStamp
-                        latest = event.packageName
-                    }
+        val now = System.currentTimeMillis()
+        synchronized(foregroundCacheLock) {
+            usageForegroundCache
+                ?.takeIf { now - it.second < FOREGROUND_CACHE_MS }
+                ?.let { return it.first }
+            val result = runCatching {
+                val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+                    ?: return null
+                // 先查最近窗口；若应用长时间停留在前台而没有新的 resume 事件，再回退到更大窗口，
+                // 避免 foreground() 在界面未切换时错误返回 null。
+                latestForegroundEvent(manager, now - FOREGROUND_WINDOW_MS, now)
+                    ?: latestForegroundEvent(manager, now - USAGE_WINDOW_MS, now)
+            }.getOrNull()
+            if (result != null) usageForegroundCache = result to now
+            return result
+        }
+    }
+
+    private fun latestForegroundEvent(manager: UsageStatsManager, start: Long, end: Long): String? {
+        val events = manager.queryEvents(start, end)
+        val event = UsageEvents.Event()
+        var latest: String? = null
+        var latestTime = 0L
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            if (event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+            ) {
+                if (event.timeStamp >= latestTime) {
+                    latestTime = event.timeStamp
+                    latest = event.packageName
                 }
             }
-            latest
-        }.getOrNull()
+        }
+        return latest
     }
 
     /** 某应用最后使用时间（毫秒），从未使用返回 -1。 */
@@ -248,6 +277,7 @@ class AppApi(
         val FOCUS_REGEX = Regex("""([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+)/[A-Za-z0-9_.$]+""")
 
         const val FOREGROUND_WINDOW_MS = 60_000L
+        const val FOREGROUND_CACHE_MS = 1_500L
         const val USAGE_WINDOW_MS = 24L * 60L * 60L * 1000L
     }
 }

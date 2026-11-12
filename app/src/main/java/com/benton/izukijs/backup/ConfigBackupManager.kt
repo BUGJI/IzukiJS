@@ -17,6 +17,8 @@ import org.json.JSONObject
 class ConfigBackupManager(
     private val sections: List<ConfigSection>,
     private val resetOnly: List<() -> Unit> = emptyList(),
+    /** 配置整体应用后（导入 / 重置）的回调，用于联动需要重建的运行时服务，如 MCP。 */
+    private val onApplied: () -> Unit = {},
 ) {
 
     fun exportJson(): String {
@@ -30,14 +32,35 @@ class ConfigBackupManager(
     /** 导入配置。某段缺失时保留该段的当前值；字段非法时按默认值回退。 */
     fun importJson(json: String) {
         val root = JSONObject(json)
-        sections.forEach { section ->
-            root.optJSONObject(section.key)?.let { section.import(it) }
+        val version = root.optInt("version", VERSION)
+        require(version <= VERSION) { "备份版本 $version 高于当前支持的 $VERSION" }
+        val snapshots = sections.associateWith { it.export() }
+        try {
+            sections.forEach { section ->
+                root.optJSONObject(section.key)?.let { section.import(it) }
+            }
+        } catch (t: Throwable) {
+            // 任一段失败时回滚已应用的部分，避免留下半套配置。
+            snapshots.forEach { (section, snapshot) ->
+                runCatching { section.import(snapshot) }
+            }
+            throw t
         }
+        onApplied()
     }
 
     fun resetAll() {
-        sections.forEach { it.reset() }
-        resetOnly.forEach { it() }
+        val snapshots = sections.associateWith { it.export() }
+        try {
+            sections.forEach { it.reset() }
+            resetOnly.forEach { it() }
+        } catch (t: Throwable) {
+            snapshots.forEach { (section, snapshot) ->
+                runCatching { section.import(snapshot) }
+            }
+            throw t
+        }
+        onApplied()
     }
 
     private companion object {

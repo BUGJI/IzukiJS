@@ -3,6 +3,7 @@ package com.benton.izukijs.di
 import android.app.Application
 import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.controller.record.RecordingSession
 import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.permission.LocalNetworkPermission
@@ -16,6 +17,7 @@ import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.service.ScreenUnlockController
+import com.benton.izukijs.service.UserRecordingService
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 
 /** MCP 服务相关的构造集中在这里，避免 [AppContainer] 继续膨胀。 */
@@ -30,6 +32,7 @@ class McpContainer(
     private val logFileStore: LogFileStore,
     private val virtualScreenManager: VirtualScreenManager,
     private val screenUnlockController: ScreenUnlockController,
+    private val recordingSession: RecordingSession,
 ) {
 
     val configRepository = McpConfigRepository(application)
@@ -51,6 +54,23 @@ class McpContainer(
                 configProvider = { configRepository.current() },
                 virtualScreen = virtualScreenManager,
                 screenUnlock = screenUnlockController,
+                recordingSession = recordingSession,
+                userRecordingStarter = { options ->
+                    // 与设置页共用前台服务，避免 MCP 启动的录制在后台被系统回收。
+                    runCatching {
+                        UserRecordingService.start(
+                            context = application,
+                            name = options.name,
+                            captureScreenshots = options.captureScreenshots,
+                            sampleIntervalMs = options.sampleIntervalMs,
+                            captureContext = options.captureContext,
+                        )
+                        true
+                    }.getOrDefault(false)
+                },
+                userRecordingStopper = {
+                    runCatching { UserRecordingService.stop(application) }
+                },
             )
         },
         resourcesFactory = {

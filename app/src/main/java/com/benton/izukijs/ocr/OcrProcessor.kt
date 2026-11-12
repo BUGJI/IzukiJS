@@ -19,6 +19,7 @@ class OcrProcessor(
     private val local = LocalOcrEngine()
 
     /** 在线引擎只依赖配置，配置不变时复用，避免每次识别都重新构造。 */
+    private val engineLock = Any()
     private var onlineEngine: OnlineOcrEngine? = null
     private var onlineKey: Pair<OcrConfig, CaptureSettings>? = null
 
@@ -63,14 +64,13 @@ class OcrProcessor(
         }
     }
 
-    private fun engine(config: OcrConfig, capture: CaptureSettings): OnlineOcrEngine {
-        val key = config to capture
-        if (onlineKey == key) {
-            onlineEngine?.let { return it }
+    private fun engine(config: OcrConfig, capture: CaptureSettings): OnlineOcrEngine =
+        synchronized(engineLock) {
+            val key = config to capture
+            onlineEngine?.takeIf { onlineKey == key }?.let { return it }
+            OnlineOcrEngine(config, capture, logBus).also {
+                onlineEngine = it
+                onlineKey = key
+            }
         }
-        return OnlineOcrEngine(config, capture, logBus).also {
-            onlineEngine = it
-            onlineKey = key
-        }
-    }
 }

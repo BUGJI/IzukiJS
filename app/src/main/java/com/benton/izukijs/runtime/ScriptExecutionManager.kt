@@ -5,6 +5,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.NodeTreeResult
+import com.benton.izukijs.controller.record.RecordingSession
 import com.benton.izukijs.data.ScriptEnvSession
 import com.benton.izukijs.core.ScriptExitException
 import com.benton.izukijs.core.log.LogBus
@@ -64,6 +65,7 @@ class ScriptExecutionManager(
     private val runPreparer: RunPreparer,
     private val moduleSourceProvider: (String) -> String?,
     private val notificationDispatcher: NotificationDispatcher,
+    private val recordingSession: RecordingSession,
 ) : RunControl {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -104,6 +106,7 @@ class ScriptExecutionManager(
         source: String,
         values: Map<String, String> = emptyMap(),
         onFinished: ((Boolean) -> Unit)? = null,
+        onCompletion: ((RunCompletion) -> Unit)? = null,
         trigger: RunTrigger = RunTrigger.MANUAL,
     ): Boolean {
         val needs = ScriptNeeds.parse(source)
@@ -124,6 +127,10 @@ class ScriptExecutionManager(
             lastStartedRunId = runId
             RunLogRegistry.begin(runId, scriptId, scriptName)
             activeSession = session
+            // 同步发布运行身份：前台服务清理按 runId 判断归属，准备阶段也不能出现空窗。
+            _runningScript.value = scriptName
+            _runningScriptId.value = scriptId
+            _runningRunId.value = runId
             PerfMetrics.count("script.run")
             PerfMetrics.setGauge("script.running", 1L)
         }
@@ -150,7 +157,7 @@ class ScriptExecutionManager(
                     }
                 } catch (t: Throwable) {
                     logBus.error("✘ 启动脚本失败: ${t.message}")
-                    rollbackStart(session, t, onFinished, scriptId, scriptName, trigger)
+                    rollbackStart(session, t, onFinished, onCompletion, scriptId, scriptName, trigger)
                     return@withContext
                 }
                 executeRun(
@@ -163,6 +170,7 @@ class ScriptExecutionManager(
                     virtualSettings = prepared.virtualSettings,
                     scriptEnv = prepared.scriptEnv,
                     onFinished = onFinished,
+                    onCompletion = onCompletion,
                     trigger = trigger,
                 )
             }
@@ -183,19 +191,23 @@ class ScriptExecutionManager(
         values: Map<String, String> = emptyMap(),
         trigger: RunTrigger = RunTrigger.MANUAL,
     ): ScriptRunOutcome {
-        val finished = CompletableDeferred<Boolean>()
+        val finished = CompletableDeferred<RunCompletion>()
         val started = run(
             scriptId = scriptId,
             scriptName = scriptName,
             source = source,
             values = values,
-            onFinished = { success -> finished.complete(success) },
+            onCompletion = { completion -> finished.complete(completion) },
             trigger = trigger,
         )
         if (!started) return ScriptRunOutcome.Busy
-        val success = finished.await()
+        val completion = finished.await()
         running.first { !it }
-        return ScriptRunOutcome.Finished(success)
+        return if (completion.stopped) {
+            ScriptRunOutcome.Stopped
+        } else {
+            ScriptRunOutcome.Finished(completion.success)
+        }
     }
 
     private suspend fun executeRun(
@@ -208,6 +220,7 @@ class ScriptExecutionManager(
         virtualSettings: VirtualScreenSettings,
         scriptEnv: ScriptEnvSession,
         onFinished: ((Boolean) -> Unit)?,
+        onCompletion: ((RunCompletion) -> Unit)?,
         trigger: RunTrigger,
     ) {
         val startedAt = System.currentTimeMillis()
@@ -251,8 +264,8 @@ class ScriptExecutionManager(
                 logBus.warn("@need selector 在后台虚拟屏上不可用，请改用 capture / ocr / 坐标输入")
             }
             // 并行预热视觉能力，降低脚本首次找图 / OCR 的冷启动延迟。
-            if (needs == null || "images" in needs) ImageApi.prewarm()
-            if (needs == null || "ocr" in needs) deviceApiBundle.ocrApi.prewarm()
+            if (needs == null || "images" in needs || "pipeline" in needs) ImageApi.prewarm()
+            if (needs == null || "ocr" in needs || "pipeline" in needs) deviceApiBundle.ocrApi.prewarm()
             val jsEngine = JsEngine(
                 appContext,
                 controllers,
@@ -271,6 +284,7 @@ class ScriptExecutionManager(
                 scriptId = scriptId,
                 scriptName = scriptName,
                 pushDispatcher = notificationDispatcher,
+                recordingSession = recordingSession,
             )
             // 发布引擎与检查停止请求必须在同一把锁下完成：否则 requestStop 可能看到
             // engine 仍为 null 只置了 stopRequested，而这里已经检查过该标志，导致停止丢失。
@@ -294,7 +308,11 @@ class ScriptExecutionManager(
         } finally {
             try {
                 val timedOut = session.engine?.timedOut == true
-                val exited = session.engine?.exitRequested == true || isExitThrowable(failure)
+                // 用户停止与脚本主动 exit() 都会置 exitRequested，必须用 stopRequested 区分：
+                // 用户停止不能再被当作成功，否则脚本编排会继续执行下一步。
+                val userStopped = session.stopRequested
+                val exited = !userStopped &&
+                    (session.engine?.exitRequested == true || isExitThrowable(failure))
                 clearEngine(session)
                 val startedThisRun = virtualScreen.startGeneration() > session.startGenerationBefore
                 if (virtualScreen.isActive()) {
@@ -309,13 +327,14 @@ class ScriptExecutionManager(
                         "⏱ 脚本运行超时（${settings.scriptTimeoutMinutes} 分钟），已中断",
                     )
 
+                    userStopped -> logBus.warn("■ 脚本已停止")
                     exited -> logBus.success("■ 脚本已退出")
                     failure != null -> logBus.error("✘ 运行出错: ${failure.message}")
                     else -> logBus.success("✔ 脚本执行完成")
                 }
                 val status = when {
                     timedOut -> RunStatus.TIMEOUT
-                    exited -> RunStatus.STOPPED
+                    userStopped || exited -> RunStatus.STOPPED
                     failure != null -> RunStatus.FAILED
                     else -> RunStatus.SUCCEEDED
                 }
@@ -338,16 +357,22 @@ class ScriptExecutionManager(
                     RunStatus.STOPPED -> PerfMetrics.count("script.stopped")
                     RunStatus.RUNNING -> Unit
                 }
-                val success = !timedOut && (failure == null || exited)
+                val success = !timedOut && !userStopped && (failure == null || exited)
+                val completion = RunCompletion(success = success, stopped = userStopped, status = status)
                 runCatching { onFinished?.invoke(success) }.onFailure {
                     logBus.warn("运行结束回调失败：${it.message}")
+                }
+                runCatching { onCompletion?.invoke(completion) }.onFailure {
+                    logBus.warn("运行完成回调失败：${it.message}")
                 }
             } finally {
                 // 无论日志 / 停止流程是否抛异常，都必须释放资源与运行标记。
                 session.releaseWakeLock()
-                resetRunningState(session)
-                runCatching { ScriptForegroundService.stop(appContext) }
+                // 必须在 running 仍为 true 时停止前台服务：旧的清理动作带着本次 runId，
+                // 不会误停紧接着启动的新 run。
+                runCatching { ScriptForegroundService.stop(appContext, session.runId) }
                 ScriptNotificationCenter.clear()
+                resetRunningState(session)
             }
         }
     }
@@ -357,6 +382,7 @@ class ScriptExecutionManager(
         session: RunSession,
         error: Throwable,
         onFinished: ((Boolean) -> Unit)?,
+        onCompletion: ((RunCompletion) -> Unit)?,
         scriptId: String,
         scriptName: String,
         trigger: RunTrigger,
@@ -374,12 +400,19 @@ class ScriptExecutionManager(
         )
         PerfMetrics.count("script.failed")
         session.releaseWakeLock()
-        resetRunningState(session)
-        runCatching { ScriptForegroundService.stop(appContext) }
+        runCatching { ScriptForegroundService.stop(appContext, session.runId) }
         ScriptNotificationCenter.clear()
         runCatching { onFinished?.invoke(false) }.onFailure {
             logBus.warn("运行结束回调失败：${it.message}")
         }
+        runCatching {
+            onCompletion?.invoke(
+                RunCompletion(success = false, stopped = false, status = RunStatus.FAILED),
+            )
+        }.onFailure {
+            logBus.warn("运行完成回调失败：${it.message}")
+        }
+        resetRunningState(session)
     }
 
     /** 把运行结果转换为统一通知事件；实际发送由 [NotificationDispatcher] 异步完成。 */

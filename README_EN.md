@@ -40,8 +40,10 @@ OCR and AI-Agent recovery.
   `http` / `clipboard` / `permissions` / `ai` interfaces, with `// @need` to expose only what a script uses.
 - **Hybrid control**: the recommended setup is "read the view tree via Accessibility + inject input
   via HID/Shizuku" — each backend does what it does best.
-- **Vision**: OpenCV image / color matching, local MLKit Chinese OCR or online OCR (Baidu /
-  Google Vision / custom), with automatic fallback to local when online fails.
+- **Vision**: OpenCV image / color / feature matching with a unified `images.recognize()`
+  parameter model (ROI, green mask, HSV, ordering, And/Or chaining), local MLKit Chinese OCR or
+  online OCR (Baidu / Google Vision / custom), with automatic fallback to local when online fails;
+  optional ONNX Runtime local classification and YOLOv8/v11 object detection.
 - **Continuous screen capture**: authorize once and keep it resident, providing unlimited screen
   frames for capture / image matching / OCR and bypassing the Accessibility screenshot limits.
 - **Background virtual display & PiP**: run the target app on a virtual display created by a Shizuku
@@ -81,9 +83,11 @@ OCR and AI-Agent recovery.
 - **Bilingual UI**: ships with Simplified Chinese and English, switching automatically with the
   system language.
 - **Config backup**: one-tap export / import of AI / OCR / control / screenshot / script network /
-  log / editor preferences; sensitive keys are encrypted with the Android Keystore. Because the Keystore key
-  cannot migrate across devices, system-level auto backup excludes configs that contain ciphertext —
-  **use the in-app export / import when switching devices**.
+  log / runtime / language / developer / MCP / tile / notification and editor preferences; sensitive keys are
+  encrypted with the Android Keystore. The exported file contains plaintext keys and excludes scripts and
+  recordings. Because the Keystore key cannot migrate across devices, system-level auto backup excludes configs
+  that contain ciphertext — **use the in-app export / import when switching devices**.
+- **Recording management**: view recording usage from Settings and delete one or clear all recordings.
 
 ## Usage & Disclaimer
 
@@ -129,14 +133,18 @@ Scripts can query readiness with `permissions.*`; see [`docs/SCRIPT_API.md`](doc
 
 ### Option 1: Download (recommended)
 
-Download the APK from [Releases](https://github.com/BUGJI/IzukiJS/releases/latest) and pick the one
-matching your device architecture:
+Download the APK from [Releases](https://github.com/BUGJI/IzukiJS/releases/latest). Most users can
+install the universal build directly, with no need to pick an architecture:
+
+**[izukijs-universal-release.apk](https://github.com/BUGJI/IzukiJS/releases/latest/download/izukijs-universal-release.apk)**
+
+To keep the download smaller, you can instead pick one per architecture from the same release page:
 
 | File | Device |
 |---|---|
-| `app-arm64-v8a-release.apk` | Most modern phones (first choice) |
-| `app-armeabi-v7a-release.apk` | Older 32-bit devices |
-| `app-x86_64-release.apk` | Emulators / x86 tablets |
+| `izukijs-arm64-v8a-release.apk` | Most modern phones |
+| `izukijs-armeabi-v7a-release.apk` | Older 32-bit devices |
+| `izukijs-x86_64-release.apk` | Emulators / x86 tablets |
 
 If installs are blocked as "unknown source", allow that source in system settings. This app uses
 high-privilege features such as Accessibility / Shizuku / Root, so only install packages from a
@@ -172,7 +180,9 @@ cd IzukiJS
 For proper signing, copy `keystore.properties.example` to `keystore.properties` and fill in your key
 details (the file is ignored by `.gitignore` and never committed).
 
-Artifacts are split per ABI: `arm64-v8a` / `armeabi-v7a` / `x86_64`.
+Artifacts include a universal package plus the per-ABI splits (local file names are
+`app-universal-release.apk` and `app-<abi>-release.apk`); they are renamed to the `izukijs-*` prefix
+when published to a Release.
 
 ### First Run
 
@@ -257,6 +267,7 @@ app/src/main/java/com/benton/izukijs/
 │   └── shell/          # Command backend
 ├── runtime/       # QuickJS runtime and script API bindings (runtime/api)
 ├── ocr/           # Local MLKit / online OCR engines
+├── vision/        # Unified recognition: template / color / feature / OCR postprocess / And-Or / ONNX
 ├── service/       # Foreground services: scripts, overlay, debug overlay, capture, notification listener, Quick Settings tile
 ├── schedule/      # Scheduled tasks and boot re-registration
 ├── data/          # Script repository, editor settings, config backup

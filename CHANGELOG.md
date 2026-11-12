@@ -6,6 +6,65 @@
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
 ## [未发布]
+### 新增
+
+- 新增统一识别入口 `images.recognize()` / `images.recognizeAll()` / `images.recognizeIn()` /
+  `images.recognizeAllIn()`，参数模型对齐 MaaFramework Pipeline：支持 `roi` 负坐标与
+  `roiOffset`、`orderBy`、Python 式负 `index`。
+- 找图新增 `method`（`5` / `3` / `10001`）、`greenMask`、多模板多阈值与 IoU NMS；
+  找色新增 RGB/HSV/GRAY、多区间、`count`、`connected`；新增 `images.compare()` 画面比对。
+- 新增 `FeatureMatch` 特征匹配（当前 OpenCV 5 Android 构建支持 SIFT / ORB，抗缩放、旋转、透视）。
+- OCR 新增 `expected` 正则、`replace`、`threshold`、`colorFilter`、`orderBy`；
+  `ocr.find()` 支持 `{roi, threshold, fuzzy}`，新增 `ocr.recognizeBlocks(options?)`。
+- 新增 `And` / `Or` 组合识别与 `subName` 链式 ROI。
+- 新增 ONNX Runtime 本地推理：`NeuralNetworkClassify` 固定 ROI 分类与
+  `NeuralNetworkDetect` YOLOv8/v11 检测，支持 `labels` / `expected` / `threshold` 与模型缓存。
+- `docs/SCRIPT_API.md` 补充统一识别参数、示例与 OpenCV 5 检测器限制说明。
+- 新增声明式任务流水线 `pipeline.*`：节点图、`next` / `on_error`、`timeout` / `rate_limit`、
+  `jump_back` / `anchor` / `max_hit`、`wait_freezes` 与 MaaFramework 风格识别/动作参数；
+  `pipeline.validate()` / `pipeline.dump()` 可用于编辑与调试。
+- 新增控制操作录制与回放：`record.start()` / `record.stop()` / `record.list()` 录制操作与截图，
+  `pipeline.replay()` 使用录制帧离线运行流水线并校验动作差异。
+- 录制格式升级到 v2：事件带 `seq` / `atMs` / `elapsedMs` / `ok`，`screencap` 与 `context`
+  成为独立事件；`pipeline.replay()` 支持严格顺序消费截图与动作，并返回结构化
+  `mismatchDetails` / `replay` 报告；新增 `record.validate()` 与 MCP `recording validate`。
+- 用户录制支持多指手势 / 多指滑动（Shizuku 路径），控件上下文改为异步补全，避免阻塞触摸采集；
+  Shell 回退按命令启动时间校准事件时间戳。
+- 设置 → 数据新增「录制管理」：查看录制时间、帧数与占用，支持删除单条或清空全部；录制中禁止删除。
+- 录制管理支持自定义名称与重命名，详情页可逐页加载更多事件，并为脚本动作显示动作前缩略图。
+- 录制详情按缩略图尺寸采样解码，避免长录制打开详情时因全尺寸帧占用过多内存。
+- 录制帧数达到上限后不再谎报新画面：后续 `screencap` 标记 `stale`，采样线程停止抓帧，`record.validate` 会给出提示。
+- 录制元信息新增 `complete` 标记；进程被杀后列表/详情会按事件文件自动重建统计，不再一直显示 0。
+- 导出的脚本骨架只按动作事件计算 `sleep`，补齐 `back()` / `home()` / `recents()` / `press()` 与控件 id 选择器。
+- 开发者选项新增「录制截图最长边」，可在保存前缩放录制帧以降低占用。
+- MCP 启动/停止用户录制改走录制前台服务，避免后台被系统回收并清理常驻通知。
+- 开发者选项新增视觉缓存、流水线默认步数/超时/嵌套深度、录制最大帧数与 JPEG 质量。
+- 配置备份补全运行时、语言、开发者参数、MCP 与磁贴设置；开发者 `unlocked` 不参与导出。
+
+### 修复
+
+- 录制目录拒绝 `.` / `..` 与目录逃逸路径；正在录制的条目不可删除，避免误删应用私有目录。
+- Pipeline 单文档现在正确解析顶层 `Default` 与识别 / 动作类型默认块，不再把它们当成节点。
+- 修复用户录制切换前台应用时 `switch` 事件使用当前时刻、导致时间戳倒退并被 `record.validate` 误报的问题。
+- 修复脚本录制的 `framesAvailable` 始终为 true、`frames/` 文件名受系统区域设置影响，以及内部命令黑名单误吞脚本 Shell 动作的问题。
+- 修复低阈值找图 / 检测结果在 NMS 阶段被固定 `0.1` 下限丢弃的问题。
+- 统一视觉引擎生命周期：脚本结束时释放模板 Mat、ONNX 会话与特征检测器；`pipeline` 复用同一引擎。
+- OpenCV 未完成预热时，`images.recognize*` / `compare` / `pipeline` 会同步等待初始化而不是直接失败。
+- `record.delete()` 拒绝删除正在录制的目录；录制写入改为单线程队列，避免 JPEG 压缩阻塞脚本。
+- 修正 `LongPressKey` / `KeyDown` / `KeyUp` 被静默当成普通按键的问题，明确报告暂不支持。
+- MCP 访问令牌不再写入配置备份，导入时保留本机令牌。
+
+### 优化
+
+- 模板缓存改为进程级 LRU，`images.findImage*` 与统一识别共用，容量读取开发者选项。
+- `FeatureMatch` 场景特征按 ROI 只计算一次，并复用 SIFT / ORB 检测器与匹配器。
+- Pipeline 静态识别参数预编译缓存，减少每轮轮询的 JSON 复制与解析。
+- 录制回放增加帧 LRU 缓存；`app.foreground()` 增加短 TTL 缓存，减少重复 usage 扫描。
+- 模板缓存改为批量租约 + 引用计数，避免多模板匹配时缓存淘汰释放正在使用的 `Mat`。
+- 录制写入拆分为帧锁 / 事件锁，JPEG 压缩不再阻塞事件入队与停止流程。
+- OCR 正则按 pattern 缓存，Pipeline 轮询不再每帧重复编译；ONNX 输入张量与 YOLO 后处理减少分配。
+- 外部图片解码先读尺寸并按最大边采样，降低超大截图导致 OOM 的风险。
+- 修正文档中的 `compareRaw` 返回值、低级找色接口与 Pipeline 动作支持范围。
 
 ## [1.1.12] - 2026-11-10
 ### 新增

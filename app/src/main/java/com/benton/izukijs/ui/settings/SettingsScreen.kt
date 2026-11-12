@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
@@ -69,6 +70,7 @@ enum class SettingsCategory(
     UNLOCK("unlock", R.string.settings_unlock, Icons.Filled.LockOpen),
     ENV("env", R.string.settings_env, Icons.Filled.Key),
     LOG("log", R.string.settings_storage, Icons.Filled.Article),
+    RECORD("record", R.string.settings_record, Icons.Filled.FiberManualRecord),
     BACKUP("backup", R.string.settings_backup, Icons.Filled.Backup),
     DEVELOPER("developer", R.string.settings_developer, Icons.Filled.Build),
     ABOUT("about", R.string.settings_about, Icons.Filled.Info),
@@ -231,6 +233,10 @@ fun SettingsScreen(
                     ),
                 ) { onOpenCategory(SettingsCategory.LOG) }
                 CategoryRow(
+                    category = SettingsCategory.RECORD,
+                    summary = stringResource(R.string.settings_record_summary),
+                ) { onOpenCategory(SettingsCategory.RECORD) }
+                CategoryRow(
                     category = SettingsCategory.BACKUP,
                     summary = stringResource(R.string.settings_backup_summary),
                 ) { onOpenCategory(SettingsCategory.BACKUP) }
@@ -268,6 +274,7 @@ fun SettingsDetailScreen(
     onBack: () -> Unit = {},
     onOpenSetup: () -> Unit = {},
     onOpenMcp: () -> Unit = {},
+    onOpenRecordingDetail: (String) -> Unit = {},
 ) {
     val category = SettingsCategory.fromKey(categoryKey)
     SettingsDetailScaffold(
@@ -284,6 +291,7 @@ fun SettingsDetailScreen(
             SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
             SettingsCategory.ENV -> GlobalEnvSettings()
             SettingsCategory.LOG -> StorageSettings()
+            SettingsCategory.RECORD -> RecordingSettingsPage(onOpenDetail = onOpenRecordingDetail)
             SettingsCategory.BACKUP -> BackupSettingsScreen()
             SettingsCategory.DEVELOPER -> DeveloperSettings(onBack = onBack)
             SettingsCategory.ABOUT -> AboutSettings()

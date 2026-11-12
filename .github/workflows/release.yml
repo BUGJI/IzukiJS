@@ -76,6 +76,31 @@ jobs:
       - name: Build release APKs
         run: ./gradlew :app:assembleRelease --stacktrace
 
+      # 把 AGP 的 app-* 产物重命名为稳定的 izukijs-* 资源名并集中暂存。
+      # Release 简介里的 latest/download 链接依赖固定文件名，任一产物缺失都直接失败。
+      - name: Stage release assets
+        run: |
+          set -euo pipefail
+          ASSETS="${RUNNER_TEMP}/release-assets"
+          rm -rf "$ASSETS"
+          mkdir -p "$ASSETS"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            base="$(basename "$apk")"
+            case "$base" in
+              *universal*)   out="izukijs-universal-release.apk" ;;
+              *arm64-v8a*)   out="izukijs-arm64-v8a-release.apk" ;;
+              *armeabi-v7a*) out="izukijs-armeabi-v7a-release.apk" ;;
+              *x86_64*)      out="izukijs-x86_64-release.apk" ;;
+              *) echo "::error::无法识别的产物：$base"; exit 1 ;;
+            esac
+            cp "$apk" "$ASSETS/$out"
+          done
+          for f in izukijs-universal-release.apk izukijs-arm64-v8a-release.apk \
+                   izukijs-armeabi-v7a-release.apk izukijs-x86_64-release.apk; do
+            test -f "$ASSETS/$f" || { echo "::error::缺少 $f"; exit 1; }
+          done
+          ls -lh "$ASSETS"
+
       # 上传前断言证书指纹，防止再次发布出签名不一致的包。
       - name: Verify release signature
         run: |
@@ -86,7 +111,7 @@ jobs:
             APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)"
           fi
           echo "apksigner: $APKSIGNER"
-          for apk in app/build/outputs/apk/release/*.apk; do
+          for apk in "${RUNNER_TEMP}"/release-assets/*.apk; do
             "$APKSIGNER" verify --print-certs "$apk" | head -20
             GOT="$("$APKSIGNER" verify --print-certs "$apk" \
               | awk '/certificate SHA-256 digest/{print $NF; exit}' | tr 'A-F' 'a-f')"
@@ -100,25 +125,41 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          NOTES="$(cat <<'EOF'
-          ### 下载说明
+          set -euo pipefail
+          ASSETS="${RUNNER_TEMP}/release-assets"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/latest/download/izukijs-universal-release.apk"
 
-          - 手机用户：优先下载 `app-arm64-v8a-release.apk`；若设备不支持或安装失败，再尝试 `app-armeabi-v7a-release.apk`。
-          - X86 架构设备或模拟器：请下载 `app-x86_64-release.apk`。
-          EOF
-          )"
+          # 简介只保留一个通用下载入口，面向新用户，不介绍包本身。
+          DOWNLOAD_BLOCK="$(printf '### 下载\n\n**[下载 APK](%s)**' "$DOWNLOAD_URL")"
+
+          # 更新内容取 CHANGELOG 中对应 tag 的小节；缺失时回退到 GitHub 生成说明。
+          VERSION="${TAG#v}"
+          NOTES="$(awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") == 1 { capture = 1; next }
+            capture && index($0, "## [") == 1 { exit }
+            capture { print }
+          ' CHANGELOG.md)"
+          if [ -z "$NOTES" ]; then
+            # 生成失败不应阻断发版，最多让更新内容留空。
+            NOTES="$(gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="$TAG" --jq .body 2>/dev/null || true)"
+          fi
+
+          BODY="$(printf '%s\n\n<details>\n<summary>更新内容</summary>\n\n%s\n\n</details>\n' \
+            "$DOWNLOAD_BLOCK" "$NOTES")"
+
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" app/build/outputs/apk/release/*.apk --clobber
-            BODY="$(gh release view "$TAG" --json body -q .body)"
-            if ! printf '%s' "$BODY" | grep -qF 'app-arm64-v8a-release.apk'; then
-              gh release edit "$TAG" --notes "$(printf '%s\n\n%s' "$NOTES" "$BODY")"
+            gh release upload "$TAG" "$ASSETS"/*.apk --clobber
+            EXISTING="$(gh release view "$TAG" --json body -q .body)"
+            # 已经是最新简介格式时保持原样，避免覆盖人工修改。
+            if ! printf '%s' "$EXISTING" | grep -qF 'izukijs-universal-release.apk'; then
+              gh release edit "$TAG" --notes "$BODY"
             fi
           else
             gh release create "$TAG" \
               --title "$TAG" \
-              --generate-notes \
-              --notes "$NOTES" \
-              app/build/outputs/apk/release/*.apk
+              --notes "$BODY" \
+              "$ASSETS"/*.apk
           fi

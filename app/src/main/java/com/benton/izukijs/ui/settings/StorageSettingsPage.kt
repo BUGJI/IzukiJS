@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
@@ -44,11 +45,19 @@ internal fun StorageSettings() {
     val scope = rememberCoroutineScope()
     val logSettings = ui.logSettings
     var logFileSize by remember { mutableStateOf(0L) }
+    var cacheImages by remember { mutableStateOf(CacheImageStore.Stats(0, 0L)) }
     var confirmClearLog by remember { mutableStateOf(false) }
+    var confirmClearCacheImages by remember { mutableStateOf(false) }
 
     fun refreshLogSize() {
         scope.launch {
             logFileSize = viewModel.logFileSizeBytes()
+        }
+    }
+
+    fun refreshCacheImages() {
+        scope.launch {
+            cacheImages = viewModel.cacheImageStats()
         }
     }
 
@@ -60,7 +69,10 @@ internal fun StorageSettings() {
         }
     }
 
-    LaunchedEffect(Unit) { refreshLogSize() }
+    LaunchedEffect(Unit) {
+        refreshLogSize()
+        refreshCacheImages()
+    }
 
     SectionCard(stringResource(R.string.storage_log_title)) {
         SwitchRow(
@@ -150,6 +162,34 @@ internal fun StorageSettings() {
     }
 
     Spacer(Modifier.height(SectionGap))
+    SectionCard(stringResource(R.string.storage_cache_images_title)) {
+        Text(
+            stringResource(R.string.storage_cache_images_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(
+                R.string.storage_cache_images_usage,
+                cacheImages.count,
+                formatFileSize(cacheImages.bytes),
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ActionButtons {
+            OutlinedButton(
+                enabled = cacheImages.count > 0,
+                onClick = { confirmClearCacheImages = true },
+            ) {
+                Text(stringResource(R.string.storage_cache_images_clear))
+            }
+        }
+    }
+
+    Spacer(Modifier.height(SectionGap))
     SectionCard(stringResource(R.string.settings_perf_baseline)) {
         Text(
             stringResource(R.string.settings_perf_baseline_desc),
@@ -184,6 +224,22 @@ internal fun StorageSettings() {
                     logFileSize = viewModel.logFileSizeBytes()
                 }
                 confirmClearLog = false
+            },
+        )
+    }
+
+    if (confirmClearCacheImages) {
+        ConfirmDialog(
+            title = stringResource(R.string.storage_cache_images_clear),
+            message = stringResource(R.string.storage_cache_images_confirm),
+            destructive = true,
+            onDismiss = { confirmClearCacheImages = false },
+            onConfirm = {
+                confirmClearCacheImages = false
+                scope.launch {
+                    viewModel.clearCacheImages()
+                    cacheImages = viewModel.cacheImageStats()
+                }
             },
         )
     }

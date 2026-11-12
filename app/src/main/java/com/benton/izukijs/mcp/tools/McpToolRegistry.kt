@@ -3,6 +3,8 @@ package com.benton.izukijs.mcp.tools
 import com.benton.izukijs.ai.AgentTools
 import com.benton.izukijs.ai.ToolPolicy
 import com.benton.izukijs.controller.NodeTreeResult
+import com.benton.izukijs.controller.record.RecordingSession
+import com.benton.izukijs.controller.record.UserRecordingOptions
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.runtime.LogFileStore
@@ -23,6 +25,11 @@ class McpToolRegistry(
     internal val configProvider: () -> McpConfig,
     internal val virtualScreen: VirtualScreenManager? = null,
     internal val screenUnlock: ScreenUnlockController? = null,
+    internal val recordingSession: RecordingSession? = null,
+    /** 通过前台服务启动用户录制；为空时退回直接启动（测试或旧构造）。 */
+    internal val userRecordingStarter: ((UserRecordingOptions) -> Boolean)? = null,
+    /** 与 [userRecordingStarter] 配对，确保 MCP 停止录制时前台服务一并退出。 */
+    internal val userRecordingStopper: (() -> Unit)? = null,
 ) {
 
     @Volatile
@@ -80,6 +87,7 @@ class McpToolRegistry(
             add(getResultTool())
             add(listOperationsTool())
             if (config.allowUnlock && screenUnlock != null) add(unlockTool())
+            recordingSession?.let { add(recordingTool(it)) }
             if (config.allowScripts) addAll(scriptTools())
         }
         if (!config.autoUnlock || screenUnlock == null) return catalog

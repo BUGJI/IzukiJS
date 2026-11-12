@@ -9,6 +9,15 @@ import com.benton.izukijs.data.AppearanceSettings
 import com.benton.izukijs.data.EditorSettings
 import com.benton.izukijs.data.EditorSettingsRepository
 import com.benton.izukijs.data.GlobalEnvRepository
+import com.benton.izukijs.data.TileSettingsRepository
+import com.benton.izukijs.developer.DeveloperSettingSpecs
+import com.benton.izukijs.developer.DeveloperSettings
+import com.benton.izukijs.developer.DeveloperSettingsRepository
+import com.benton.izukijs.i18n.AppLanguage
+import com.benton.izukijs.i18n.LanguageRepository
+import com.benton.izukijs.mcp.McpConfigRepository
+import com.benton.izukijs.mcp.core.McpBindMode
+import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
@@ -18,9 +27,12 @@ import com.benton.izukijs.core.notification.NotificationSettings
 import com.benton.izukijs.core.notification.NotificationSettingsCodec
 import com.benton.izukijs.notification.NotificationSettingsRepository
 import com.benton.izukijs.core.net.HttpSettings
+import com.benton.izukijs.runtime.FloatingWindowMode
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.LogSettingsRepository
+import com.benton.izukijs.runtime.RuntimeSettings
+import com.benton.izukijs.runtime.RuntimeSettingsRepository
 import com.benton.izukijs.service.CaptureSettings
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.update.UpdateSettings
@@ -36,6 +48,7 @@ import org.json.JSONObject
  *
  * 锁屏解锁设置（PIN / 图案）使用设备绑定的 Keystore 加密，无法跨设备迁移，
  * 因此不出现在这里；它由 [ConfigBackupManager] 的 resetOnly 回调单独清理。
+ * 开发者选项只备份参数值，`unlocked` 入口开关始终保留本机状态。
  */
 object ConfigSections {
 
@@ -52,6 +65,11 @@ object ConfigSections {
         globalEnv: GlobalEnvRepository,
         virtualScreen: VirtualScreenSettingsRepository,
         notification: NotificationSettingsRepository,
+        runtime: RuntimeSettingsRepository,
+        language: LanguageRepository,
+        developer: DeveloperSettingsRepository,
+        mcp: McpConfigRepository,
+        tile: TileSettingsRepository,
     ): List<ConfigSection> = listOf(
         aiSection(ai),
         ocrSection(ocr),
@@ -65,6 +83,11 @@ object ConfigSections {
         globalEnvSection(globalEnv),
         virtualScreenSection(virtualScreen),
         notificationSection(notification),
+        runtimeSection(runtime),
+        languageSection(language),
+        developerSection(developer),
+        mcpSection(mcp),
+        tileSection(tile),
     )
 
     private fun aiSection(repository: AiConfigRepository) = ConfigSectionAdapter(
@@ -340,6 +363,160 @@ object ConfigSections {
             decode = { o, base -> NotificationSettingsCodec.decode(o, base) },
         )
 
+    private fun runtimeSection(repository: RuntimeSettingsRepository) = ConfigSectionAdapter(
+        key = "runtime",
+        current = repository::current,
+        save = repository::save,
+        defaultValue = RuntimeSettings(),
+        encode = { c ->
+            JSONObject().apply {
+                put("keepAwake", c.keepAwake)
+                put("wakeScreen", c.wakeScreen)
+                put("appList", c.appList)
+                put("progressNotification", c.progressNotification)
+                put("tileEnabled", c.tileEnabled)
+                put("scriptTimeoutMinutes", c.scriptTimeoutMinutes)
+                put("perfBaseline", c.perfBaseline)
+                put("floatingWindowMode", c.floatingWindowMode.key)
+            }
+        },
+        decode = { o, base ->
+            RuntimeSettings(
+                keepAwake = o.optBoolean("keepAwake", base.keepAwake),
+                wakeScreen = o.optBoolean("wakeScreen", base.wakeScreen),
+                appList = o.optBoolean("appList", base.appList),
+                progressNotification = o.optBoolean(
+                    "progressNotification",
+                    base.progressNotification,
+                ),
+                tileEnabled = o.optBoolean("tileEnabled", base.tileEnabled),
+                scriptTimeoutMinutes = o.optInt("scriptTimeoutMinutes", base.scriptTimeoutMinutes)
+                    .coerceAtLeast(0),
+                perfBaseline = o.optBoolean("perfBaseline", base.perfBaseline),
+                floatingWindowMode = FloatingWindowMode.fromKey(
+                    o.optString("floatingWindowMode", base.floatingWindowMode.key),
+                ),
+            )
+        },
+    )
+
+    private fun languageSection(repository: LanguageRepository) = ConfigSectionAdapter(
+        key = "language",
+        current = repository::current,
+        save = repository::save,
+        defaultValue = AppLanguage.SYSTEM,
+        encode = { c ->
+            JSONObject().apply {
+                put("value", c.name)
+                put("tag", c.tag ?: JSONObject.NULL)
+            }
+        },
+        decode = { o, base ->
+            val byName = AppLanguage.entries.firstOrNull { it.name == o.optString("value", "") }
+            val byTag = if (o.has("tag") && !o.isNull("tag")) {
+                AppLanguage.fromTag(o.optString("tag"))
+            } else {
+                null
+            }
+            byName ?: byTag ?: base
+        },
+    )
+
+    private fun developerSection(repository: DeveloperSettingsRepository) = ConfigSectionAdapter(
+        key = "developer",
+        current = repository::current,
+        save = repository::save,
+        defaultValue = DeveloperSettings(),
+        encode = { c ->
+            JSONObject().apply {
+                DeveloperSettingSpecs.all.forEach { spec -> put(spec.key, spec.get(c)) }
+            }
+        },
+        decode = { o, base ->
+            var result = base.copy(unlocked = repository.current().unlocked)
+            DeveloperSettingSpecs.all.forEach { spec ->
+                result = spec.set(result, o.optInt(spec.key, spec.default))
+            }
+            result
+        },
+        resetValue = { DeveloperSettings(unlocked = repository.current().unlocked) },
+    )
+
+    private fun mcpSection(repository: McpConfigRepository) = ConfigSectionAdapter(
+        key = "mcp",
+        current = repository::current,
+        save = repository::save,
+        defaultValue = McpConfig(),
+        encode = { c ->
+            JSONObject().apply {
+                put("enabled", c.enabled)
+                put("port", c.port)
+                put("bindMode", c.bindMode.name)
+                // 访问令牌不写入备份：备份文件可能被同步 / 分享；导入时保留本机令牌。
+                put("allowShell", c.allowShell)
+                put("allowScripts", c.allowScripts)
+                put("allowUnlock", c.allowUnlock)
+                put("allowRecording", c.allowRecording)
+                put("autoUnlock", c.autoUnlock)
+                put("allowDangerousShell", c.allowDangerousShell)
+                put("blockedPackages", JSONArray().apply { c.blockedPackages.forEach { put(it) } })
+            }
+        },
+        decode = { o, base ->
+            McpConfig(
+                enabled = o.optBoolean("enabled", base.enabled),
+                port = o.optInt("port", base.port)
+                    .coerceIn(McpConfig.MIN_PORT, McpConfig.MAX_PORT),
+                bindMode = runCatching {
+                    McpBindMode.valueOf(o.optString("bindMode", base.bindMode.name))
+                }.getOrDefault(base.bindMode),
+                token = if (o.has("token") && !o.isNull("token")) {
+                    o.optString("token")
+                } else {
+                    repository.current().token
+                },
+                allowShell = o.optBoolean("allowShell", base.allowShell),
+                allowScripts = o.optBoolean("allowScripts", base.allowScripts),
+                allowUnlock = o.optBoolean("allowUnlock", base.allowUnlock),
+                allowRecording = o.optBoolean("allowRecording", base.allowRecording),
+                autoUnlock = o.optBoolean("autoUnlock", base.autoUnlock),
+                allowDangerousShell = o.optBoolean(
+                    "allowDangerousShell",
+                    base.allowDangerousShell,
+                ),
+                blockedPackages = if (o.has("blockedPackages")) {
+                    readStringList(o, "blockedPackages")
+                } else {
+                    base.blockedPackages
+                },
+            )
+        },
+    )
+
+    private fun tileSection(repository: TileSettingsRepository) = ConfigSectionAdapter<String?>(
+        key = "tile",
+        current = repository::current,
+        save = repository::save,
+        defaultValue = null,
+        encode = { id -> JSONObject().put("scriptId", id ?: JSONObject.NULL) },
+        decode = { o, _ ->
+            if (o.isNull("scriptId")) {
+                null
+            } else {
+                o.optString("scriptId", "").takeIf { it.isNotBlank() }
+            }
+        },
+    )
+
+    private fun readStringList(obj: JSONObject, key: String): List<String> {
+        val array = obj.optJSONArray(key) ?: return emptyList()
+        return buildList {
+            for (index in 0 until array.length()) {
+                array.optString(index, "").trim().takeIf { it.isNotEmpty() }?.let { add(it) }
+            }
+        }
+    }
+
     private fun virtualScreenSection(repository: VirtualScreenSettingsRepository) = ConfigSectionAdapter(
         key = "virtualScreen",
         current = repository::current,
@@ -394,13 +571,15 @@ private class ConfigSectionAdapter<T>(
     private val defaultValue: T,
     private val encode: (T) -> JSONObject,
     private val decode: (JSONObject, T) -> T,
+    private val resetValue: (T) -> T = { defaultValue },
 ) : ConfigSection {
 
     override fun export(): JSONObject = encode(current())
 
-    override fun import(value: JSONObject) = save(decode(value, defaultValue))
+    // 以当前值为基线解码：旧备份/部分备份缺失的字段保留现状，而不是回退到默认值。
+    override fun import(value: JSONObject) = save(decode(value, current()))
 
-    override fun reset() = save(defaultValue)
+    override fun reset() = save(resetValue(current()))
 }
 
 private inline fun <reified T : Enum<T>> String.toEnumOr(fallback: T): T =

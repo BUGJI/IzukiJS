@@ -14,6 +14,16 @@
 | `exit()` | 立即结束脚本 |
 | `captureScreen(path, source?)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`）；`source` 可为 `auto` / `virtual` / `main` |
 
+## `console`
+
+与全局 `log` / `debug` / `warn` / `error` 等价的命名空间写法，便于从浏览器 / Node 代码迁移。
+
+| 方法 | 说明 |
+|---|---|
+| `console.log(msg)` / `console.info(msg)` | 普通日志 |
+| `console.debug(msg)` | 调试日志 |
+| `console.warn(msg)` / `console.error(msg)` | 警告 / 错误日志 |
+
 ## 输入（全局）
 
 | 函数 | 说明 |
@@ -84,9 +94,13 @@ gesture([
 | `app.launch(packageName)` | 启动应用 |
 | `app.openUrl(url)` | 打开链接 |
 | `app.currentPackage()` | 当前前台包名（无障碍 → Shizuku/无线调试/Root → 使用情况访问 依次兜底） |
+| `app.virtualPackage()` | 虚拟屏前台包名；虚拟屏未激活或读取失败返回 `null` |
+| `app.mainPackage()` | 主屏前台包名（不跟随虚拟屏目标） |
+| `app.virtualScreenActive()` | 虚拟屏是否正在运行 |
 | `app.list()` | 已安装应用数组 `[{package,label,system,enabled}]`（需「应用列表」开启） |
 | `app.info(packageName)` | 单个应用信息对象，或 `null` |
 | `app.isInstalled(packageName)` | 是否已安装 |
+| `app.hasUsageAccess()` | 是否已授予「使用情况访问」 |
 | `app.foreground()` | 当前前台包名（需「使用情况访问」），否则 `null` |
 | `app.lastUsed(packageName)` | 最后使用时间（毫秒），从未使用返回 -1（需「使用情况访问」） |
 | `app.usageStats(sinceMs, limit)` | 使用统计数组 `[{package,totalTimeMs,lastTimeUsed}]`（需「使用情况访问」） |
@@ -272,12 +286,12 @@ else warn("请求失败: " + (r && r.error));
 
 | 方法 | 说明 |
 |---|---|
-| `selector.existsById(id)` / `existsByText(t)` / `existsByDesc(d)` | 是否存在 |
+| `selector.existsById(id)` / `selector.existsByText(t)` / `selector.existsByDesc(d)` | 是否存在 |
 | `selector.countByText(t)` | 匹配数量 |
-| `selector.clickById(id)` / `clickByText(t)` / `clickByDesc(d)` | 点击（优先 performAction，否则点中心） |
-| `selector.longClickById(id)` / `longClickByText(t)` | 长按 |
+| `selector.clickById(id)` / `selector.clickByText(t)` / `selector.clickByDesc(d)` | 点击（优先 performAction，否则点中心） |
+| `selector.longClickById(id)` / `selector.longClickByText(t)` / `selector.longClickByDesc(d)` | 长按 |
 | `selector.setTextById(id, text)` | 设置文本 |
-| `selector.getTextById(id)` / `getTextByText(t)` | 取文本 |
+| `selector.getTextById(id)` / `selector.getTextByText(t)` | 取文本 |
 | `selector.boundsById(id)` | 返回 `"left,top,right,bottom"` |
 
 ### 条件查询与等待
@@ -313,16 +327,19 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `selector.findAll(criteria)` | 全部匹配元素数组 |
 | `selector.nth(criteria, index)` | 等同于 `find(criteria, index)` |
 | `selector.exists(criteria)` / `selector.count(criteria)` | 是否存在 / 匹配数量 |
-| `selector.click(criteria, index=0)` / `longClick(criteria, index=0)` | 点击 / 长按 |
+| `selector.click(criteria, index=0)` / `selector.longClick(criteria, index=0)` | 点击 / 长按 |
 | `selector.waitFor(criteria, timeoutMs=5000, intervalMs=200, index=0)` | 等待出现，返回元素或 `null` |
 | `selector.waitGone(criteria, timeoutMs=5000, intervalMs=200)` | 等待消失，返回是否成功 |
 | `selector.scrollIntoView(criteria, index=0)` | 尝试滚动到可见区域 |
 
 元素对象字段：`{id,text,desc,className,package,left,top,right,bottom,x,y,width,height,clickable,longClickable,editable,scrollable,enabled,index}`。
 
-`waitForText(text, ...)` / `waitForId(id, ...)` / `waitForTextContains` / `waitForTextRegex` 是
-`waitFor` 的便捷包装；`findByText` / `findByTextContains` / `findByTextRegex` / `findByDesc*`
-同理。所有等待方法都会响应「停止」，不会把界面卡死；单次 `waitFor` / `waitGone` 最长等待 10 分钟。
+`selector.waitForText(text, ...)` / `selector.waitForId(id, ...)` /
+`selector.waitForTextContains` / `selector.waitForTextRegex` 是 `waitFor` 的便捷包装；
+`selector.findByText` / `selector.findAllByText` / `selector.findByTextContains` /
+`selector.findByTextRegex` / `selector.findByDesc` / `selector.findByDescContains` /
+`selector.findByDescRegex` 同理。所有等待方法都会响应「停止」，不会把界面卡死；
+单次 `waitFor` / `waitGone` 最长等待 10 分钟。
 
 ## `shell`（需 Shizuku、无线调试或 Root）
 
@@ -352,8 +369,128 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `images.findImageRaw(template, threshold)` | 低层找图，返回 `"x,y,confidence"` 字符串或 `null` |
 | `images.saveTemplate(path, x, y, width, height)` | 从当前屏幕裁剪区域保存为 PNG 模板，返回路径；`path` 传 `""` 存到缓存目录 |
 | `images.available()` | OpenCV 是否可用 |
+| `images.recognize(spec)` | 统一识别入口，返回首个结果或 `null` |
+| `images.recognizeAll(spec)` | 统一识别入口，返回全部结果数组 |
+| `images.recognizeIn(screenPath, spec)` | 在指定截图上识别，返回首个结果 |
+| `images.recognizeAllIn(screenPath, spec)` | 在指定截图上识别，返回全部结果 |
+| `images.compare(lhs, rhs, options?)` | 比较两张同尺寸图片，返回 `{score, matched}` |
 
 `region` 为 `{x, y, width, height}`（屏幕像素），省略时搜索整屏。`limit` 上限 200。
+
+### 统一识别 `images.recognize(spec)`
+
+参数模型对齐 MaaFramework Pipeline，`type` 大小写不敏感（也接受 `recognition` 字段）。
+所有结果都包含 `{x, y, left, top, right, bottom, w, h, score, count}`，OCR 额外有 `text`，
+神经网络额外有 `clsIndex` / `label`。
+
+通用字段：
+
+- `roi`：`{x, y, width, height}` 或 `[x, y, w, h]`；支持负坐标、`w/h = 0` 延伸到边缘；
+- `roiOffset`：`[dx, dy, dw, dh]`，分别加到 `x/y/w/h`；
+- `orderBy`：`Horizontal`（默认）/ `Vertical` / `Score` / `Area` / `Length` / `Random` / `Expected`；
+- `index`：取第几个结果，负数按 Python 语义（`-1` 为最后一个）。
+
+**找图 `TemplateMatch`**
+
+```js
+var hit = images.recognize({
+  type: "TemplateMatch",
+  template: "/sdcard/tpl/ok.png",   // string 或 string[]
+  threshold: 0.85,                   // number 或 number[]（与 template 对应），默认 0.8
+  method: 5,                         // 5=CCOEFF_NORMED（默认）, 3=CCORR_NORMED, 10001=SQDIFF_NORMED 反转
+  greenMask: false,                  // 模板涂纯绿 #00FF00 的区域不参与匹配
+  roi: { x: 0, y: 300, width: 1080, height: 1500 },
+  orderBy: "Score",
+  index: 0
+});
+```
+
+**找色 `ColorMatch`**
+
+```js
+var hit = images.recognize({
+  type: "ColorMatch",
+  method: 40,                        // 4=RGB（默认）, 40=HSV, 6=GRAY
+  lower: [[0, 120, 120]],            // 支持多区间
+  upper: [[10, 255, 255]],
+  count: 10,                         // 命中像素下限
+  connected: true,                   // 是否按连通域计数
+  orderBy: "Area"
+});
+```
+
+**特征匹配 `FeatureMatch`**
+
+```js
+var hit = images.recognize({
+  type: "FeatureMatch",
+  template: "/sdcard/tpl/icon.png",
+  detector: "ORB",                   // 当前 OpenCV 5 Android 构建支持 SIFT / ORB
+  ratio: 0.6,
+  count: 4,
+  greenMask: false
+});
+```
+
+> 当前 OpenCV 5 Android 构建不包含 BRISK / KAZE / AKAZE / SURF，传入时会记录警告并跳过。
+
+**OCR `OCR`**
+
+```js
+var hit = images.recognize({
+  type: "OCR",
+  expected: ["确认", "OK"],          // 正则
+  threshold: 0.4,                    // 置信度下限
+  replace: [["0", "O"]],             // [正则, 替换文本]
+  colorFilter: { method: 6, lower: [200], upper: [255] },  // 先按颜色二值化
+  orderBy: "Length"
+});
+```
+
+> MLKit 不支持 `onlyRec`，该字段会被忽略。
+
+**组合识别 `And` / `Or`**
+
+```js
+var hit = images.recognize({
+  type: "And",
+  allOf: [
+    { subName: "icon", type: "TemplateMatch", template: "icon.png", threshold: 0.85 },
+    { type: "OCR", roi: "icon", expected: ["确认|OK"] }
+  ],
+  boxIndex: 0
+});
+```
+
+`subName` 让后续子识别的 `roi` 可以填字符串，引用前一个子识别的结果框；
+`And` 要求全部命中，`Or` 命中第一个即返回；`boxIndex` 指定输出哪个子识别的框。
+
+**神经网络 `NeuralNetworkClassify` / `NeuralNetworkDetect`**
+
+```js
+// 固定 ROI 分类
+var cls = images.recognize({
+  type: "NeuralNetworkClassify",
+  model: "/sdcard/models/cat_dog.onnx",
+  labels: ["Cat", "Dog", "Mouse"],
+  expected: [0, "Mouse"],
+  roi: { x: 100, y: 200, width: 300, height: 300 }
+});
+
+// YOLOv8 / YOLOv11 检测
+var det = images.recognize({
+  type: "NeuralNetworkDetect",
+  model: "/sdcard/models/yolo.onnx",
+  threshold: 0.3,
+  expected: ["cat", "mouse"],
+  roi: { x: 0, y: 200, width: 1200, height: 1500 }
+});
+```
+
+- 模型为单输入单输出 ONNX，输入 NCHW float；检测模型输出支持 `[1, 4+nc, N]` 与 `[1, N, 4+nc]`。
+- `labels` 省略时从模型 metadata 的 `names/name/labels/class_names` 读取。
+- 模型按「路径 + 修改时间」缓存，最多同时保留 3 个会话。
+- 神经网络依赖 ONNX Runtime，会增加 APK 体积；低端设备建议配合 `roi` 使用。
 
 `findColorRegions` 的 `options` 为
 `{minPixels=1, maxRegions=20, region?: {x, y, width, height}}`。返回区域的 `x/y` 是包围盒左上角，
@@ -382,6 +519,124 @@ var hit = images.findColorInRaw(shot, "#BEF74F", 40);
 if (hit) click(hit.x, hit.y);
 ```
 
+### 低级接口（`*Raw`）
+
+以下方法与上游门面共用同一套底层实现，直接返回原始字符串 / JSON，适合需要自己解析或
+复用到其他封装的场景。普通脚本优先使用上面的门面方法。
+
+| 方法 | 返回 |
+|---|---|
+| `images.recognizeRaw(specJson)` / `images.recognizeAllRaw(specJson)` | 单个 / 数组 JSON 字符串 |
+| `images.recognizeInRaw(path, specJson)` / `images.recognizeAllInRaw(path, specJson)` | 指定截图的识别结果 |
+| `images.compareRaw(lhs, rhs, optionsJson)` | `{score,matched}` JSON |
+| `images.findImageRaw(tpl, threshold)` / `images.findImageRegionRaw(tpl, threshold, regionJson)` | `"x,y,confidence"` 或 `null` |
+| `images.findImageInRaw(screenPath, tpl, threshold)` | `"x,y,confidence"` 或 `null` |
+| `images.findAllImagesRaw(tpl, threshold, regionJson, limit)` | 匹配数组 JSON |
+| `images.findColorRaw(color, threshold)` / `images.findColorRegionRaw(color, threshold, regionJson)` | `"x,y"` 或 `null` |
+| `images.findColorInRaw(screenPath, color, threshold)` | 已由 prelude 包装为 `{x,y}` 或 `null` |
+| `images.findAllColorsRaw(color, threshold, regionJson, limit)` | 颜色点数组 JSON |
+| `images.findColorRegionsRaw(color, threshold, optionsJson)` | 连通域数组 JSON |
+| `images.findColorRegionsInRaw(screenPath, color, threshold, optionsJson)` | 已由 prelude 包装为连通域数组 |
+
+## `record`（控制操作录制 / 回放）
+
+录制当前控制后端收到的操作与屏幕帧，用于离线回归测试。录制期间控制器会被临时包一层，
+停止后自动恢复；截图帧按采样哈希去重，默认最多保留 800 张。超过上限后采样停止，后续
+`screencap` 事件带 `stale=true` 并复用上一帧；可在开发者选项限制录制帧最长边以降低占用。
+
+录制文件为 v2 格式：`meta.json` 记录版本、设备与选项，`events.jsonl` 每行包含
+`v / seq / atMs / elapsedMs / type / source / ok / data`。`screencap` 是独立事件，
+回放时严格按录制中的截图顺序喂给识别；`context` 事件异步补全前台包名与命中控件。
+
+| 方法 | 说明 |
+|---|---|
+| `record.start(name)` | 开始脚本录制，返回 `{ok, id, active}`；已有任何录制或正在收尾时返回 `{ok:false,error}` |
+| `record.stop()` | 停止并落盘，返回 `{ok, id}` |
+| `record.active()` | 是否有录制进行中 |
+| `record.list()` | 列出录制：`[{id,name,createdAt,width,height,frameCount,eventCount,durationMs,kind,inputSource,framesAvailable,truncated,complete,version}]`；`kind=user` 表示用户真实操作录制，`complete=false` 表示未正常收尾 |
+| `record.info(id)` | 读取单条录制元信息，不存在返回 `null` |
+| `record.validate(id)` | 校验录制结构：序号、时间线、截图缺失、孤立 context、帧截断 / 未正常结束；返回 `{ok, eventCount, frameCount, durationMs, version, issues}` |
+| `record.delete(id)` | 删除录制目录；正在录制的 id 会返回 `false` |
+
+```js
+// @need record
+var started = record.start("login-flow");
+// ... 正常操作设备 / 运行脚本 ...
+record.stop();
+log(JSON.stringify(record.list()));
+```
+
+录制保存到应用私有目录，不需要「全部文件访问」。动作、Shell、应用启动与截图都会记录；
+每个动作事件带 `source`（script / mcp），用户真实触摸带 `source=user` 与命中控件信息。
+控件树（`selector.*`）本身不参与录制，但用户录制会记录点击命中的控件文本 / id。
+本次脚本通过 `record.start` 启动的录制会在脚本结束时自动停止，避免控制器包装泄漏到后续脚本。
+
+用户操作录制由「设置 → 录制管理」或 MCP `recording` 工具启动，脚本侧仍可通过
+`record.list` / `record.info` 读取；更推荐用 MCP 的 `recording timeline` 与
+`recording frame` 让 AI 结合截图分析点击目标。
+
+## `pipeline`（声明式任务流水线，需 `// @need pipeline`）
+
+用 MaaFramework 风格的节点图描述「识别 → 动作 → 下一个节点」，适合登录、弹窗处理、菜单跳转等
+固定流程。运行时每轮扫描 `next` 只截一次屏，并复用 `images.recognize` 的识别参数模型。
+
+```js
+// @need pipeline
+var result = pipeline.run({
+  "Start": {
+    recognition: "OCR",
+    expected: ["登录|Login"],
+    action: "Click",
+    next: ["Home"]
+  },
+  "Home": {
+    recognition: "TemplateMatch",
+    template: "/sdcard/tpl/home.png",
+    threshold: 0.85,
+    next: []
+  }
+}, "Start");
+log(result.ok + " steps=" + result.steps);
+```
+
+| 方法 | 说明 |
+|---|---|
+| `pipeline.run(spec, entry?, options?)` | 运行流水线；`spec` 可为对象或 JSON 字符串。`entry` 省略时取第一个节点；返回 `{ok, stopped, taskStopped, entry, lastNode, steps, hitCounts, error}` |
+| `pipeline.replay(recordingId, spec, entry?, options?)` | 用录制帧回放运行流水线，并校验动作；返回结果额外包含 `recording`、`mismatches`、`mismatchDetails` 与 `replay` 报告。`options` 支持 `{strict, maxSteps, timeoutMs, coordinateTolerance, compareText, compareShellOutput, maxMismatches}`；`strict=true` 时严格按录制顺序消费 `screencap` 与动作，类型/参数不一致即判失败 |
+| `pipeline.validate(spec)` | 返回 `{ok, issues:[{severity,node,message}]}`，用于编辑器/调试 |
+| `pipeline.dump(spec)` | 归一化为 Pipeline v2 JSON 对象 |
+| `pipeline.registerRecognition(name, fn)` | 注册 `Custom` 识别；`fn(param, rois)` 返回 `{x,y,width,height}`、`[x,y,w,h]` 或 `null` |
+| `pipeline.registerAction(name, fn)` | 注册 `Custom` 动作；`fn(param, box)` 返回 boolean，返回 `undefined` 视为成功 |
+
+`options` 支持 `{maxSteps, timeoutMs}`，默认 `maxSteps=10000`、不限总时长。
+
+顶层 `Default` 与识别 / 动作类型块（如 `TemplateMatch`、`Click`）会作为默认参数解析；
+其余顶层 key 才是节点。因此这些类型名在单文档写法中保留，不要用作节点名。
+
+**节点字段**（与 Pipeline 协议一致，兼容 v1/v2 写法）：
+
+- `recognition` / `action`：识别与动作类型；
+- `next` / `on_error`：字符串或 `{name, jump_back, anchor}`；
+- `timeout`（默认 20000，`-1` 不限）、`rate_limit`（默认 1000）、`pre_delay` / `post_delay`（默认 200）；
+- `pre_wait_freezes` / `post_wait_freezes` / `repeat_wait_freezes`：等待画面静止，支持数字或
+  `{time, target, target_offset, threshold, method, rate_limit, timeout}`；
+- `repeat` / `repeat_delay`、`max_hit`、`enabled`、`inverse`、`anchor`、`focus`、`attach`。
+
+**目标引用**：`target` 支持 `true`（当前识别框）、节点名、`[Anchor]锚点名`、`[x,y]` / `[x,y,w,h]`；
+识别 `roi` 也支持节点名 / 锚点 / 坐标，字符串子识别可直接引用节点名。
+
+**识别**：`DirectHit`、`TemplateMatch`、`FeatureMatch`、`ColorMatch`、`OCR`、
+`NeuralNetworkClassify`、`NeuralNetworkDetect`、`And`、`Or`、`Custom`。
+
+**动作**：`DoNothing`、`Click`、`LongPress`、`Swipe`、`MultiSwipe`、`InputText`、`StartApp`、
+`StopApp`、`Shell`、`Scroll`、`StopTask`、`ClickKey`、`Custom`。
+`LongPressKey` / `KeyDown` / `KeyUp` 因 Android 控制后端只提供离散按键暂未支持；
+`TouchDown` / `TouchMove` / `TouchUp`、`Screencap`、`Command` 同样暂未支持。
+`focus` / `attach` 目前仅解析与 dump，不参与运行时行为。
+
+> `template` / `model` 使用脚本可读的绝对路径（如 `/sdcard/...`）。脚本停止时流水线会尽快退出并
+> 返回 `{stopped:true}`，prelude 随后抛出退出异常。
+
 ## `ocr`（本地 / 在线可切换）
 
 识别引擎由设备配置（设置 → 识别与截图 → OCR）决定，脚本无需改动：
@@ -397,7 +652,11 @@ if (hit) click(hit.x, hit.y);
 | `ocr.recognize()` | 识别当前屏幕，返回全文 |
 | `ocr.recognizePath(path)` | 识别指定图片 |
 | `ocr.recognizeBlocksJson()` | 识别当前屏幕，返回结构化 JSON 字符串：`{text, image:{w,h}, blocks:[...]}` |
-| `ocr.find(text)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null`（x/y 为中心） |
+| `ocr.recognizeBlocks(options?)` | 带 `roi` 的结构化识别，返回对象（不是 JSON 字符串） |
+| `ocr.find(text, options?)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null`（x/y 为中心） |
+
+`ocr.find` 的 `options` 支持 `{roi, threshold, fuzzy}`；`ocr.recognizeBlocks` 的 `options` 支持 `{roi}`。
+需要正则过滤、替换、颜色过滤等完整能力时，使用 `images.recognize({type:"OCR", ...})`。
 
 `blocks` 每项为 `{text, x, y, w, h, left, top, right, bottom, conf?, suspicious?}`，
 其中 `x/y` 是包围盒中心，`left/top/right/bottom` 是四边坐标。
@@ -416,10 +675,10 @@ result.blocks.forEach(function (block) {
 
 | 方法 | 说明 |
 |---|---|
-| `permissions.accessibility()` / `shizuku()` / `adb()` / `root()` / `hid()` | 控制模式是否就绪 |
+| `permissions.accessibility()` / `permissions.shizuku()` / `permissions.adb()` / `permissions.root()` / `permissions.hid()` | 控制模式是否就绪 |
 | `permissions.overlay()` | 悬浮窗权限 |
 | `permissions.screenCapture()` | 持续录屏是否开启 |
-| `permissions.notifications()` / `bluetooth()` | 通知 / 蓝牙权限 |
+| `permissions.notifications()` / `permissions.bluetooth()` | 通知 / 蓝牙权限 |
 | `permissions.usageAccess()` | 使用情况访问 |
 | `permissions.notificationListener()` | 通知使用权 |
 | `permissions.manageStorage()` | 全部文件访问 |
@@ -564,8 +823,10 @@ virtualScreen.target("virtual");
 
 - 声明后，**只有列出的命名空间会被注册**；未声明的 `shell` / `fs` / `notify` /
   `push` / `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` /
-  `virtualscreen` 在脚本里不存在。
+  `pipeline` / `record` / `virtualscreen` 在脚本里不存在。
 - 没有 `@need` 时保持旧行为：暴露所有已启用的命名空间。
+- `device` / `console` / `permissions` / `env` / `state` / `modules` 与全局函数始终可用，
+  不需要写进 `@need`。
 - 支持逗号、分号或空格分隔，大小写不敏感；多行会合并。
 - 未知能力名会直接拒绝运行；缺少前置条件（如 `http` 未启用、`shell` 后端未就绪）会记录警告。
 - 这是「最小暴露」而不是安全沙箱：输入（`click` / `swipe` 等）、`device`、`permissions`、
@@ -594,6 +855,14 @@ var step = parseInt(state.get("step", "0"), 10);
 log("第 " + (step + 1) + " 次运行");
 state.set("step", String(step + 1));
 ```
+
+## `modules`
+
+`require()` 的底层命名空间，始终可用。普通脚本直接用 `require(name)` 即可。
+
+| 方法 | 说明 |
+|---|---|
+| `modules.source(name)` | 读取模块源码字符串；找不到返回 `null` |
 
 ## 模块复用 `require`
 

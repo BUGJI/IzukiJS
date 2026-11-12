@@ -31,6 +31,7 @@ class McpConfigRepository(context: Context) : PrefsStateStore<McpConfig>(
             allowShell = prefs.getBoolean(KEY_ALLOW_SHELL, false),
             allowScripts = prefs.getBoolean(KEY_ALLOW_SCRIPTS, false),
             allowUnlock = prefs.getBoolean(KEY_ALLOW_UNLOCK, false),
+            allowRecording = prefs.getBoolean(KEY_ALLOW_RECORDING, false),
             autoUnlock = prefs.getBoolean(KEY_AUTO_UNLOCK, false),
             allowDangerousShell = prefs.getBoolean(KEY_ALLOW_DANGEROUS_SHELL, false),
             blockedPackages = prefs.getString(KEY_BLOCKED_PACKAGES, "")
@@ -50,6 +51,7 @@ class McpConfigRepository(context: Context) : PrefsStateStore<McpConfig>(
             .putBoolean(KEY_ALLOW_SHELL, value.allowShell)
             .putBoolean(KEY_ALLOW_SCRIPTS, value.allowScripts)
             .putBoolean(KEY_ALLOW_UNLOCK, value.allowUnlock)
+            .putBoolean(KEY_ALLOW_RECORDING, value.allowRecording)
             .putBoolean(KEY_AUTO_UNLOCK, value.autoUnlock)
             .putBoolean(KEY_ALLOW_DANGEROUS_SHELL, value.allowDangerousShell)
             .putString(KEY_BLOCKED_PACKAGES, value.blockedPackages.joinToString("\n"))
@@ -64,6 +66,7 @@ class McpConfigRepository(context: Context) : PrefsStateStore<McpConfig>(
         const val KEY_ALLOW_SHELL = "allow_shell"
         const val KEY_ALLOW_SCRIPTS = "allow_scripts"
         const val KEY_ALLOW_UNLOCK = "allow_unlock"
+        const val KEY_ALLOW_RECORDING = "allow_recording"
         const val KEY_AUTO_UNLOCK = "auto_unlock"
         const val KEY_ALLOW_DANGEROUS_SHELL = "allow_dangerous_shell"
         const val KEY_BLOCKED_PACKAGES = "blocked_packages"

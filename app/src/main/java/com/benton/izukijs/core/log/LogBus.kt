@@ -83,9 +83,12 @@ class LogBus(private val capacity: Int = 500) {
             delay(EMIT_INTERVAL_MS)
             emitScheduled.set(false)
             PerfMetrics.measure("log.emit") {
-                val snapshot = synchronized(lock) { buffer.toList() }
-                _entries.value = snapshot
-                PerfMetrics.setGauge("log.buffer", snapshot.size.toLong())
+                // 快照与发布必须在同一把锁内，否则 clear() 可能插在中间把旧日志写回来。
+                synchronized(lock) {
+                    val snapshot = buffer.toList()
+                    _entries.value = snapshot
+                    PerfMetrics.setGauge("log.buffer", snapshot.size.toLong())
+                }
             }
         }
     }
@@ -126,9 +129,11 @@ class LogBus(private val capacity: Int = 500) {
     fun error(message: String) = log(LogLevel.ERROR, message)
 
     fun clear() {
-        synchronized(lock) { buffer.clear() }
+        synchronized(lock) {
+            buffer.clear()
+            _entries.value = emptyList()
+        }
         throttleTimestamps.clear()
-        _entries.value = emptyList()
     }
 
     private fun LogLevel.toLogcatPriority(): Int = when (this) {

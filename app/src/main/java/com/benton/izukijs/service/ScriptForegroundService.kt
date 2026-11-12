@@ -64,8 +64,14 @@ class ScriptForegroundService : Service() {
             }
 
             ACTION_STOP -> {
+                val execution = (application as IzukiApp).container.scriptExecutionManager
+                val runId = intent.getStringExtra(EXTRA_RUN_ID)
+                val currentRunId = execution.runningRunId.value
+                // 旧 run 的清理动作不能误停已经启动的新 run。
+                if (runId != null && currentRunId != null && runId != currentRunId) {
+                    return START_NOT_STICKY
+                }
                 runCatching {
-                    val execution = (application as IzukiApp).container.scriptExecutionManager
                     if (execution.running.value) execution.requestStop()
                 }
                 ScriptNotificationCenter.clear()
@@ -91,6 +97,8 @@ class ScriptForegroundService : Service() {
                     if (!state.active) return@collect
                     val wait = MIN_UPDATE_INTERVAL_MS - (SystemClock.elapsedRealtime() - lastUpdateAt)
                     if (wait > 0) delay(wait)
+                    // 等待期间 run 可能已结束；不要用延迟前的快照复活旧通知。
+                    if (!ScriptNotificationCenter.state.value.active) return@collect
                     postNotification(buildNotification(state))
                     lastUpdateAt = SystemClock.elapsedRealtime()
                 }
@@ -250,6 +258,7 @@ class ScriptForegroundService : Service() {
         private const val CHANNEL_ID = "izuki_script_running"
         private const val NOTIFICATION_ID = NotificationIds.SCRIPT
         private const val EXTRA_SCRIPT_NAME = "extra_script_name"
+        private const val EXTRA_RUN_ID = "extra_run_id"
         private const val MIN_UPDATE_INTERVAL_MS = 500L
 
         const val ACTION_START = "com.benton.izukijs.action.START_SCRIPT"
@@ -263,9 +272,10 @@ class ScriptForegroundService : Service() {
             context.startForegroundService(intent)
         }
 
-        fun stop(context: Context) {
+        fun stop(context: Context, runId: String? = null) {
             val intent = Intent(context, ScriptForegroundService::class.java).apply {
                 action = ACTION_STOP
+                runId?.let { putExtra(EXTRA_RUN_ID, it) }
             }
             runCatching { context.startService(intent) }
         }

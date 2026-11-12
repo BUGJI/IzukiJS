@@ -17,6 +17,7 @@ internal class WakeUnlockController(private val context: Context?) {
     private val window = HiddenWindowManager.create()
     private val input = PrivilegedInput(context)
 
+    @Synchronized
     fun testUnlock(credential: String): UnlockResult = keepCpuAwake(TEST_CPU_LOCK_MS) {
         val lock = lockAndSleep()
         if (lock != UnlockResult.OK) return@keepCpuAwake lock
@@ -24,6 +25,7 @@ internal class WakeUnlockController(private val context: Context?) {
         unlock(credential)
     }
 
+    @Synchronized
     fun testUnlockGesture(gestureJson: String): UnlockResult = keepCpuAwake(TEST_CPU_LOCK_MS) {
         val lock = lockAndSleep()
         if (lock != UnlockResult.OK) return@keepCpuAwake lock
@@ -31,6 +33,7 @@ internal class WakeUnlockController(private val context: Context?) {
         unlockWithGesture(gestureJson)
     }
 
+    @Synchronized
     fun lockAndSleep(): UnlockResult {
         val window = window ?: return UnlockResult.UNSUPPORTED
         if (!window.lockNow()) {
@@ -57,6 +60,7 @@ internal class WakeUnlockController(private val context: Context?) {
     }
 
     /** 亮屏并解除锁屏；credential 为纯数字 PIN，无密码锁屏传空串。 */
+    @Synchronized
     fun unlock(credential: String): UnlockResult {
         val window = window ?: return UnlockResult.UNSUPPORTED
         val wakeStart = SystemClock.elapsedRealtime()
@@ -114,6 +118,7 @@ internal class WakeUnlockController(private val context: Context?) {
     }
 
     /** 亮屏并回放录制的完整锁屏动作；不主动 dismissKeyguard。 */
+    @Synchronized
     fun unlockWithGesture(gestureJson: String): UnlockResult {
         val pattern = UnlockPattern.parseOrNull(gestureJson) ?: run {
             PrivilegedLog.w("no usable gesture recorded")

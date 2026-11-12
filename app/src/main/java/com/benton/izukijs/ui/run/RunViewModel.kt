@@ -11,7 +11,9 @@ import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
 import com.benton.izukijs.virtualscreen.VirtualScreenState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,6 +69,11 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
     private val _envDialog = MutableStateFlow<EnvDialogState?>(null)
     val envDialog: StateFlow<EnvDialogState?> = _envDialog.asStateFlow()
 
+    private val _runError = MutableStateFlow<String?>(null)
+    val runError: StateFlow<String?> = _runError.asStateFlow()
+
+    private var requestJob: Job? = null
+
     init {
         container.controllerManager.readyModes.collectInto { state, value ->
             state.copy(readyModes = value)
@@ -121,34 +128,52 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun requestRun(script: ScriptInfo) {
-        viewModelScope.launch {
-            val source = scriptRepository.readAsync(script)
-            val spec = withContext(Dispatchers.Default) { ScriptEnvSpec.parse(source) }
-            val stored = scriptEnvRepository.values(script.id)
-            if (spec.isEmpty && stored.isEmpty()) {
-                execution.run(script.id, script.name, source)
-            } else {
-                _envDialog.value = EnvDialogState(
-                    script = script,
-                    source = source,
-                    fields = spec.fields,
-                    initial = EnvText.resolve(
-                        defaults = spec.defaults(),
-                        global = container.globalEnvRepository.current(),
-                        script = scriptEnvRepository.env(script.id),
-                        runtime = stored,
-                        useGlobal = scriptEnvRepository.useGlobalEnv(script.id),
-                    ),
-                )
+        // 启动中 / 运行中忽略重复点击，避免多次读取、多个参数框与重复运行。
+        if (execution.running.value || requestJob?.isActive == true) return
+        requestJob = viewModelScope.launch {
+            try {
+                val source = scriptRepository.readAsync(script)
+                val spec = withContext(Dispatchers.Default) { ScriptEnvSpec.parse(source) }
+                val stored = scriptEnvRepository.values(script.id)
+                if (spec.fields.isEmpty()) {
+                    // 没有需要填写的字段时直接运行；历史遗留的 stored 仍会在解析阶段生效。
+                    if (!execution.run(script.id, script.name, source)) {
+                        _runError.value = "脚本未能启动（可能已有脚本正在运行）"
+                    }
+                } else {
+                    _envDialog.value = EnvDialogState(
+                        script = script,
+                        source = source,
+                        fields = spec.fields,
+                        initial = EnvText.resolve(
+                            defaults = spec.defaults(),
+                            global = container.globalEnvRepository.current(),
+                            script = scriptEnvRepository.env(script.id),
+                            runtime = stored,
+                            useGlobal = scriptEnvRepository.useGlobalEnv(script.id),
+                        ),
+                    )
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                _runError.value = t.message ?: "读取脚本失败"
             }
         }
     }
 
     fun confirmEnv(values: Map<String, String>) {
         val state = _envDialog.value ?: return
-        scriptEnvRepository.saveValues(state.script.id, values)
-        execution.run(state.script.id, state.script.name, state.source, values)
+        // 只把用户实际改过的字段作为本次输入；继承的全局 / 脚本值不应被固化成脚本覆盖。
+        val changed = values.filter { (key, value) -> state.initial[key] != value }
+        if (!execution.run(state.script.id, state.script.name, state.source, changed)) {
+            _runError.value = "脚本未能启动（可能已有脚本正在运行）"
+            return
+        }
         _envDialog.value = null
+    }
+
+    fun consumeRunError() {
+        _runError.value = null
     }
 
     fun dismissEnv() {

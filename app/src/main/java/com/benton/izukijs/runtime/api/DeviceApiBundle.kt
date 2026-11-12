@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.accessibility.AccessibilityController
+import com.benton.izukijs.controller.record.RecordingHooks
 import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrProcessor
@@ -29,6 +30,7 @@ class DeviceApiBundle(
     val appApi: AppApi,
     val shellApi: ShellApi,
     val ocrApi: OcrApi,
+    val ocrProcessor: OcrProcessor,
     val selectorApi: SelectorApi,
     val notificationApi: NotificationApi,
     private val selectorFactory: (isExitRequested: () -> Boolean) -> SelectorApi,
@@ -48,6 +50,7 @@ class DeviceApiBundle(
         appApi = appApi,
         shellApi = shellApi,
         ocrApi = ocrApi,
+        ocrProcessor = ocrProcessor,
         selectorApi = selectorFactory(isExitRequested),
         notificationApi = notificationApi,
         selectorFactory = selectorFactory,
@@ -67,6 +70,7 @@ class DeviceApiBundle(
             progressNotificationEnabled: () -> Boolean = { true },
             virtualScreen: VirtualScreenManager? = null,
             isExitRequested: () -> Boolean = { false },
+            recordingHooks: RecordingHooks = RecordingHooks(),
         ): DeviceApiBundle {
             val mainScreenshotProvider: () -> Bitmap? = {
                 OverlayCoordinator.withoutOverlay {
@@ -93,7 +97,7 @@ class DeviceApiBundle(
                     }
                 }
             }
-            val captureProvider: (ScreenTarget, Long) -> Bitmap? = { source, waitMs ->
+            val rawCaptureProvider: (ScreenTarget, Long) -> Bitmap? = { source, waitMs ->
                 val resolved = when (source) {
                     ScreenTarget.AUTO -> virtualScreen?.resolvedTarget() ?: ScreenTarget.MAIN
                     ScreenTarget.VIRTUAL -> ScreenTarget.VIRTUAL
@@ -121,6 +125,13 @@ class DeviceApiBundle(
                     ScreenTarget.MAIN, ScreenTarget.AUTO -> mainScreenshotProvider()
                 }
             }
+            val captureProvider: (ScreenTarget, Long) -> Bitmap? = { source, waitMs ->
+                val startedWall = System.currentTimeMillis()
+                val bitmap = rawCaptureProvider(source, waitMs)
+                val elapsed = (System.currentTimeMillis() - startedWall).coerceAtLeast(0L)
+                recordingHooks.captureObserver?.invoke(bitmap, startedWall, elapsed)
+                bitmap
+            }
             val screenshotProvider: () -> Bitmap? = {
                 captureProvider(ScreenTarget.AUTO, DEFAULT_CAPTURE_WAIT_MS)
             }
@@ -142,9 +153,10 @@ class DeviceApiBundle(
                 captureProvider = captureProvider,
                 inputApi = InputApi(controllers, logBus),
                 deviceApi = DeviceApi(context, virtualScreen),
-                appApi = AppApi(context, logBus, shellExec, appListEnabled, virtualScreen),
+                appApi = AppApi(context, logBus, shellExec, appListEnabled, virtualScreen, recordingHooks),
                 shellApi = ShellApi(controllers, logBus),
                 ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus),
+                ocrProcessor = ocrProcessor,
                 selectorApi = selectorFactory(isExitRequested),
                 notificationApi = NotificationApi(
                     context = context,

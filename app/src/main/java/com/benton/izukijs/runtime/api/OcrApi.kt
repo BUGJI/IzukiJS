@@ -1,10 +1,15 @@
 package com.benton.izukijs.runtime.api
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.webkit.JavascriptInterface
+import com.benton.izukijs.ocr.OcrLineSynthesis
+import com.benton.izukijs.ocr.OcrMatcher
 import com.benton.izukijs.ocr.OcrProcessor
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.vision.Box
+import com.benton.izukijs.vision.RectSpec
+import com.benton.izukijs.vision.RoiResolver
+import com.benton.izukijs.vision.RoiSpec
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -34,10 +39,8 @@ class OcrApi(
 
     @JavascriptInterface
     fun recognizePath(path: String): String? {
-        val bitmap = BitmapFactory.decodeFile(path) ?: run {
-            logBus.warn("OCR 识别失败：无法读取图片 $path")
-            return null
-        }
+        val bitmap = ImageDecode.decode(path, logBus, "OCR 识别", allowDownscale = true)
+            ?: return null
         return recognizeBitmap(path, bitmap)
     }
 
@@ -94,6 +97,113 @@ class OcrApi(
         )
         return json.toString()
     }
+
+    /** 带选项的查找：支持 roi、threshold、fuzzy。 */
+    @JavascriptInterface
+    fun findWithOptionsRaw(query: String, optionsJson: String): String? {
+        val bitmap = screenshot() ?: run {
+            logBus.warn("OCR 查找 \"$query\" 失败：无法获取屏幕截图")
+            return null
+        }
+        return try {
+            val options = if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
+            val rois = resolveRois(options, bitmap.width, bitmap.height) ?: return null
+            val threshold = options.optDouble("threshold", 0.0)
+            val fuzzy = options.optBoolean("fuzzy", true)
+            for (roi in rois) {
+                val crop = if (isFull(roi, bitmap)) {
+                    bitmap
+                } else {
+                    Bitmap.createBitmap(bitmap, roi.left, roi.top, roi.width, roi.height)
+                }
+                try {
+                    val result = ocrProcessor.recognize(crop) ?: continue
+                    val lines = OcrLineSynthesis.synthesize(result.blocks)
+                        .filter { it.confidence == null || it.confidence >= threshold }
+                    val match = OcrMatcher.match(lines, query, fuzzy).firstOrNull() ?: continue
+                    val line = match.line
+                    logBus.debug("OCR 查找 \"$query\" → (${roi.left + line.x}, ${roi.top + line.y}) ✓")
+                    return "${roi.left + line.x},${roi.top + line.y},${line.width},${line.height}"
+                } finally {
+                    if (crop !== bitmap) crop.recycle()
+                }
+            }
+            logBus.debug("OCR 查找 \"$query\" → 未找到 ✗")
+            null
+        } catch (t: Throwable) {
+            logBus.warn("OCR 查找失败: ${t.message}")
+            null
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** 带 ROI 的结构化识别。 */
+    @JavascriptInterface
+    fun recognizeBlocksJsonWithOptions(optionsJson: String): String? {
+        val bitmap = screenshot() ?: run {
+            logBus.warn("OCR 识别失败：无法获取屏幕截图")
+            return null
+        }
+        return try {
+            val options = if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
+            val roi = resolveRois(options, bitmap.width, bitmap.height)?.firstOrNull() ?: return null
+            val crop = if (isFull(roi, bitmap)) {
+                bitmap
+            } else {
+                Bitmap.createBitmap(bitmap, roi.left, roi.top, roi.width, roi.height)
+            }
+            try {
+                val result = ocrProcessor.recognize(crop) ?: return null
+                val blocks = JSONArray()
+                result.blocks.forEach { block ->
+                    blocks.put(
+                        JSONObject().apply {
+                            put("text", block.text)
+                            put("x", roi.left + block.x)
+                            put("y", roi.top + block.y)
+                            put("w", block.width)
+                            put("h", block.height)
+                            put("left", roi.left + block.left)
+                            put("top", roi.top + block.top)
+                            put("right", roi.left + block.right)
+                            put("bottom", roi.top + block.bottom)
+                            block.confidence?.let { put("conf", it) }
+                        },
+                    )
+                }
+                JSONObject().apply {
+                    put("text", result.text)
+                    put("image", JSONObject().put("w", bitmap.width).put("h", bitmap.height))
+                    put("blocks", blocks)
+                }.toString()
+            } finally {
+                if (crop !== bitmap) crop.recycle()
+            }
+        } catch (t: Throwable) {
+            logBus.warn("OCR 结构化识别失败: ${t.message}")
+            null
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    private fun resolveRois(options: JSONObject, width: Int, height: Int): List<Box>? {
+        val roi = options.optJSONObject("roi") ?: return listOf(Box(0, 0, width, height))
+        val spec = RoiSpec(
+            rect = RectSpec(
+                x = roi.optInt("x", 0),
+                y = roi.optInt("y", 0),
+                width = roi.optInt("width", roi.optInt("w", 0)),
+                height = roi.optInt("height", roi.optInt("h", 0)),
+            ),
+        )
+        val boxes = RoiResolver.resolve(spec, emptyMap(), width, height)
+        return if (boxes.isEmpty()) null else boxes
+    }
+
+    private fun isFull(roi: Box, bitmap: Bitmap): Boolean =
+        roi.left == 0 && roi.top == 0 && roi.width == bitmap.width && roi.height == bitmap.height
 
     /** 查找包含指定文字的元素，返回 "x,y,width,height"（包围盒中心）。 */
     @JavascriptInterface

@@ -1,102 +1,26 @@
 package com.benton.izukijs.ui.editor
 
+import com.benton.izukijs.runtime.api.ScriptApiCatalog
+
 /** 一条 API 补全建议；[text] 是实际插入编辑器的文本。 */
 data class ApiSuggestion(val text: String)
 
 /**
  * 编辑器里的轻量 API 补全。不做 JavaScript 语法分析，只根据光标前的标识符 / 命名空间
  * 给出静态候选；这样无需引入额外依赖，也不会误改脚本。
+ *
+ * 候选清单来自 [ScriptApiCatalog]，与运行时注册、`@need` 门控共用同一份元数据。
  */
 object ApiSuggestions {
 
     private val TOKEN = Regex("""[A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z0-9_$]*)?$""")
 
-    private val TOP_LEVEL: List<ApiSuggestion> = listOf(
-        ApiSuggestion("app."),
-        ApiSuggestion("selector."),
-        ApiSuggestion("images."),
-        ApiSuggestion("ocr."),
-        ApiSuggestion("http."),
-        ApiSuggestion("clipboard."),
-        ApiSuggestion("notify."),
-        ApiSuggestion("push."),
-        ApiSuggestion("fs."),
-        ApiSuggestion("shell."),
-        ApiSuggestion("ai."),
-        ApiSuggestion("env."),
-        ApiSuggestion("state."),
-        ApiSuggestion("permissions."),
-        ApiSuggestion("virtualScreen."),
-        ApiSuggestion("device."),
-        ApiSuggestion("click("),
-        ApiSuggestion("longClick("),
-        ApiSuggestion("swipe("),
-        ApiSuggestion("gesture("),
-        ApiSuggestion("press("),
-        ApiSuggestion("input("),
-        ApiSuggestion("back("),
-        ApiSuggestion("home("),
-        ApiSuggestion("recents("),
-        ApiSuggestion("sleep("),
-        ApiSuggestion("waitUntil("),
-        ApiSuggestion("waitUntilGone("),
-        ApiSuggestion("toast("),
-        ApiSuggestion("log("),
-        ApiSuggestion("captureScreen("),
-        ApiSuggestion("require("),
-        ApiSuggestion("exit("),
-    )
+    private val TOP_LEVEL: List<ApiSuggestion> =
+        ScriptApiCatalog.namespaces.map { ApiSuggestion("${it.name}.") } +
+            ScriptApiCatalog.globals.flatMap { entry -> entry.suggestions.map(::ApiSuggestion) }
 
-    private val MEMBERS: Map<String, List<String>> = mapOf(
-        "app" to listOf(
-            "launch(", "openUrl(", "currentPackage(", "list(", "info(", "isInstalled(",
-            "foreground(", "lastUsed(", "usageStats(",
-        ),
-        "selector" to listOf(
-            "find(", "findAll(", "nth(", "exists(", "count(", "click(", "longClick(",
-            "waitFor(", "waitGone(", "scrollIntoView(", "findByText(", "findByTextContains(",
-            "findByTextRegex(", "findByDesc(", "findByDescContains(", "findByDescRegex(",
-            "findByText(", "waitForText(", "waitForTextContains(", "waitForTextRegex(",
-            "waitForId(", "existsById(", "existsByText(", "countByText(", "clickById(",
-            "clickByText(", "longClickById(", "longClickByText(", "setTextById(",
-            "getTextById(", "getTextByText(", "boundsById(",
-        ),
-        "images" to listOf(
-            "findImage(", "findAllImages(", "findColor(", "findAllColors(",
-            "findColorRegions(", "findColorRegionsInRaw(", "findColorInRaw(",
-            "findImageInRaw(", "findColorRaw(", "findImageRaw(", "saveTemplate(", "available(",
-        ),
-        "ocr" to listOf("recognize(", "recognizePath(", "recognizeBlocksJson(", "find("),
-        "http" to listOf("request(", "get(", "post(", "postJson(", "available(", "isAllowed("),
-        "clipboard" to listOf("get(", "set(", "clear("),
-        "notify" to listOf(
-            "available(", "list(", "latest(", "clear(",
-            "progress(", "update(", "reset(", "progressEnabled(",
-        ),
-        "push" to listOf("available(", "channels(", "send("),
-        "fs" to listOf(
-            "readText(", "writeText(", "exists(", "isDirectory(", "list(", "size(",
-            "mkdirs(", "delete(", "copy(", "move(", "readBase64(", "writeBase64(",
-        ),
-        "shell" to listOf("available(", "isRoot(", "exec(", "exitCode("),
-        "ai" to listOf("available(", "config(", "chat(", "run("),
-        "env" to listOf("get(", "has(", "mode(", "all("),
-        "state" to listOf("get(", "set(", "has(", "remove(", "clear(", "all("),
-        "permissions" to listOf(
-            "accessibility(", "shizuku(", "root(", "hid(", "overlay(", "screenCapture(",
-            "notifications(", "bluetooth(", "usageAccess(", "notificationListener(",
-            "manageStorage(", "appList(", "http(", "granted(", "all(", "has(",
-            "canControl(", "canScreenshot(", "virtualScreen(", "runMode(",
-        ),
-        "virtualScreen" to listOf(
-            "available(", "active(", "mode(", "allowed(", "start(", "stop(",
-            "launch(", "displayId(", "size(", "info(", "target(", "awaitFrame(", "capture(",
-        ),
-        "device" to listOf(
-            "width(", "height(", "screenWidth(", "screenHeight(", "model(", "brand(",
-            "androidVersion(", "batteryLevel(",
-        ),
-    )
+    private val MEMBERS: Map<String, List<String>> =
+        ScriptApiCatalog.namespaces.associate { it.name to it.suggestions }
 
     /**
      * 只回溯光标前有限窗口：标识符 / 命名空间不会很长，避免每次按键都复制并扫描整篇脚本。

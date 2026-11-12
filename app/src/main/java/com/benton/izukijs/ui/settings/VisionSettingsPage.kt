@@ -104,16 +104,16 @@ internal fun VisionSettings() {
             Spacer(Modifier.height(SectionGap))
             when (ocrConfig.provider) {
                 OcrProvider.BAIDU -> {
-                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = true) {
+                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = false) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
-                    SecretField(stringResource(R.string.ocr_secret_key), ocrConfig.secretKey, commitOnBlur = true) {
+                    SecretField(stringResource(R.string.ocr_secret_key), ocrConfig.secretKey, commitOnBlur = false) {
                         updateOcr(ocrConfig.copy(secretKey = it))
                     }
                 }
 
                 OcrProvider.GOOGLE_VISION -> {
-                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = true) {
+                    SecretField(stringResource(R.string.ocr_api_key), ocrConfig.apiKey, commitOnBlur = false) {
                         updateOcr(ocrConfig.copy(apiKey = it))
                     }
                 }
@@ -125,7 +125,7 @@ internal fun VisionSettings() {
                     LabeledField(stringResource(R.string.ocr_header_name), ocrConfig.headerName) {
                         updateOcr(ocrConfig.copy(headerName = it))
                     }
-                    SecretField(stringResource(R.string.ocr_header_value), ocrConfig.headerValue, commitOnBlur = true) {
+                    SecretField(stringResource(R.string.ocr_header_value), ocrConfig.headerValue, commitOnBlur = false) {
                         updateOcr(ocrConfig.copy(headerValue = it))
                     }
                 }

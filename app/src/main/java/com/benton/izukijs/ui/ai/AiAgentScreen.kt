@@ -119,7 +119,7 @@ fun AiAgentScreen(onBack: () -> Unit) {
                 ) {
                     update(config.copy(baseUrl = it))
                 }
-                SecretField(stringResource(R.string.ocr_api_key), config.apiKey) { update(config.copy(apiKey = it)) }
+                SecretField(stringResource(R.string.ocr_api_key), config.apiKey, commitOnBlur = true) { update(config.copy(apiKey = it)) }
                 LabeledField(
                     label = stringResource(R.string.ai_model),
                     value = config.model,
@@ -132,7 +132,7 @@ fun AiAgentScreen(onBack: () -> Unit) {
                     value = config.extraHeaderName,
                     placeholder = stringResource(R.string.ai_custom_header_name_placeholder),
                 ) { update(config.copy(extraHeaderName = it)) }
-                SecretField(stringResource(R.string.ai_custom_header_value), config.extraHeaderValue) {
+                SecretField(stringResource(R.string.ai_custom_header_value), config.extraHeaderValue, commitOnBlur = true) {
                     update(config.copy(extraHeaderValue = it))
                 }
             }

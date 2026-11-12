@@ -141,10 +141,15 @@ internal fun BackupSettingsScreen() {
             destructive = true,
             onDismiss = { confirmReset = false },
             onConfirm = {
-                runCatching { viewModel.resetConfig() }
-                    .onSuccess { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_done)) } }
-                    .onFailure { scope.launch { snackbar.show(resources.getString(R.string.backup_reset_failed)) } }
                 confirmReset = false
+                scope.launch {
+                    val msg = runCatching { viewModel.resetConfig() }
+                        .fold(
+                            onSuccess = { resources.getString(R.string.backup_reset_done) },
+                            onFailure = { resources.getString(R.string.backup_reset_failed) },
+                        )
+                    snackbar.show(msg)
+                }
             },
         )
     }

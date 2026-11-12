@@ -56,6 +56,7 @@ import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.IzukiPageScaffold
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
 import com.benton.izukijs.ui.common.ScriptEnvDialog
 import com.benton.izukijs.ui.common.SectionCard
@@ -84,7 +85,16 @@ fun RunScreen(
     val viewModel: RunViewModel = appViewModel { RunViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val envDialog by viewModel.envDialog.collectAsStateWithLifecycle()
+    val runError by viewModel.runError.collectAsStateWithLifecycle()
+    val snackbar = LocalSnackbarController.current
     var confirmClear by remember { mutableStateOf(false) }
+
+    LaunchedEffect(runError) {
+        runError?.let {
+            snackbar.show(it)
+            viewModel.consumeRunError()
+        }
+    }
 
     val primary = ui.recentItems.firstOrNull()
 

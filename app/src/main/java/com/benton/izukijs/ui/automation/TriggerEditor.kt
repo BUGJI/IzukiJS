@@ -34,13 +34,17 @@ import java.util.Calendar
  */
 @Stable
 class TriggerEditorState private constructor(
-    initialKind: ScheduleKind,
     initialHour: String,
     initialMinute: String,
     initialIntervalMinutes: Long,
     initialCron: String,
     initialEvent: ScheduleEvent?,
     initialConditions: ScheduleConditions,
+    private val initialKind: ScheduleKind,
+    private val initialTriggerAtMillis: Long,
+    private val initialHourValue: Int,
+    private val initialMinuteValue: Int,
+    private val initialIntervalValue: Long,
 ) {
 
     var kind by mutableStateOf(initialKind)
@@ -76,6 +80,37 @@ class TriggerEditorState private constructor(
 
     fun nextTriggerMillis(): Long = computeNextTrigger(hourInt(), minuteInt())
 
+    /**
+     * 计算保存后的下次触发时间。
+     *
+     * 编辑一个已存在的任务时，如果触发方式与时间字段没有改动，保留原有触发时刻
+     * （interval 任务通常带秒级偏移），避免仅改名称就把下次运行推迟到明天。
+     * Cron 由调度器保存时重新计算，这里返回 0。
+     */
+    fun triggerAtMillis(now: Long = System.currentTimeMillis()): Long = when (kind) {
+        ScheduleKind.EVENT -> 0L
+        ScheduleKind.CRON -> 0L
+        ScheduleKind.INTERVAL -> {
+            val unchanged = initialKind == ScheduleKind.INTERVAL &&
+                intervalLong() == initialIntervalValue
+            if (unchanged && initialTriggerAtMillis > now) {
+                initialTriggerAtMillis
+            } else {
+                now + intervalLong().coerceAtLeast(1L) * 60_000L
+            }
+        }
+        ScheduleKind.TIME -> {
+            val unchanged = initialKind == ScheduleKind.TIME &&
+                hourInt() == initialHourValue &&
+                minuteInt() == initialMinuteValue
+            if (unchanged && initialTriggerAtMillis > now) {
+                initialTriggerAtMillis
+            } else {
+                computeNextTrigger(hourInt(), minuteInt())
+            }
+        }
+    }
+
     companion object {
 
         fun empty(): TriggerEditorState = TriggerEditorState(
@@ -86,6 +121,10 @@ class TriggerEditorState private constructor(
             initialCron = "0 8 * * *",
             initialEvent = ScheduleEvent.CHARGING,
             initialConditions = ScheduleConditions(),
+            initialTriggerAtMillis = 0L,
+            initialHourValue = 8,
+            initialMinuteValue = 0,
+            initialIntervalValue = 60L,
         )
 
         fun from(schedule: Schedule): TriggerEditorState {
@@ -100,6 +139,10 @@ class TriggerEditorState private constructor(
                 initialCron = schedule.cron,
                 initialEvent = schedule.event,
                 initialConditions = schedule.conditions,
+                initialTriggerAtMillis = schedule.triggerAtMillis,
+                initialHourValue = calendar?.get(Calendar.HOUR_OF_DAY) ?: 8,
+                initialMinuteValue = calendar?.get(Calendar.MINUTE) ?: 0,
+                initialIntervalValue = schedule.intervalMinutes,
             )
         }
 
@@ -115,6 +158,10 @@ class TriggerEditorState private constructor(
                 initialCron = flow.cron,
                 initialEvent = flow.event,
                 initialConditions = flow.conditions,
+                initialTriggerAtMillis = flow.triggerAtMillis,
+                initialHourValue = calendar?.get(Calendar.HOUR_OF_DAY) ?: 8,
+                initialMinuteValue = calendar?.get(Calendar.MINUTE) ?: 0,
+                initialIntervalValue = flow.intervalMinutes,
             )
         }
     }

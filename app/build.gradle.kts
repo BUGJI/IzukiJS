@@ -33,6 +33,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // 依赖 AAR（OpenCV / ONNX Runtime 等）自带 32 位 x86 库，若不过滤会被
+        // universal 包一并打入，白白多出上百 MB；这里与 splits.abi 保持一致。
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+
         externalNativeBuild {
             cmake {
                 arguments += listOf(
@@ -87,7 +93,7 @@ android {
             isEnable = true
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = false
+            isUniversalApk = true
         }
     }
 
@@ -141,6 +147,7 @@ dependencies {
     implementation(libs.bouncycastle.bcpkix)
     implementation(libs.conscrypt.android)
     implementation(libs.opencv)
+    implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.material)

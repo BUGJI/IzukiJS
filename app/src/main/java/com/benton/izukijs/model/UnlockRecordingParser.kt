@@ -30,6 +30,12 @@ data class TouchInputDevice(
     val displayName: String get() = if (name.isBlank()) path else "\"$name\""
 }
 
+/** 一批触摸笔画及其首个内核事件时间（uptime ms），用于把相对笔画起点还原为绝对时间。 */
+data class StrokeParseResult(
+    val baseTimestampMs: Long,
+    val strokes: List<UnlockStroke>,
+)
+
 /**
  * 解析 `getevent` 的文本输出。
  *
@@ -145,8 +151,19 @@ object UnlockRecordingParser {
     fun parseStrokes(
         output: String,
         device: TouchInputDevice,
-    ): List<UnlockStroke> {
-        if (!device.usable) return emptyList()
+    ): List<UnlockStroke> = parseStrokesWithBase(output, device).strokes
+
+    /**
+     * 与 [parseStrokes] 相同，但额外返回本批首个事件的内核时间戳。
+     *
+     * [UnlockStroke.startTimeMs] 是相对首个事件的偏移；把它换算成墙钟时间时必须使用
+     * 内核时间戳作为基准，而不是命令启动时刻，否则每个轮询批次都会整体前移。
+     */
+    fun parseStrokesWithBase(
+        output: String,
+        device: TouchInputDevice,
+    ): StrokeParseResult {
+        if (!device.usable) return StrokeParseResult(-1L, emptyList())
         val strokes = mutableListOf<UnlockStroke>()
         var usesMt = device.hasSlot || device.hasTrackingId || device.hasMtReport
         val slotX = mutableMapOf<Int, Int>()
@@ -272,7 +289,10 @@ object UnlockRecordingParser {
             }
         }
         finishStroke(lastTs)
-        return strokes
+        return StrokeParseResult(
+            baseTimestampMs = firstTimestamp.coerceAtLeast(0L),
+            strokes = strokes,
+        )
     }
 
     private fun sameDevice(linePath: String, devicePath: String): Boolean =

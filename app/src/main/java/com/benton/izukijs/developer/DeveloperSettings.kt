@@ -50,6 +50,21 @@ data class DeveloperSettings(
     val agentSettleDefaultMs: Int = 600,
     val agentSettlePollMs: Int = 150,
     val agentSettleMaxMs: Int = 4_000,
+
+    // ---- 统一视觉缓存 ----
+    val visionTemplateCacheEntries: Int = 8,
+    val visionNeuralSessions: Int = 3,
+    val visionNeuralThreads: Int = 2,
+
+    // ---- 流水线 ----
+    val pipelineDefaultMaxSteps: Int = 10_000,
+    val pipelineDefaultTimeoutSec: Int = 0,
+    val pipelineMaxRecognitionDepth: Int = 8,
+
+    // ---- 录制 ----
+    val recordingMaxUniqueFrames: Int = 800,
+    val recordingFrameQuality: Int = 88,
+    val recordingFrameMaxDimension: Int = 0,
 ) {
 
     /** 按注册表逐项裁剪到合法范围，并修正跨字段约束。 */

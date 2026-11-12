@@ -31,10 +31,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -129,14 +131,23 @@ fun SecretField(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
-    commitOnBlur: Boolean = true,
+    commitOnBlur: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
     onChange: (String) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf(value) }
     var editing by remember { mutableStateOf(false) }
+    val latestText by rememberUpdatedState(text)
+    val latestValue by rememberUpdatedState(value)
+    val latestOnChange by rememberUpdatedState(onChange)
     LaunchedEffect(value) { if (!editing) text = value }
+    // 页面/弹窗在输入框仍有焦点时销毁也要落盘，避免「输入了但没失焦」丢失。
+    DisposableEffect(commitOnBlur) {
+        onDispose {
+            if (commitOnBlur && latestText != latestValue) latestOnChange(latestText)
+        }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = text,
@@ -181,7 +192,17 @@ fun NumberField(
 ) {
     var text by remember { mutableStateOf(value.toString()) }
     var editing by remember { mutableStateOf(false) }
+    val latestText by rememberUpdatedState(text)
+    val latestValue by rememberUpdatedState(value.toString())
+    val latestOnChange by rememberUpdatedState(onChange)
     LaunchedEffect(value) { if (!editing) text = value.toString() }
+    DisposableEffect(commitOnBlur) {
+        onDispose {
+            if (commitOnBlur && latestText != latestValue) {
+                latestText.toIntOrNull()?.takeIf { it in range }?.let(latestOnChange)
+            }
+        }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = text,
@@ -232,7 +253,17 @@ fun DecimalField(
 ) {
     var text by remember { mutableStateOf(value.toString()) }
     var editing by remember { mutableStateOf(false) }
+    val latestText by rememberUpdatedState(text)
+    val latestValue by rememberUpdatedState(value.toString())
+    val latestOnChange by rememberUpdatedState(onChange)
     LaunchedEffect(value) { if (!editing) text = value.toString() }
+    DisposableEffect(commitOnBlur) {
+        onDispose {
+            if (commitOnBlur && latestText != latestValue) {
+                latestText.toDoubleOrNull()?.takeIf { it in range }?.let(latestOnChange)
+            }
+        }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
         value = text,

@@ -94,7 +94,8 @@ class ScriptRepository(
 
     fun write(script: ScriptInfo, content: String, forceHistory: Boolean = false) {
         synchronized(fileLock) {
-            if (!script.file.exists()) return
+            // 文件可能已被重命名 / 删除；不能静默成功，否则编辑器会以为已保存。
+            check(script.file.exists()) { "脚本已不存在: ${script.id}" }
             val previous = runCatching {
                 if (script.file.exists()) script.file.readText() else null
             }.getOrNull()

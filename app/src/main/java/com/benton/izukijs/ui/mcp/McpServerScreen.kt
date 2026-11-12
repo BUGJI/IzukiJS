@@ -411,6 +411,12 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
                 ) { apply(config.copy(allowUnlock = it)) }
                 Spacer(Modifier.height(8.dp))
                 SwitchRow(
+                    label = stringResource(R.string.mcp_allow_recording),
+                    checked = config.allowRecording,
+                    description = stringResource(R.string.mcp_allow_recording_desc),
+                ) { apply(config.copy(allowRecording = it)) }
+                Spacer(Modifier.height(8.dp))
+                SwitchRow(
                     label = stringResource(R.string.mcp_auto_unlock),
                     checked = config.autoUnlock,
                     description = stringResource(R.string.mcp_auto_unlock_desc),

@@ -38,11 +38,16 @@ class ScreenCaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_DATA, Intent::class.java) }
-        if (data != null) {
-            val capture = (application as IzukiApp).container.screenCapture
-            worker.execute { runCatching { capture.start(this, resultCode, data) } }
+        if (data == null) {
+            // 系统重启 / 进程恢复会以 null intent 重新投递；MediaProjection 令牌已失效，
+            // 不能留下一个永远显示“录屏中”的前台服务。
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
         }
-        return START_STICKY
+        val capture = (application as IzukiApp).container.screenCapture
+        worker.execute { runCatching { capture.start(this, resultCode, data) } }
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {

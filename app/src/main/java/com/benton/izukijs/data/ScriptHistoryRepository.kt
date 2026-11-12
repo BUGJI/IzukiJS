@@ -51,6 +51,8 @@ class ScriptHistoryRepository(private val context: Context) {
         val from = dirFor(oldId)
         if (!from.exists()) return
         val to = dirFor(newId)
+        // 两个 id 清洗后可能落到同一目录；此时不能删除目标目录，否则会清空全部历史。
+        if (from == to) return
         runCatching {
             to.parentFile?.mkdirs()
             if (to.exists()) to.deleteRecursively()
