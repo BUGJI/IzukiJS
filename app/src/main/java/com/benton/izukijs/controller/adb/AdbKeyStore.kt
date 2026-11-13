@@ -2,6 +2,7 @@ package com.benton.izukijs.controller.adb
 
 import android.content.Context
 import android.util.Log
+import com.benton.izukijs.core.storage.AtomicFile
 import com.benton.izukijs.security.SecretCipher
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
@@ -37,16 +38,44 @@ class AdbKeyStore(private val context: Context) {
     @Volatile
     private var cached: Identity? = null
 
+    /** 磁盘上的身份无法解密 / 解析时置位；此时应重新走配对，而不是静默换新密钥。 */
+    @Volatile
+    private var corrupt = false
+
     @Synchronized
-    fun hasIdentity(): Boolean = cached != null || identityFile.exists()
+    fun hasIdentity(): Boolean {
+        cached?.let { return true }
+        if (!identityFile.exists() || corrupt) return false
+        // 首次调用时验证一次可解密性，避免损坏的文件让连接反复失败而不提示重新配对。
+        val loaded = readFromDisk()
+        if (loaded == null) {
+            corrupt = true
+            return false
+        }
+        cached = loaded
+        return true
+    }
 
     @Synchronized
     fun loadOrCreate(): Identity {
         cached?.let { return it }
         readFromDisk()?.let {
             cached = it
+            corrupt = false
             return it
         }
+        if (identityFile.exists()) {
+            // 保留损坏文件用于排查，但必须生成新身份；旧证书已无法用于配对。
+            val backup = File(
+                identityFile.parentFile,
+                "$FILE_NAME.corrupt-${System.currentTimeMillis()}",
+            )
+            val moved = runCatching { identityFile.renameTo(backup) }.getOrDefault(false)
+            if (moved) {
+                Log.w(TAG, "无线调试身份已损坏，旧文件已备份到 ${backup.name}")
+            }
+        }
+        corrupt = false
         return generate().also { identity ->
             cached = identity
             writeToDisk(identity)
@@ -56,6 +85,7 @@ class AdbKeyStore(private val context: Context) {
     @Synchronized
     fun clear() {
         cached = null
+        corrupt = false
         runCatching { identityFile.delete() }
     }
 
@@ -76,7 +106,7 @@ class AdbKeyStore(private val context: Context) {
                 .generateCertificate(certificateBytes.inputStream()) as X509Certificate
             Identity(privateKey, certificate)
         }.onFailure {
-            Log.w(TAG, "读取无线调试身份失败，将重新生成", it)
+            Log.w(TAG, "读取无线调试身份失败，需要重新配对", it)
         }.getOrNull()
     }
 
@@ -115,7 +145,8 @@ class AdbKeyStore(private val context: Context) {
             append(Base64.getEncoder().encodeToString(identity.certificate.encoded)).append('\n')
             append(CERT_FOOTER).append('\n')
         }
-        runCatching { identityFile.writeText(SecretCipher.encrypt(pem), Charsets.UTF_8) }
+        runCatching { AtomicFile.writeText(identityFile, SecretCipher.encrypt(pem)) }
+            .onFailure { Log.w(TAG, "写入无线调试身份失败", it) }
     }
 
     private fun extractPem(text: String, header: String, footer: String): String? {

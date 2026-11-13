@@ -283,10 +283,12 @@ class ReplayPipelineActions(
             ?: return null
         val ends = targetItems(param.opt("end") ?: true)
         if (ends.isEmpty()) return null
+        val endOffset = PipelineParser.parseOffset(param, "end_offset", "endOffset")
         val result = ArrayList<Pair<Box, Box>>()
         var from = begin
         for (raw in ends) {
-            val endTarget = parseTargetValue(raw) ?: return null
+            val parsedEnd = parseTargetValue(raw) ?: return null
+            val endTarget = if (endOffset != null) parsedEnd.copy(offset = endOffset) else parsedEnd
             val end = resolveTarget(endTarget, box) ?: return null
             result.add(from to end)
             from = end

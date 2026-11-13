@@ -90,6 +90,7 @@ import com.benton.izukijs.ui.common.intervalLabel
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -487,21 +488,25 @@ fun ScriptsScreen(
                 TextButton(onClick = {
                     haptics.reject()
                     deleteTarget = null
-                    scope.launch {
+                    // 使用应用级作用域：切到其它标签后 Snackbar 仍可点击“撤销”。
+                    container.uiScope.launch {
                         // 删除与撤销的级联逻辑集中在 ScriptDeletion，页面只负责弹窗与 Snackbar。
-                        val backup = deletion.delete(
-                            script = target,
-                            tags = tags[target.id].orEmpty(),
-                            pinned = target.id in pinned,
-                            pinnedToTile = target.id == tileScriptId,
-                        )
+                        // 页面切走会取消组合作用域；级联删除不能停在一半。
+                        val backup = withContext(NonCancellable) {
+                            deletion.delete(
+                                script = target,
+                                tags = tags[target.id].orEmpty(),
+                                pinned = target.id in pinned,
+                                pinnedToTile = target.id == tileScriptId,
+                            )
+                        }
                         val result = snackbar.show(
                             message = resources.getString(R.string.scripts_deleted, target.name),
                             actionLabel = resources.getString(R.string.common_undo),
                             duration = SnackbarDuration.Long,
                         )
                         if (result == SnackbarResult.ActionPerformed) {
-                            deletion.restore(backup)
+                            withContext(NonCancellable) { deletion.restore(backup) }
                         }
                     }
                 }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {

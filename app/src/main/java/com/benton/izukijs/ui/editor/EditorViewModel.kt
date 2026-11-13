@@ -56,7 +56,11 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     /**
      * 写盘并返回是否成功（被更新版本取代时视为成功，真正的落盘交给更新的那次写入完成）。
      */
-    suspend fun persist(script: ScriptInfo, content: String): Boolean =
+    suspend fun persist(
+        script: ScriptInfo,
+        content: String,
+        expectedSha256: String? = null,
+    ): Boolean =
         withContext(NonCancellable) {
             val version = synchronized(writeVersions) {
                 writeVersions.getOrPut(script.id) { AtomicLong(0L) }
@@ -66,7 +70,13 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
                     writeVersions[script.id]?.get() ?: version
                 }
                 if (version != latest) return@withLock true
-                runCatching { container.scriptRepository.writeAsync(script, content) }.isSuccess
+                runCatching {
+                    container.scriptRepository.writeAsync(
+                        script = script,
+                        content = content,
+                        expectedSha256 = expectedSha256,
+                    )
+                }.isSuccess
             }
         }
 

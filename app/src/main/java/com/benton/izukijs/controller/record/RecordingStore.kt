@@ -119,6 +119,10 @@ class RecordingStore(private val root: File) {
 
     private data class CachedSize(val atMs: Long, val bytes: Long)
 
+    /** 崩溃 / 未收尾录制的派生元信息缓存；键为目录，版本取事件文件大小+修改时间。 */
+    private val derivedMetaCache =
+        java.util.concurrent.ConcurrentHashMap<String, Pair<Long, RecordingMeta>>()
+
     fun create(
         name: String,
         kind: String = RecordingMeta.KIND_SCRIPT,
@@ -281,7 +285,13 @@ class RecordingStore(private val root: File) {
     private fun metaOf(dir: File): RecordingMeta? {
         val meta = readMeta(dir)
         if (meta != null && meta.complete) return meta
+        val eventsFile = File(dir, EVENTS_FILE)
+        if (!eventsFile.isFile) return meta
+        val stamp = eventsFile.length() * 31 + eventsFile.lastModified()
+        val cached = derivedMetaCache[dir.absolutePath]
+        if (cached != null && cached.first == stamp) return merge(meta, cached.second)
         val derived = deriveMeta(dir) ?: return meta
+        derivedMetaCache[dir.absolutePath] = stamp to derived
         return merge(meta, derived)
     }
 
@@ -311,15 +321,28 @@ class RecordingStore(private val root: File) {
 
     /** 把异步补全的 context 事件合并回对应动作；context 事件本身保留，供 timeline 过滤。 */
     private fun mergeContexts(events: List<RecordEvent>): List<RecordEvent> {
-        val contexts = events.filterIsInstance<ContextEvent>().associateBy { it.refSeq }
+        // 同一动作可能有多条 context：UI 上下文与动作后补帧分两次写入。
+        val contexts = events.filterIsInstance<ContextEvent>().groupBy { it.refSeq }
         if (contexts.isEmpty()) return events
         return events.map { event ->
             if (event is UserActionEvent && event.seq > 0L) {
-                val context = contexts[event.seq] ?: return@map event
+                val parts = contexts[event.seq] ?: return@map event
                 event.copy(
-                    packageName = event.packageName.ifBlank { context.packageName },
-                    targets = if (event.targets.isEmpty()) context.targets else event.targets,
-                    rotation = if (event.rotation == 0) context.rotation else event.rotation,
+                    packageName = event.packageName.ifBlank {
+                        parts.firstNotNullOfOrNull { it.packageName.ifBlank { null } }.orEmpty()
+                    },
+                    targets = if (event.targets.isEmpty()) {
+                        parts.firstNotNullOfOrNull { it.targets.ifEmpty { null } }.orEmpty()
+                    } else {
+                        event.targets
+                    },
+                    rotation = if (event.rotation == 0) {
+                        parts.firstNotNullOfOrNull { it.rotation.takeIf { r -> r != 0 } } ?: 0
+                    } else {
+                        event.rotation
+                    },
+                    afterFrame = event.afterFrame
+                        ?: parts.firstNotNullOfOrNull { it.afterFrame },
                 )
             } else {
                 event
@@ -330,7 +353,10 @@ class RecordingStore(private val root: File) {
     fun delete(id: String): Boolean {
         val dir = safeDir(id) ?: return false
         val deleted = dir.deleteRecursively()
-        if (deleted) sizeCache.remove(id)
+        if (deleted) {
+            sizeCache.remove(id)
+            derivedMetaCache.remove(dir.absolutePath)
+        }
         return deleted
     }
 
@@ -338,6 +364,7 @@ class RecordingStore(private val root: File) {
     fun deleteAll(): Int {
         val dirs = root.listFiles()?.filter { it.isDirectory }.orEmpty()
         sizeCache.clear()
+        derivedMetaCache.clear()
         return dirs.count { it.deleteRecursively() }
     }
 

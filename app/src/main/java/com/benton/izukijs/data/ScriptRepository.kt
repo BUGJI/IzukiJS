@@ -92,14 +92,26 @@ class ScriptRepository(
         if (script.file.exists()) script.file.readText() else ""
     }
 
-    fun write(script: ScriptInfo, content: String, forceHistory: Boolean = false) {
+    fun write(
+        script: ScriptInfo,
+        content: String,
+        forceHistory: Boolean = false,
+        expectedSha256: String? = null,
+    ) {
         synchronized(fileLock) {
             // 文件可能已被重命名 / 删除；不能静默成功，否则编辑器会以为已保存。
             check(script.file.exists()) { "脚本已不存在: ${script.id}" }
-            val previous = runCatching {
-                if (script.file.exists()) script.file.readText() else null
-            }.getOrNull()
-            if (!previous.isNullOrEmpty() && previous != content) {
+            val previous = script.file.readText()
+            if (!expectedSha256.isNullOrBlank()) {
+                val actual = sha256(previous)
+                if (expectedSha256 != actual) {
+                    throw ScriptStaleException(
+                        "脚本内容已在别处修改，请重新读取后再编辑",
+                        actualSha256 = actual,
+                    )
+                }
+            }
+            if (previous.isNotEmpty() && previous != content) {
                 history.record(script.id, previous, force = forceHistory)
             }
             AtomicFile.writeText(script.file, content)
@@ -169,8 +181,12 @@ class ScriptRepository(
     suspend fun createAsync(name: String, content: String = DEFAULT_SCRIPT): ScriptInfo =
         withContext(Dispatchers.IO) { create(name, content) }
 
-    suspend fun writeAsync(script: ScriptInfo, content: String, forceHistory: Boolean = false) =
-        withContext(Dispatchers.IO) { write(script, content, forceHistory) }
+    suspend fun writeAsync(
+        script: ScriptInfo,
+        content: String,
+        forceHistory: Boolean = false,
+        expectedSha256: String? = null,
+    ) = withContext(Dispatchers.IO) { write(script, content, forceHistory, expectedSha256) }
 
     suspend fun deleteAsync(script: ScriptInfo) = withContext(Dispatchers.IO) { delete(script) }
 

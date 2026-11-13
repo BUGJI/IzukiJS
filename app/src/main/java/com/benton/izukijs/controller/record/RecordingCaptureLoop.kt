@@ -68,8 +68,8 @@ class RecordingCaptureLoop(
             ?: samples.firstOrNull { it.timestamp <= timestamp + FALLBACK_TOLERANCE_MS }?.path
     }
 
-    /** 动作后补一帧，捕捉页面跳转后的画面。 */
-    fun scheduleAfter(timestamp: Long) {
+    /** 动作后补一帧，捕捉页面跳转后的画面；[actionSeq] 用于把帧回填到动作。 */
+    fun scheduleAfter(timestamp: Long, actionSeq: Long? = null) {
         if (stopped) return
         if (writer.frameCapReached()) {
             writer.markFrameCapReached()
@@ -78,15 +78,26 @@ class RecordingCaptureLoop(
         scope.launch {
             delay(AFTER_DELAY_MS)
             val latest = synchronized(lock) { samples.lastOrNull()?.timestamp ?: 0L }
-            if (latest <= timestamp) captureOnce()
+            if (latest <= timestamp) {
+                val sample = captureOnce() ?: return@launch
+                if (actionSeq != null && actionSeq > 0L) {
+                    writer.record(
+                        ContextEvent(
+                            timestamp = sample.timestamp,
+                            refSeq = actionSeq,
+                            afterFrame = sample.path,
+                        ),
+                    )
+                }
+            }
         }
     }
 
-    private fun captureOnce() {
-        if (stopped) return
+    private fun captureOnce(): FrameSample? {
+        if (stopped) return null
         if (writer.frameCapReached()) {
             writer.markFrameCapReached()
-            return
+            return null
         }
         val startedWall = System.currentTimeMillis()
         val bitmap = runCatching {
@@ -94,7 +105,7 @@ class RecordingCaptureLoop(
         }.getOrElse {
             logBus.debug("用户录制截图失败: ${it.message}")
             null
-        } ?: return
+        } ?: return null
         val elapsed = (System.currentTimeMillis() - startedWall).coerceAtLeast(0L)
         try {
             val path = writer.recordScreencap(
@@ -102,12 +113,14 @@ class RecordingCaptureLoop(
                 atMs = writer.timestampOf(startedWall),
                 elapsedMs = elapsed,
                 source = RecordSource.USER,
-            ) ?: return
+            ) ?: return null
             val timestamp = writer.timestampOf(startedWall)
+            val sample = FrameSample(timestamp, path)
             synchronized(lock) {
-                samples.addLast(FrameSample(timestamp, path))
+                samples.addLast(sample)
                 while (samples.size > MAX_SAMPLES) samples.removeFirst()
             }
+            return sample
         } finally {
             runCatching { bitmap.recycle() }
         }

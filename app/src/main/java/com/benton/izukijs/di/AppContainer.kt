@@ -75,6 +75,9 @@ class AppContainer(val application: Application) {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /** 应用级 UI 作用域：Snackbar 结果等待等需要在页面切换后继续的操作。 */
+    val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
     val controllerManager = ControllerManager()
 
     val controllerSettingsRepository = ControllerSettingsRepository(application)

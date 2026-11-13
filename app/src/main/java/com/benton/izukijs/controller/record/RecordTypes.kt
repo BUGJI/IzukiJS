@@ -264,6 +264,7 @@ sealed interface RecordEvent {
                     packageName = json.optString("package"),
                     targets = UiTarget.listFromJson(json.optJSONArray("targets")),
                     rotation = json.optInt("rotation"),
+                    afterFrame = json.optString("afterFrame").takeIf { it.isNotBlank() },
                     seq = seq,
                     elapsedMs = elapsed,
                     source = source,
@@ -325,6 +326,8 @@ data class ContextEvent(
     val packageName: String = "",
     val targets: List<UiTarget> = emptyList(),
     val rotation: Int = 0,
+    /** 动作后补帧；与 UI 上下文分开写入，读取时按 refSeq 合并。 */
+    val afterFrame: String? = null,
     override val seq: Long = 0L,
     override val elapsedMs: Long = 0L,
     override val source: String = RecordSource.USER,
@@ -334,6 +337,7 @@ data class ContextEvent(
         if (packageName.isNotBlank()) put("package", packageName)
         if (targets.isNotEmpty()) put("targets", UiTarget.listToJson(targets))
         if (rotation != 0) put("rotation", rotation)
+        afterFrame?.let { put("afterFrame", it) }
     }
 }
 

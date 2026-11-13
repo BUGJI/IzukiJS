@@ -5,6 +5,7 @@ import com.benton.izukijs.controller.shell.ShellRunner
 import com.benton.izukijs.core.log.LogBus
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 通过无线调试的 adb shell 执行命令。
@@ -48,11 +49,28 @@ class AdbShell(
 
     private fun readRaw(command: String): ByteArray? {
         val stream = connection.openShellStream(command) ?: return null
-        return runCatching {
-            stream.use { it.openInputStream().use(::readAll) }
-        }.onFailure {
-            logBus.warn("无线调试读取命令输出失败: ${it.message}")
-        }.getOrNull()
+        val timedOut = AtomicBoolean(false)
+        // libadb 的 read 可能永久阻塞；超时后关闭流并从另一线程唤醒读取。
+        val watchdog = Thread {
+            runCatching {
+                Thread.sleep(COMMAND_TIMEOUT_MS)
+                timedOut.set(true)
+                stream.close()
+            }
+        }.apply {
+            isDaemon = true
+            name = "izuki-adb-watchdog"
+            start()
+        }
+        return try {
+            runCatching {
+                stream.use { it.openInputStream().use(::readAll) }
+            }.onFailure {
+                if (!timedOut.get()) logBus.warn("无线调试读取命令输出失败: ${it.message}")
+            }.getOrNull().takeUnless { timedOut.get() }
+        } finally {
+            watchdog.interrupt()
+        }
     }
 
     /**
@@ -73,5 +91,9 @@ class AdbShell(
             if (read > 0) out.write(buffer, 0, read)
         }
         return out.toByteArray()
+    }
+
+    private companion object {
+        const val COMMAND_TIMEOUT_MS = 120_000L
     }
 }

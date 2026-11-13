@@ -89,6 +89,16 @@ object PipelineParser {
         throw PipelineException("内联识别缺少 recognition 或 type")
     }
 
+    /** 读取动作级偏移（如 Swipe 的 end_offset / endOffset）。 */
+    fun parseOffset(input: JSONObject, vararg keys: String): IntArray? {
+        for (key in keys) {
+            if (input.has(key) && !input.isNull(key)) {
+                return parseRectArray(input.opt(key), key)
+            }
+        }
+        return null
+    }
+
     fun parseTarget(
         input: JSONObject,
         key: String,

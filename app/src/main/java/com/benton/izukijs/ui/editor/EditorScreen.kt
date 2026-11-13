@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.ScriptVersion
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.core.log.LogEntry
@@ -368,7 +369,11 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     // 串行写盘由 ViewModel 负责，这里只同步「已保存内容」用于脏标记。
     suspend fun persist(content: String): Boolean {
-        val ok = viewModel.persist(current, content)
+        val ok = viewModel.persist(
+            current,
+            content,
+            expectedSha256 = ScriptRepository.sha256(savedCode),
+        )
         if (ok) savedCode = content
         return ok
     }

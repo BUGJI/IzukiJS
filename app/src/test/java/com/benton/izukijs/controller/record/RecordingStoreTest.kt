@@ -256,6 +256,28 @@ class RecordingStoreTest {
     }
 
     @Test
+    fun mergesAfterFrameFromContextEvent() {
+        val store = RecordingStore(temporary.newFolder("recordings"))
+        val writer = store.create("after-frame")
+        val seq = writer.record(
+            UserActionEvent(timestamp = 10, kind = UserActionKind.TAP, x = 1, y = 2),
+        )
+        writer.record(
+            ContextEvent(
+                timestamp = 220,
+                refSeq = seq,
+                afterFrame = "frames/after.jpg",
+            ),
+        )
+        writer.close()
+
+        val action = store.load(writer.id)!!.events
+            .filterIsInstance<UserActionEvent>()
+            .first()
+        assertEquals("frames/after.jpg", action.afterFrame)
+    }
+
+    @Test
     fun frameCapIsReportedAsTruncated() {
         val store = RecordingStore(temporary.newFolder("recordings"))
         val writer = store.create("capped")

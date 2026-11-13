@@ -152,11 +152,13 @@ class DevicePipelineActions(
         val ends = targetItems(param.opt("end") ?: true)
         if (ends.isEmpty()) return fail(node, "Swipe 终点为空")
         val durations = numberList(param.opt("duration"))
+        val endOffset = PipelineParser.parseOffset(param, "end_offset", "endOffset")
 
         var from = begin
         for ((index, raw) in ends.withIndex()) {
-            val endTarget = parseTargetValue(raw)
+            val parsedEnd = parseTargetValue(raw)
                 ?: return fail(node, "Swipe 终点无效")
+            val endTarget = if (endOffset != null) parsedEnd.copy(offset = endOffset) else parsedEnd
             val end = resolveTarget(endTarget, box)
                 ?: return fail(node, "Swipe 终点无法解析")
             val duration = durations.getOrNull(index) ?: durations.lastOrNull() ?: 200.0

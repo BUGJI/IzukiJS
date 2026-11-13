@@ -64,6 +64,7 @@ internal class ShizukuUserServiceConnector<T : IInterface>(
 
         override fun onServiceDisconnected(name: ComponentName?) {
             invalidate()
+            unbind()
             logBus.warn("${label}已断开")
             complete(false)
         }
@@ -93,6 +94,8 @@ internal class ShizukuUserServiceConnector<T : IInterface>(
         return connectMutex.withLock {
             serviceOrNull()?.let { return@withLock true }
             withTimeoutOrNull(timeoutMs) { bindOnce() } ?: run {
+                // 超时后 bind 回调仍可能到达；先解绑，避免泄漏 UserService 进程。
+                unbind()
                 logBus.warn("${label}连接超时")
                 false
             }
@@ -117,6 +120,10 @@ internal class ShizukuUserServiceConnector<T : IInterface>(
         continuation.invokeOnCancellation {
             synchronized(lock) { pending = null }
         }
+    }
+
+    private fun unbind() {
+        runCatching { Shizuku.unbindUserService(args, connection, true) }
     }
 
     private fun complete(ok: Boolean) {

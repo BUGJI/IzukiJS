@@ -424,7 +424,7 @@ class RecordingSession(
                 captureContext = captureContext,
                 resolver = resolver,
             )
-            loop?.scheduleAfter(event.timestamp)
+            loop?.scheduleAfter(event.timestamp, seq)
         }
     }
 
@@ -607,7 +607,7 @@ class RecordingSession(
             captureContext = captureContext,
             resolver = resolver,
         )
-        loop?.scheduleAfter(timestamp)
+        loop?.scheduleAfter(timestamp, seq)
     }
 
     private fun naturalToLogical(
