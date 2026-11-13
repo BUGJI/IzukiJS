@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("14").toInt()
-val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.1.12")
+val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("15").toInt()
+val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.2.0")
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {

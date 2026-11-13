@@ -7,6 +7,8 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,9 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.record.AppEvent
 import com.benton.izukijs.controller.record.ClickEvent
@@ -50,6 +54,7 @@ import com.benton.izukijs.controller.record.RecordEvent
 import com.benton.izukijs.controller.record.RecordingMeta
 import com.benton.izukijs.controller.record.RecordingReader
 import com.benton.izukijs.controller.record.RecordingScriptExporter
+import com.benton.izukijs.controller.record.RecordingValidation
 import com.benton.izukijs.controller.record.ScreenshotEvent
 import com.benton.izukijs.controller.record.SessionStartEvent
 import com.benton.izukijs.controller.record.ShellEvent
@@ -66,25 +71,50 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
+    val settingsState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val context = LocalContext.current
+    val resources = LocalResources.current
     var reader by remember(id) { mutableStateOf<RecordingReader?>(null) }
     var loading by remember(id) { mutableStateOf(true) }
+    var loadFailed by remember(id) { mutableStateOf(false) }
     var reloadToken by remember(id) { mutableIntStateOf(0) }
     var visibleCount by remember(id) { mutableIntStateOf(MAX_ROWS) }
     var renameOpen by remember(id) { mutableStateOf(false) }
     var nameDraft by remember(id) { mutableStateOf("") }
+    var validation by remember(id) { mutableStateOf<RecordingValidation?>(null) }
+    var validating by remember(id) { mutableStateOf(false) }
+    var creatingScript by remember(id) { mutableStateOf(false) }
+    val activeRecording = settingsState.recordingActive && viewModel.currentRecordingId() == id
+    var wasActiveRecording by remember(id) { mutableStateOf(activeRecording) }
+
+    // 录制结束后自动重新读取一次，让详情页从“可能不完整”切换到完整时间线。
+    LaunchedEffect(activeRecording) {
+        if (wasActiveRecording && !activeRecording) reloadToken++
+        wasActiveRecording = activeRecording
+    }
 
     LaunchedEffect(id, reloadToken) {
         loading = true
-        val loaded = viewModel.loadRecording(id)
-        reader = loaded
-        nameDraft = loaded?.meta?.name.orEmpty()
-        loading = false
+        loadFailed = false
+        validation = null
+        try {
+            val loaded = viewModel.loadRecording(id)
+            reader = loaded
+            nameDraft = loaded?.meta?.name.orEmpty()
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            throw t
+        } catch (t: Throwable) {
+            reader = null
+            loadFailed = true
+        } finally {
+            loading = false
+        }
     }
     val activeReader = reader
     DisposableEffect(activeReader) {
@@ -114,11 +144,28 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
         }
         if (current == null) {
             Text(
-                stringResource(R.string.record_detail_missing),
+                stringResource(
+                    if (loadFailed) R.string.record_page_load_failed
+                    else R.string.record_detail_missing,
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
+            if (loadFailed) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = { reloadToken++ }) {
+                    Text(stringResource(R.string.common_refresh))
+                }
+            }
             return@SectionCard
+        }
+        if (activeRecording) {
+            Text(
+                stringResource(R.string.record_detail_active_readonly),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+            Spacer(Modifier.height(4.dp))
         }
         Text(
             stringResource(
@@ -146,17 +193,126 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             OutlinedButton(
                 onClick = {
-                    val script = RecordingScriptExporter.build(current)
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                    clipboard?.setPrimaryClip(ClipData.newPlainText("recording-script", script))
-                    scope.launch { snackbar.show(context.getString(R.string.record_detail_script_copied)) }
+                    scope.launch {
+                        val script = withContext(Dispatchers.IO) {
+                            RecordingScriptExporter.build(current)
+                        }
+                        val clipboard =
+                            context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("recording-script", script))
+                        snackbar.show(resources.getString(R.string.record_detail_script_copied))
+                    }
                 },
+                enabled = !activeRecording,
             ) { Text(stringResource(R.string.record_detail_export_script)) }
-            OutlinedButton(onClick = { renameOpen = true }) {
+            OutlinedButton(
+                onClick = {
+                    creatingScript = true
+                    scope.launch {
+                        val created = try {
+                            val name = resources.getString(
+                                R.string.record_detail_script_name,
+                                current.meta.name,
+                            )
+                            viewModel.createScriptFromRecording(id, name)
+                        } catch (t: Throwable) {
+                            null
+                        } finally {
+                            creatingScript = false
+                        }
+                        snackbar.show(
+                            if (created != null) {
+                                resources.getString(
+                                    R.string.record_detail_script_created,
+                                    created.name,
+                                )
+                            } else {
+                                resources.getString(R.string.record_detail_script_create_failed)
+                            },
+                        )
+                    }
+                },
+                enabled = !activeRecording && !creatingScript,
+            ) {
+                Text(
+                    stringResource(
+                        if (creatingScript) R.string.record_detail_script_creating
+                        else R.string.record_detail_export_to_script,
+                    ),
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    validating = true
+                    scope.launch {
+                        validation = try {
+                            viewModel.validateRecording(id)
+                        } catch (t: Throwable) {
+                            null
+                        } finally {
+                            validating = false
+                        }
+                        if (validation == null) {
+                            snackbar.show(resources.getString(R.string.record_detail_validation_missing))
+                        }
+                    }
+                },
+                enabled = !activeRecording && !validating,
+            ) {
+                Text(
+                    stringResource(
+                        if (validating) R.string.record_detail_validating
+                        else R.string.record_detail_validation,
+                    ),
+                )
+            }
+            OutlinedButton(
+                onClick = { renameOpen = true },
+                enabled = !activeRecording,
+            ) {
                 Text(stringResource(R.string.record_detail_rename))
+            }
+            OutlinedButton(onClick = { reloadToken++ }) {
+                Text(stringResource(R.string.common_refresh))
+            }
+        }
+    }
+
+    val currentValidation = validation
+    if (currentValidation != null) {
+        Spacer(Modifier.height(SectionGap))
+        SectionCard {
+            Text(
+                if (currentValidation.ok) {
+                    stringResource(R.string.record_detail_validation_ok)
+                } else {
+                    stringResource(
+                        R.string.record_detail_validation_failed,
+                        currentValidation.issues.size,
+                    )
+                },
+                style = MaterialTheme.typography.titleSmall,
+                color = if (currentValidation.ok) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+            if (currentValidation.issues.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                currentValidation.issues.forEach { issue ->
+                    Text(
+                        "• $issue",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
@@ -181,7 +337,7 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
                             // 先刷新再提示：snackbar.show 可能挂起到提示消失，放在后面会让标题延迟更新。
                             if (ok) reloadToken++
                             snackbar.show(
-                                context.getString(
+                                resources.getString(
                                     if (ok) R.string.record_detail_renamed
                                     else R.string.record_detail_rename_failed,
                                 ),
@@ -200,8 +356,10 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
 
     Spacer(Modifier.height(SectionGap))
     val current = reader ?: return
-    val actions = current.events.filter {
-        it !is ScreenshotEvent && it !is ContextEvent && it !is SessionStartEvent
+    val actions = remember(current) {
+        current.events.filter {
+            it !is ScreenshotEvent && it !is ContextEvent && it !is SessionStartEvent
+        }
     }
     if (actions.isEmpty()) {
         SectionCard {
@@ -213,8 +371,8 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
         }
         return
     }
-    val screenshots = current.events.filterIsInstance<ScreenshotEvent>()
-    val framesByPath = screenshots.associateBy { it.frame }
+    val screenshots = remember(current) { current.events.filterIsInstance<ScreenshotEvent>() }
+    val framesByPath = remember(screenshots) { screenshots.associateBy { it.frame } }
     SectionCard {
         actions.take(visibleCount).forEachIndexed { index, event ->
             if (index > 0) Spacer(Modifier.height(10.dp))
@@ -222,6 +380,7 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
                 reader = current,
                 event = event,
                 screenshot = screenshotBefore(event, screenshots, framesByPath),
+                screenshotAfter = screenshotAfter(event, framesByPath),
             )
         }
         val remaining = actions.size - visibleCount
@@ -250,6 +409,14 @@ private fun screenshotBefore(
     return screenshots.lastOrNull { it.timestamp <= event.timestamp }
 }
 
+private fun screenshotAfter(
+    event: RecordEvent,
+    framesByPath: Map<String, ScreenshotEvent>,
+): ScreenshotEvent? {
+    val action = event as? UserActionEvent ?: return null
+    return action.afterFrame?.let(framesByPath::get)
+}
+
 @Composable
 private fun recordingStatus(meta: RecordingMeta): String = when {
     !meta.complete -> stringResource(R.string.record_detail_status_interrupted)
@@ -262,10 +429,31 @@ private fun RecordingEventRow(
     reader: RecordingReader,
     event: RecordEvent,
     screenshot: ScreenshotEvent?,
+    screenshotAfter: ScreenshotEvent?,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-        if (screenshot != null) {
-            RecordingThumbnail(reader = reader, screenshot = screenshot)
+        if (screenshot != null || screenshotAfter != null) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                if (screenshot != null) {
+                    RecordingThumbnail(reader = reader, screenshot = screenshot)
+                    Text(
+                        stringResource(R.string.record_detail_frame_before),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (screenshotAfter != null && screenshotAfter.frame != screenshot?.frame) {
+                    RecordingThumbnail(reader = reader, screenshot = screenshotAfter)
+                    Text(
+                        stringResource(R.string.record_detail_frame_after),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             Spacer(Modifier.width(10.dp))
         }
         Column(

@@ -1,6 +1,7 @@
 package com.benton.izukijs.ui.editor
 
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -83,6 +85,52 @@ internal fun EditorVariablesDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.common_close))
+            }
+        },
+    )
+}
+
+/**
+ * 保存冲突弹窗：不默认覆盖磁盘内容，由用户显式选择重载 / 覆盖 / 另存为副本。
+ */
+@Composable
+internal fun EditorConflictDialog(
+    scriptName: String,
+    onReload: () -> Unit,
+    onOverwrite: () -> Unit,
+    onSaveCopy: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.editor_conflict_title)) },
+        text = {
+            Text(stringResource(R.string.editor_conflict_message, scriptName))
+        },
+        confirmButton = {
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                TextButton(onClick = onReload) {
+                    Text(stringResource(R.string.editor_conflict_reload))
+                }
+                TextButton(
+                    onClick = onOverwrite,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) {
+                    Text(stringResource(R.string.editor_conflict_overwrite))
+                }
+                TextButton(onClick = onSaveCopy) {
+                    Text(stringResource(R.string.editor_conflict_save_copy))
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.common_cancel))
             }
         },
     )

@@ -555,7 +555,7 @@ if (hit) click(hit.x, hit.y);
 | `record.active()` | 是否有录制进行中 |
 | `record.list()` | 列出录制：`[{id,name,createdAt,width,height,frameCount,eventCount,durationMs,kind,inputSource,framesAvailable,truncated,complete,version}]`；`kind=user` 表示用户真实操作录制，`complete=false` 表示未正常收尾 |
 | `record.info(id)` | 读取单条录制元信息，不存在返回 `null` |
-| `record.validate(id)` | 校验录制结构：序号、时间线、截图缺失、孤立 context、帧截断 / 未正常结束；返回 `{ok, eventCount, frameCount, durationMs, version, issues}` |
+| `record.validate(id)` | 校验录制结构：序号、时间线、截图缺失、孤立 context、帧数上限截断 / 未正常结束；返回 `{ok, eventCount, frameCount, durationMs, version, issues}`。画面未变化导致的去重复用旧帧不算失败 |
 | `record.delete(id)` | 删除录制目录；正在录制的 id 会返回 `false` |
 
 ```js

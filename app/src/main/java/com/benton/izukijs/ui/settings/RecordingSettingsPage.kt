@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.record.RecordingEntry
+import com.benton.izukijs.controller.record.RecordingIssue
 import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ConfirmDialog
@@ -40,6 +41,7 @@ import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SectionGap
 import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.formatFileSize
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -52,9 +54,12 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
 
     var entries by remember { mutableStateOf<List<RecordingEntry>>(emptyList()) }
     var totalBytes by remember { mutableStateOf(0L) }
+    var loadFailed by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<RecordingEntry?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
+    var starting by remember { mutableStateOf(false) }
+    var stopping by remember { mutableStateOf(false) }
     var recordingName by remember { mutableStateOf("") }
     var captureScreenshots by remember { mutableStateOf(true) }
     var captureContext by remember { mutableStateOf(true) }
@@ -62,15 +67,62 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
 
     fun refresh() {
         scope.launch {
-            runCatching {
-                entries = viewModel.loadRecordings()
-                totalBytes = viewModel.recordingUsageBytes()
-            }
+            runCatching { viewModel.loadRecordings() }
+                .onSuccess { loaded ->
+                    entries = loaded
+                    // 复用每条录制的目录大小缓存，避免再次遍历整个录制目录。
+                    totalBytes = loaded.sumOf { it.sizeBytes }
+                    loadFailed = false
+                }
+                .onFailure { loadFailed = true }
         }
     }
 
     // 首次进入、录制状态变化、以及从详情页返回（重新进入组合）时都刷新列表与占用。
-    LaunchedEffect(ui.recordingActive) { refresh() }
+    LaunchedEffect(ui.recordingActive) {
+        refresh()
+        if (ui.recordingActive) {
+            starting = false
+            stopping = false
+            if (ui.recordingKind == "user") recordingName = ""
+        }
+        if (!ui.recordingActive) stopping = false
+    }
+
+    // 启动/停止失败或采集降级时给出可见反馈，而不是只在日志里留下一条记录。
+    LaunchedEffect(ui.recordingIssue) {
+        val issue = ui.recordingIssue ?: return@LaunchedEffect
+        starting = false
+        stopping = false
+        viewModel.clearRecordingIssue()
+        scope.launch {
+            snackbar.show(
+                resources.getString(
+                    when (issue) {
+                        RecordingIssue.START_REJECTED -> R.string.record_issue_start_rejected
+                        RecordingIssue.START_FAILED -> R.string.record_page_start_failed
+                        RecordingIssue.NO_INPUT_BACKEND -> R.string.record_issue_no_backend
+                        RecordingIssue.NO_TOUCH_DEVICE -> R.string.record_issue_no_touch
+                        RecordingIssue.SCREENSHOT_FAILED -> R.string.record_issue_screenshot
+                        RecordingIssue.STOP_FAILED -> R.string.record_page_stop_failed
+                    },
+                ),
+            )
+        }
+    }
+
+    // 服务启动是异步的；若迟迟没有 active / issue（例如服务被系统拦截），避免按钮永久停在启动中。
+    LaunchedEffect(starting, ui.recordingActive) {
+        if (!starting || ui.recordingActive) return@LaunchedEffect
+        delay(3_000L)
+        if (!ui.recordingActive) starting = false
+    }
+
+    LaunchedEffect(stopping, ui.recordingActive) {
+        if (!stopping || !ui.recordingActive) return@LaunchedEffect
+        delay(3_000L)
+        if (ui.recordingActive) stopping = false
+    }
 
     // 引用 ui.readyModes 让后端变化触发重组；实际判断仍由 controllerFor 过滤停用后端。
     val canCaptureInput = ui.readyModes.isNotEmpty() && viewModel.canCaptureUserInput()
@@ -100,12 +152,34 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
+        if (userRecording && ui.recordingInputSource.isNotBlank()) {
+            Text(
+                stringResource(
+                    R.string.record_page_input_source,
+                    when (ui.recordingInputSource) {
+                        "shizuku" -> "Shizuku"
+                        "shell" -> "Shell"
+                        else -> stringResource(R.string.record_page_input_source_none)
+                    },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(4.dp))
         Text(
             stringResource(R.string.record_page_total, entries.size, formatFileSize(totalBytes)),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (loadFailed) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(R.string.record_page_load_failed),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
         Spacer(Modifier.height(SectionGap))
         ActionButtons {
             OutlinedButton(
@@ -119,18 +193,22 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
             if (userRecording) {
                 OutlinedButton(
                     onClick = {
-                        busy = true
-                        try {
-                            viewModel.stopUserRecording()
-                        } finally {
-                            busy = false
-                        }
+                        stopping = true
+                        viewModel.stopUserRecording()
                     },
-                    enabled = !busy,
-                ) { Text(stringResource(R.string.record_page_stop_user)) }
+                    enabled = !busy && !stopping,
+                ) {
+                    Text(
+                        stringResource(
+                            if (stopping) R.string.record_page_stopping
+                            else R.string.record_page_stop_user,
+                        ),
+                    )
+                }
             } else if (!ui.recordingActive) {
                 OutlinedButton(
                     onClick = {
+                        starting = true
                         viewModel.startUserRecording(
                             name = recordingName,
                             captureScreenshots = captureScreenshots,
@@ -138,8 +216,15 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                             captureContext = captureContext,
                         )
                     },
-                    enabled = !busy && canCaptureInput,
-                ) { Text(stringResource(R.string.record_page_start_user)) }
+                    enabled = !busy && canCaptureInput && !starting,
+                ) {
+                    Text(
+                        stringResource(
+                            if (starting) R.string.record_page_starting
+                            else R.string.record_page_start_user,
+                        ),
+                    )
+                }
             }
         }
         if (ui.recordingActive) {
@@ -239,19 +324,18 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                 pendingDelete = null
                 busy = true
                 scope.launch {
-                    try {
-                        val ok = runCatching {
-                            viewModel.deleteRecording(entry.meta.id)
-                        }.getOrDefault(false)
-                        refresh()
-                        snackbar.show(
-                            resources.getString(
-                                if (ok) R.string.record_page_deleted else R.string.record_page_failed,
-                            ),
-                        )
+                    val ok = try {
+                        runCatching { viewModel.deleteRecording(entry.meta.id) }
+                            .getOrDefault(false)
                     } finally {
                         busy = false
                     }
+                    refresh()
+                    snackbar.show(
+                        resources.getString(
+                            if (ok) R.string.record_page_deleted else R.string.record_page_failed,
+                        ),
+                    )
                 }
             },
         )
@@ -267,19 +351,18 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
                 confirmClear = false
                 busy = true
                 scope.launch {
-                    try {
-                        val removed = runCatching { viewModel.clearRecordings() }
-                            .getOrDefault(-1)
-                        refresh()
-                        snackbar.show(
-                            resources.getString(
-                                if (removed >= 0) R.string.record_page_cleared
-                                else R.string.record_page_failed,
-                            ),
-                        )
+                    val removed = try {
+                        runCatching { viewModel.clearRecordings() }.getOrDefault(-1)
                     } finally {
                         busy = false
                     }
+                    refresh()
+                    snackbar.show(
+                        resources.getString(
+                            if (removed >= 0) R.string.record_page_cleared
+                            else R.string.record_page_failed,
+                        ),
+                    )
                 }
             },
         )
@@ -295,7 +378,8 @@ private fun RecordingRow(
     onDelete: () -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+        // 录制仍在写入时 events.jsonl 尚未 flush，此时打开详情会显示不完整的时间线。
+        modifier = Modifier.fillMaxWidth().clickable(enabled = !active, onClick = onOpen),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(

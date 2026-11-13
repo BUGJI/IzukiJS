@@ -65,9 +65,6 @@ object RecordingValidator {
         if (reader.meta.truncated) {
             issues.add("录制帧数已达上限，后续画面被截断")
         }
-        if (screenshots.any { it.stale }) {
-            issues.add("存在复用旧帧的截图事件，时间线中的画面可能不是当时屏幕")
-        }
         if (!reader.meta.complete) {
             issues.add("录制没有正常结束（可能被系统杀进程），尾部事件可能缺失")
         }

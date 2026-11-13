@@ -41,7 +41,11 @@ class ScriptHistoryRepository(private val context: Context) {
 
     fun list(scriptId: String): List<ScriptVersion> = listVersions(dirFor(scriptId))
 
-    fun read(version: ScriptVersion): String = runCatching { version.file.readText() }.getOrDefault("")
+    fun read(version: ScriptVersion): String = readOrNull(version).orEmpty()
+
+    /** 读取失败返回 null，与“合法的空文件”区分开。 */
+    fun readOrNull(version: ScriptVersion): String? =
+        runCatching { version.file.readText() }.getOrNull()
 
     fun deleteFor(scriptId: String) {
         runCatching { dirFor(scriptId).deleteRecursively() }

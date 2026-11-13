@@ -83,6 +83,8 @@ class RecordingReplay(
 ) {
 
     private var index = 0
+    private var lastScreenshot: ScreenshotEvent? = null
+    private val screencapMismatchSeqs = HashSet<Long>()
     private val _mismatches = ArrayList<ReplayMismatch>()
     private val _notes = ArrayList<String>()
 
@@ -110,19 +112,24 @@ class RecordingReplay(
 
                 is ScreenshotEvent -> {
                     index++
+                    lastScreenshot = event
                     return event
                 }
 
                 else -> {
                     val kind = RecordEvent.kindOf(event)
-                    mismatch(
-                        expected = "screencap",
-                        actual = kind?.name ?: event.javaClass.simpleName,
-                        message = "回放期望截图，但先遇到动作 $kind",
-                        event = event,
-                    )
-                    index++
-                    if (options.strict) return null
+                    if (screencapMismatchSeqs.add(event.seq)) {
+                        mismatch(
+                            expected = "screencap",
+                            actual = kind?.name ?: event.javaClass.simpleName,
+                            message = "回放期望截图，但先遇到动作 $kind",
+                            event = event,
+                        )
+                    }
+                    // 宽容模式复用当前帧，不推进动作游标；识别重试不应吞掉后续动作。
+                    // 严格模式保持失败语义，但同样不消费动作，交给 finish 报告未消费事件。
+                    if (!options.strict) return lastScreenshot
+                    return null
                 }
             }
         }

@@ -250,6 +250,7 @@ class ReplayPipelineActions(
             val event = replay.expectAction(RecordActionKind.SWIPE)
             if (event !is SwipeEvent) return missing(node, RecordActionKind.SWIPE)
             consume(event)
+            success = success && event.success
             val matched = abs(event.x1 - from.centerX) <= tolerance() &&
                 abs(event.y1 - from.centerY) <= tolerance() &&
                 abs(event.x2 - to.centerX) <= tolerance() &&
@@ -262,8 +263,8 @@ class ReplayPipelineActions(
                     "Swipe",
                     "Swipe",
                 )
+                // 宽容模式与 Click / InputText 保持一致：只记录差异，不因此判动作失败。
                 if (!ok) return PipelineActionResult(false)
-                success = false
             }
         }
         return PipelineActionResult(success)

@@ -10,10 +10,13 @@ object RecordingScriptExporter {
 
     fun build(reader: RecordingReader): String {
         val sb = StringBuilder()
-        sb.append("// 由录制「").append(reader.meta.name).append("」生成\n")
+        sb.append("// 由录制「").append(oneLine(reader.meta.name)).append("」生成\n")
         sb.append("// 坐标来自录制时的屏幕像素；控件文本命中时优先使用 selector。\n")
         if (!reader.meta.complete) {
             sb.append("// 注意：这条录制没有正常结束，尾部事件可能缺失。\n")
+        }
+        if (reader.meta.truncated) {
+            sb.append("// 注意：录制达到帧数上限，部分画面为复用的旧帧。\n")
         }
         sb.append('\n')
         var lastT = 0L
@@ -63,7 +66,8 @@ object RecordingScriptExporter {
                 }
             }
             is ScreenshotEvent -> if (event.stale) {
-                sb.append("// 帧已截断：").append(oneLine(event.frame)).append("（旧帧）\n")
+                sb.append("// 画面复用上一帧：").append(oneLine(event.frame))
+                    .append("（画面未变化或达到帧上限）\n")
             }
             else -> Unit
         }
@@ -81,27 +85,48 @@ object RecordingScriptExporter {
     private fun appendUserAction(sb: StringBuilder, event: UserActionEvent) {
         val targetText = event.targets.firstOrNull { !it.text.isNullOrBlank() }?.text
         val targetId = event.targets.firstOrNull { !it.viewId.isNullOrBlank() }?.viewId
-        when (event.kind) {
+        val usedSelector = when (event.kind) {
             UserActionKind.TAP -> when {
-                !targetText.isNullOrBlank() ->
+                !targetText.isNullOrBlank() -> {
                     sb.append("selector.clickByText(").append(quote(targetText)).append(");\n")
-                !targetId.isNullOrBlank() ->
+                    true
+                }
+
+                !targetId.isNullOrBlank() -> {
                     sb.append("selector.clickById(").append(quote(targetId)).append(");\n")
-                else -> sb.append("click(").append(event.x).append(", ").append(event.y).append(");\n")
+                    true
+                }
+
+                else -> {
+                    sb.append("click(").append(event.x).append(", ").append(event.y).append(");\n")
+                    false
+                }
             }
 
             UserActionKind.LONG_CLICK -> when {
-                !targetText.isNullOrBlank() ->
+                !targetText.isNullOrBlank() -> {
                     sb.append("selector.longClickByText(").append(quote(targetText)).append(");\n")
-                !targetId.isNullOrBlank() ->
+                    true
+                }
+
+                !targetId.isNullOrBlank() -> {
                     sb.append("selector.longClickById(").append(quote(targetId)).append(");\n")
-                else -> sb.append("longClick(").append(event.x).append(", ").append(event.y)
-                    .append(", ").append(event.durationMs.coerceAtLeast(600L)).append(");\n")
+                    true
+                }
+
+                else -> {
+                    sb.append("longClick(").append(event.x).append(", ").append(event.y)
+                        .append(", ").append(event.durationMs.coerceAtLeast(600L)).append(");\n")
+                    false
+                }
             }
 
-            UserActionKind.SWIPE -> sb.append("swipe(").append(event.x).append(", ").append(event.y)
-                .append(", ").append(event.x2).append(", ").append(event.y2)
-                .append(", ").append(event.durationMs.coerceAtLeast(200L)).append(");\n")
+            UserActionKind.SWIPE -> {
+                sb.append("swipe(").append(event.x).append(", ").append(event.y)
+                    .append(", ").append(event.x2).append(", ").append(event.y2)
+                    .append(", ").append(event.durationMs.coerceAtLeast(200L)).append(");\n")
+                false
+            }
 
             UserActionKind.GESTURE, UserActionKind.MULTI_SWIPE -> {
                 val strokes = event.strokes
@@ -112,17 +137,28 @@ object RecordingScriptExporter {
                         .append(") → (").append(event.x2).append(", ").append(event.y2)
                         .append(")\n")
                 }
+                false
             }
 
-            UserActionKind.KEY -> sb.append("// key action\n")
+            UserActionKind.KEY -> {
+                sb.append("// key action\n")
+                false
+            }
+        }
+        if (usedSelector) {
+            sb.append("// 选择器未命中时可改用坐标: (")
+                .append(event.x).append(", ").append(event.y).append(")\n")
+        }
+        if (event.beforeFrame != null) {
+            sb.append("// frame: ").append(oneLine(event.beforeFrame))
+            if (event.targets.isEmpty()) sb.append("（未命中控件，使用坐标）")
+            sb.append('\n')
+        }
+        if (event.afterFrame != null) {
+            sb.append("// afterFrame: ").append(oneLine(event.afterFrame)).append('\n')
         }
         if (event.packageName.isNotBlank()) {
-            sb.append("// package: ").append(oneLine(event.packageName))
-            if (event.beforeFrame != null) sb.append(" frame: ").append(oneLine(event.beforeFrame))
-            if (event.beforeFrame != null && event.targets.isEmpty()) {
-                sb.append("（未命中控件，使用坐标）")
-            }
-            sb.append('\n')
+            sb.append("// package: ").append(oneLine(event.packageName)).append('\n')
         }
     }
 

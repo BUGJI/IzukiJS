@@ -5,7 +5,7 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [1.2.0] - 2026-11-13
 ### 新增
 
 - 新增统一识别入口 `images.recognize()` / `images.recognizeAll()` / `images.recognizeIn()` /
@@ -465,7 +465,8 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.1.12...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/BUGJI/IzukiJS/compare/v1.1.12...v1.2.0
 [1.1.12]: https://github.com/BUGJI/IzukiJS/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/BUGJI/IzukiJS/compare/v1.1.10...v1.1.11
 [1.1.10]: https://github.com/BUGJI/IzukiJS/compare/v1.1.9...v1.1.10

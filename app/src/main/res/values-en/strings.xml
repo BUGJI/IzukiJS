@@ -699,11 +699,24 @@
     <string name="record_detail_status_ok">ok</string>
     <string name="record_detail_status_interrupted">not finished</string>
     <string name="record_detail_status_truncated">frames truncated</string>
-    <string name="record_detail_stale_frame">Frame was reused after truncation and is not the screen at that time</string>
+    <string name="record_detail_stale_frame">This frame reuses the previous image (screen unchanged or frame limit reached)</string>
     <string name="record_detail_rename">Rename</string>
     <string name="record_detail_rename_title">Rename recording</string>
     <string name="record_detail_renamed">Renamed</string>
     <string name="record_detail_rename_failed">Rename failed</string>
+    <string name="record_detail_frame_before">Before</string>
+    <string name="record_detail_frame_after">After</string>
+    <string name="record_detail_validation">Validate</string>
+    <string name="record_detail_validating">Validating…</string>
+    <string name="record_detail_validation_ok">Validation passed</string>
+    <string name="record_detail_validation_failed">Validation found %1$d issue(s)</string>
+    <string name="record_detail_validation_missing">Unable to read the recording for validation</string>
+    <string name="record_detail_export_to_script">Create script</string>
+    <string name="record_detail_script_creating">Creating…</string>
+    <string name="record_detail_script_name">%1$s script</string>
+    <string name="record_detail_script_created">Created script “%1$s”</string>
+    <string name="record_detail_script_create_failed">Failed to create script</string>
+    <string name="record_detail_active_readonly">Recording is still running; the timeline may be incomplete. Stop it to view the full content.</string>
     <string name="record_event_tap">Tap</string>
     <string name="record_event_tap_with_text">Tap \"%1$s\"</string>
     <string name="record_event_long_click">Long press</string>
@@ -740,6 +753,15 @@
     <string name="record_page_sample_interval_desc">Default 700ms; smaller is more complete but uses more space.</string>
     <string name="record_page_start_failed">Failed to start user recording</string>
     <string name="record_page_stop_failed">Failed to stop user recording</string>
+    <string name="record_page_starting">Starting…</string>
+    <string name="record_page_stopping">Stopping…</string>
+    <string name="record_page_input_source">Input source: %1$s</string>
+    <string name="record_page_input_source_none">None</string>
+    <string name="record_page_load_failed">Failed to load recordings. Try again.</string>
+    <string name="record_issue_start_rejected">Another recording is already in progress; cannot start user recording</string>
+    <string name="record_issue_no_backend">No touch-capture backend; this recording will only keep script actions</string>
+    <string name="record_issue_no_touch">No readable touch device; this recording will only keep script actions</string>
+    <string name="record_issue_screenshot">Screenshot sampling keeps failing; the recording may be missing frames</string>
     <string name="record_page_need_input_backend">No touch-capture backend: enable Shizuku / Root or connect wireless debugging</string>
     <string name="record_page_capture_permission_hint">Screen capture is not granted: taps and UI context will still be recorded, but without frames. Enable it on the Permissions page.</string>
     <string name="user_record_notification_channel">User action recording</string>
@@ -832,6 +854,15 @@
     <string name="editor_history_restore">Restore</string>
     <string name="editor_history_restored">Version restored</string>
     <string name="editor_history_restore_failed">Failed to read version</string>
+    <string name="editor_conflict_title">Script changed elsewhere</string>
+    <string name="editor_conflict_message">The file for “%1$s” no longer matches the editor\'s save base. Auto-save is paused; choose how to resolve it.</string>
+    <string name="editor_conflict_reload">Reload from disk</string>
+    <string name="editor_conflict_overwrite">Overwrite</string>
+    <string name="editor_conflict_save_copy">Save as copy</string>
+    <string name="editor_conflict_overwritten">Overwritten</string>
+    <string name="editor_conflict_copy_name">%1$s copy</string>
+    <string name="editor_conflict_copy_created">Saved as “%1$s”</string>
+    <string name="editor_conflict_copy_failed">Failed to save a copy</string>
 
     <!-- Bluetooth HID -->
     <string name="hid_scan">Scan</string>

@@ -100,8 +100,8 @@ class RecordingDeviceController(
                 ShellEvent(
                     timestamp = writer.timestampOf(startedWall),
                     cmd = cmd,
-                    stdout = result?.stdout.orEmpty(),
-                    stderr = result?.stderr.orEmpty(),
+                    stdout = truncateShellOutput(result?.stdout.orEmpty()),
+                    stderr = truncateShellOutput(result?.stderr.orEmpty()),
                     exitCode = result?.exitCode ?: -1,
                     success = result != null,
                     source = source,
@@ -130,6 +130,13 @@ class RecordingDeviceController(
         return success
     }
 
+    private fun truncateShellOutput(value: String): String =
+        if (value.length <= MAX_SHELL_OUTPUT_CHARS) {
+            value
+        } else {
+            value.take(MAX_SHELL_OUTPUT_CHARS) + "\n…[truncated]"
+        }
+
     private fun strokesToJson(strokes: List<GestureStroke>): JSONArray {
         val array = JSONArray()
         for (stroke in strokes) {
@@ -145,5 +152,9 @@ class RecordingDeviceController(
             array.put(points)
         }
         return array
+    }
+
+    private companion object {
+        const val MAX_SHELL_OUTPUT_CHARS = 8_192
     }
 }

@@ -74,4 +74,21 @@ class RecordingReplayTest {
         assertNull(replay.expectAction(RecordActionKind.CLICK))
         assertTrue(replay.mismatches.any { it.message.contains("未找到动作 CLICK") })
     }
+
+    @Test
+    fun tolerantReusesLastScreenshotWithoutConsumingAction() {
+        val replay = RecordingReplay(
+            listOf(
+                ScreenshotEvent(0, "frames/1.jpg", 100, 200, seq = 1),
+                ClickEvent(10, 5, 6, true, seq = 2),
+            ),
+        )
+
+        assertEquals("frames/1.jpg", replay.nextScreencap()?.frame)
+        // 识别重试再次要帧时复用上一帧，动作游标保持不动。
+        assertEquals("frames/1.jpg", replay.nextScreencap()?.frame)
+        assertEquals(1, replay.consumed)
+        assertNotNull(replay.expectAction(RecordActionKind.CLICK))
+        assertEquals(2, replay.consumed)
+    }
 }

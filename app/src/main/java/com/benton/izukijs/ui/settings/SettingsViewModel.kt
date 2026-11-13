@@ -5,7 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.benton.izukijs.ai.AiConfig
 import com.benton.izukijs.controller.ControllerSettings
 import com.benton.izukijs.controller.record.RecordingEntry
+import com.benton.izukijs.controller.record.RecordingIssue
 import com.benton.izukijs.controller.record.RecordingReader
+import com.benton.izukijs.controller.record.RecordingScriptExporter
+import com.benton.izukijs.controller.record.RecordingValidation
+import com.benton.izukijs.controller.record.RecordingValidator
 import com.benton.izukijs.data.AppearanceSettings
 import com.benton.izukijs.data.EditorSettings
 import com.benton.izukijs.data.UnlockSettings
@@ -18,6 +22,7 @@ import com.benton.izukijs.core.notification.NotificationSettings
 import com.benton.izukijs.notification.NotifyReport
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ocr.OcrConfig
 import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.runtime.LogSettings
@@ -62,6 +67,8 @@ data class SettingsUiState(
     val developerSettings: DeveloperSettings = DeveloperSettings(),
     val recordingActive: Boolean = false,
     val recordingKind: String = "script",
+    val recordingInputSource: String = "",
+    val recordingIssue: RecordingIssue? = null,
     val screenCaptureActive: Boolean = false,
 )
 
@@ -141,6 +148,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         container.recordingSession.activeKind.collectInto { state, value ->
             state.copy(recordingKind = value)
+        }
+        container.recordingSession.inputSource.collectInto { state, value ->
+            state.copy(recordingInputSource = value)
+        }
+        container.recordingSession.issue.collectInto { state, value ->
+            state.copy(recordingIssue = value)
         }
         container.screenCapture.active.collectInto { state, value ->
             state.copy(screenCaptureActive = value)
@@ -240,14 +253,32 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     suspend fun loadRecording(id: String): RecordingReader? =
         withContext(Dispatchers.IO) { container.recordingSession.store.load(id) }
 
-    suspend fun recordingUsageBytes(): Long =
-        withContext(Dispatchers.IO) { container.recordingSession.store.totalSizeBytes() }
+    suspend fun validateRecording(id: String): RecordingValidation? = withContext(Dispatchers.IO) {
+        val reader = container.recordingSession.store.load(id) ?: return@withContext null
+        try {
+            RecordingValidator.validate(reader)
+        } finally {
+            reader.clearFrameCache()
+        }
+    }
+
+    suspend fun createScriptFromRecording(id: String, name: String): ScriptInfo? =
+        withContext(Dispatchers.IO) {
+            val reader = container.recordingSession.store.load(id) ?: return@withContext null
+            try {
+                container.scriptRepository.create(name, RecordingScriptExporter.build(reader))
+            } finally {
+                reader.clearFrameCache()
+            }
+        }
 
     fun currentRecordingId(): String? = container.recordingSession.currentRecordingId()
 
     fun isUserRecording(): Boolean = container.recordingSession.isUserRecording()
 
     fun canCaptureUserInput(): Boolean = container.recordingSession.canCaptureUserInput()
+
+    fun clearRecordingIssue() = container.recordingSession.clearIssue()
 
     fun isScreenCaptureActive(): Boolean = container.screenCapture.isActive
 
@@ -257,17 +288,25 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         sampleIntervalMs: Long,
         captureContext: Boolean,
     ) {
-        UserRecordingService.start(
-            context = container.application,
-            name = name.trim().ifBlank { "user-recording" },
-            captureScreenshots = captureScreenshots,
-            sampleIntervalMs = sampleIntervalMs,
-            captureContext = captureContext,
-        )
+        runCatching {
+            UserRecordingService.start(
+                context = container.application,
+                name = name.trim().ifBlank { "user-recording" },
+                captureScreenshots = captureScreenshots,
+                sampleIntervalMs = sampleIntervalMs,
+                captureContext = captureContext,
+            )
+        }.onFailure {
+            container.recordingSession.reportIssue(RecordingIssue.START_FAILED)
+        }
     }
 
     fun stopUserRecording() {
-        UserRecordingService.stop(container.application)
+        runCatching {
+            UserRecordingService.stop(container.application)
+        }.onFailure {
+            container.recordingSession.reportIssue(RecordingIssue.STOP_FAILED)
+        }
     }
 
     suspend fun renameRecording(id: String, name: String): Boolean = withContext(Dispatchers.IO) {

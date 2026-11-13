@@ -291,6 +291,43 @@ class RecordingStoreTest {
     }
 
     @Test
+    fun staleDeduplicatedFramesDoNotMarkRecordingTruncated() {
+        val root = temporary.newFolder("recordings")
+        val dir = File(root, "crashed").apply { mkdirs() }
+        File(dir, "events.jsonl").writeText(
+            buildString {
+                append(ScreenshotEvent(0, "frames/1.jpg", 100, 200, stale = true, seq = 1).toJson())
+                append('\n')
+                append(ClickEvent(10, 1, 2, true, seq = 2).toJson())
+                append('\n')
+            },
+        )
+
+        val meta = RecordingStore(root).info("crashed")
+
+        assertNotNull(meta)
+        assertFalse(meta!!.truncated)
+    }
+
+    @Test
+    fun validatorDoesNotFailOnDeduplicatedFrames() {
+        val dir = temporary.newFolder("validation")
+        val frame = File(dir, "frames/1.jpg")
+        frame.parentFile?.mkdirs()
+        frame.writeBytes(byteArrayOf(0x01))
+        val reader = RecordingReader(
+            meta = RecordingMeta(id = "validation", name = "demo", complete = true),
+            dir = dir,
+            events = listOf(ScreenshotEvent(0, "frames/1.jpg", 100, 200, stale = true, seq = 1)),
+        )
+
+        val validation = RecordingValidator.validate(reader)
+
+        assertTrue(validation.ok)
+        assertFalse(validation.issues.any { it.contains("旧帧") })
+    }
+
+    @Test
     fun renameFailsForMissingRecording() {
         val store = RecordingStore(temporary.newFolder("recordings"))
         assertFalse(store.rename("missing", "name"))

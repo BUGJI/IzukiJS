@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,6 +30,7 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 import kotlin.math.hypot
 
 /**
@@ -65,6 +67,16 @@ data class UserRecordingOptions(
     val captureContext: Boolean = true,
 )
 
+/** 录制过程中需要反馈给 UI / 通知的降级或失败原因。 */
+enum class RecordingIssue {
+    START_REJECTED,
+    START_FAILED,
+    NO_INPUT_BACKEND,
+    NO_TOUCH_DEVICE,
+    SCREENSHOT_FAILED,
+    STOP_FAILED,
+}
+
 class RecordingSession(
     private val context: Context,
     private val controllers: ControllerManager,
@@ -95,6 +107,25 @@ class RecordingSession(
     private val _activeKind = MutableStateFlow(RecordingMeta.KIND_SCRIPT)
     val activeKind: StateFlow<String> = _activeKind.asStateFlow()
 
+    private val _inputSource = MutableStateFlow("")
+    val inputSource: StateFlow<String> = _inputSource.asStateFlow()
+
+    private val _issue = MutableStateFlow<RecordingIssue?>(null)
+    val issue: StateFlow<RecordingIssue?> = _issue.asStateFlow()
+
+    fun reportIssue(issue: RecordingIssue) {
+        _issue.value = issue
+    }
+
+    fun clearIssue() {
+        _issue.value = null
+    }
+
+    private fun updateInputSource(writer: RecordingWriter, value: String) {
+        writer.setInputSource(value)
+        _inputSource.value = value
+    }
+
     fun isRecording(): Boolean = _active.value
 
     fun currentRecordingId(): String? = synchronized(lock) { currentId }
@@ -112,51 +143,69 @@ class RecordingSession(
             // 已有任何录制（含用户录制 / 正在收尾）时拒绝，避免脚本误以为启动成功。
             if (writer != null || stopping) {
                 logBus.warn("录制失败：已有录制进行中")
+                reportIssue(RecordingIssue.START_REJECTED)
                 return null
             }
             val all = controllers.all()
             if (all.isEmpty()) {
                 logBus.warn("录制失败：当前没有可用的控制后端")
+                reportIssue(RecordingIssue.START_REJECTED)
                 return null
             }
-            val newWriter = store.create(
-                name = name,
-                kind = RecordingMeta.KIND_SCRIPT,
-                device = deviceInfo(),
-                options = JSONObject()
-                    .put("captureScreenshots", true)
-                    .put("sampleIntervalMs", 0L)
-                    .put("captureContext", false),
-            )
-            newWriter.writeSessionStart(
-                appVersion = appVersion(),
-                device = deviceInfo(),
-                options = JSONObject()
-                    .put("captureScreenshots", true)
-                    .put("sampleIntervalMs", 0L)
-                    .put("captureContext", false),
-            )
-            originals = all
-            wrapControllers(all, newWriter)
-            writer = newWriter
-            currentId = newWriter.id
-            hooks.captureObserver = { bitmap, wallMs, elapsedMs ->
-                newWriter.recordScreencapAsync(
-                    bitmap = bitmap,
-                    atMs = newWriter.timestampOf(wallMs),
-                    elapsedMs = elapsedMs,
-                    source = RecordSource.SCRIPT,
+            val options = JSONObject()
+                .put("captureScreenshots", true)
+                .put("sampleIntervalMs", 0L)
+                .put("captureContext", false)
+            var newWriter: RecordingWriter? = null
+            return try {
+                newWriter = store.create(
+                    name = name,
+                    kind = RecordingMeta.KIND_SCRIPT,
+                    device = deviceInfo(),
+                    options = options,
                 )
-            }
-            hooks.appObserver = { action, packageName, success ->
-                newWriter.record(
-                    AppEvent(newWriter.timestamp(), action, packageName, success, RecordSource.SCRIPT),
+                newWriter.writeSessionStart(
+                    appVersion = appVersion(),
+                    device = deviceInfo(),
+                    options = options,
                 )
+                originals = all
+                wrapControllers(all, newWriter)
+                writer = newWriter
+                currentId = newWriter.id
+                hooks.captureObserver = { bitmap, wallMs, elapsedMs ->
+                    newWriter.recordScreencapAsync(
+                        bitmap = bitmap,
+                        atMs = newWriter.timestampOf(wallMs),
+                        elapsedMs = elapsedMs,
+                        source = RecordSource.SCRIPT,
+                    )
+                }
+                hooks.appObserver = { action, packageName, success ->
+                    newWriter.record(
+                        AppEvent(newWriter.timestamp(), action, packageName, success, RecordSource.SCRIPT),
+                    )
+                }
+                _activeKind.value = RecordingMeta.KIND_SCRIPT
+                _inputSource.value = ""
+                _issue.value = null
+                _active.value = true
+                logBus.success("开始录制控制操作: ${newWriter.id}")
+                newWriter.id
+            } catch (t: Throwable) {
+                logBus.error("录制启动失败: ${t.message}")
+                hooks.captureObserver = null
+                hooks.appObserver = null
+                unwrapControllersLocked()
+                runCatching { newWriter?.close() }
+                writer = null
+                currentId = null
+                _active.value = false
+                _activeKind.value = RecordingMeta.KIND_SCRIPT
+                _inputSource.value = ""
+                reportIssue(RecordingIssue.START_FAILED)
+                null
             }
-            _activeKind.value = RecordingMeta.KIND_SCRIPT
-            _active.value = true
-            logBus.success("开始录制控制操作: ${newWriter.id}")
-            return newWriter.id
         }
     }
 
@@ -164,71 +213,101 @@ class RecordingSession(
     fun startUserRecording(options: UserRecordingOptions): String? {
         synchronized(lock) {
             if (writer != null || stopping) {
-                return if (_activeKind.value == RecordingMeta.KIND_USER && !stopping) currentId else null
+                if (_activeKind.value == RecordingMeta.KIND_USER && !stopping) return currentId
+                reportIssue(RecordingIssue.START_REJECTED)
+                return null
             }
             val optionsJson = JSONObject()
                 .put("captureScreenshots", options.captureScreenshots)
                 .put("sampleIntervalMs", options.sampleIntervalMs)
                 .put("captureContext", options.captureContext)
-            val newWriter = store.create(
-                name = options.name,
-                kind = RecordingMeta.KIND_USER,
-                inputSource = "",
-                framesAvailable = false,
-                sampleIntervalMs = options.sampleIntervalMs,
-                device = deviceInfo(),
-                options = optionsJson,
-            )
-            newWriter.writeSessionStart(
-                appVersion = appVersion(),
-                device = deviceInfo(),
-                options = optionsJson,
-            )
-            originals = controllers.all()
-            wrapControllers(originals, newWriter)
-            writer = newWriter
-            currentId = newWriter.id
-            hooks.appObserver = { action, packageName, success ->
-                newWriter.record(
-                    AppEvent(newWriter.timestamp(), action, packageName, success, RecordSource.SCRIPT),
+            var newWriter: RecordingWriter? = null
+            return try {
+                newWriter = store.create(
+                    name = options.name,
+                    kind = RecordingMeta.KIND_USER,
+                    inputSource = "",
+                    framesAvailable = false,
+                    sampleIntervalMs = options.sampleIntervalMs,
+                    device = deviceInfo(),
+                    options = optionsJson,
                 )
-            }
-            // 用户录制不走 captureObserver：采样线程自己决定何时截图，
-            // 避免与脚本的 screencap 调用重复记录。
-            hooks.captureObserver = null
-            _activeKind.value = RecordingMeta.KIND_USER
-            _active.value = true
+                newWriter.writeSessionStart(
+                    appVersion = appVersion(),
+                    device = deviceInfo(),
+                    options = optionsJson,
+                )
+                originals = controllers.all()
+                wrapControllers(originals, newWriter)
+                writer = newWriter
+                currentId = newWriter.id
+                hooks.appObserver = { action, packageName, success ->
+                    newWriter.record(
+                        AppEvent(newWriter.timestamp(), action, packageName, success, RecordSource.SCRIPT),
+                    )
+                }
+                // 用户录制不走 captureObserver：采样线程自己决定何时截图，
+                // 避免与脚本的 screencap 调用重复记录。
+                hooks.captureObserver = null
+                _activeKind.value = RecordingMeta.KIND_USER
+                _inputSource.value = ""
+                _issue.value = null
+                _active.value = true
 
-            val provider = captureProvider
-            val loop = if (options.captureScreenshots && provider != null) {
-                RecordingCaptureLoop(
-                    writer = newWriter,
-                    intervalMs = options.sampleIntervalMs,
+                val provider = captureProvider
+                val loop = if (options.captureScreenshots && provider != null) {
+                    RecordingCaptureLoop(
+                        writer = newWriter,
+                        intervalMs = options.sampleIntervalMs,
+                        logBus = logBus,
+                        captureProvider = provider,
+                        onCaptureFailure = { reportIssue(RecordingIssue.SCREENSHOT_FAILED) },
+                    ).also { it.start() }
+                } else {
+                    null
+                }
+                captureLoop = loop
+
+                val resolver = RecordingContextResolver(
+                    nodeTreeProvider = nodeTreeProvider ?: { NodeTreeResult.NoBackend },
+                    foregroundProvider = foregroundProvider ?: { null },
                     logBus = logBus,
-                    captureProvider = provider,
-                ).also { it.start() }
-            } else {
+                )
+                contextResolver = resolver
+                val executor = Executors.newSingleThreadExecutor { runnable ->
+                    Thread(runnable, "izuki-recording-context").apply { isDaemon = true }
+                }
+                contextExecutor = executor
+
+                val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                userScope = scope
+                userJob = scope.launch { runUserInputLoop(newWriter, options, loop, resolver) }
+
+                logBus.success("开始录制用户操作: ${newWriter.id}")
+                newWriter.id
+            } catch (t: Throwable) {
+                logBus.error("用户录制启动失败: ${t.message}")
+                hooks.captureObserver = null
+                hooks.appObserver = null
+                captureLoop?.stop()
+                captureLoop = null
+                userJob?.cancel()
+                userJob = null
+                userScope?.cancel()
+                userScope = null
+                contextExecutor?.shutdownNow()
+                contextExecutor = null
+                contextResolver = null
+                unwrapControllersLocked()
+                runCatching { newWriter?.close() }
+                writer = null
+                currentId = null
+                _active.value = false
+                _activeKind.value = RecordingMeta.KIND_SCRIPT
+                _inputSource.value = ""
+                reportIssue(RecordingIssue.START_FAILED)
                 null
             }
-            captureLoop = loop
-
-            val resolver = RecordingContextResolver(
-                nodeTreeProvider = nodeTreeProvider ?: { NodeTreeResult.NoBackend },
-                foregroundProvider = foregroundProvider ?: { null },
-                logBus = logBus,
-            )
-            contextResolver = resolver
-            val executor = Executors.newSingleThreadExecutor { runnable ->
-                Thread(runnable, "izuki-recording-context").apply { isDaemon = true }
-            }
-            contextExecutor = executor
-
-            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-            userScope = scope
-            userJob = scope.launch { runUserInputLoop(newWriter, options, loop, resolver) }
-
-            logBus.success("开始录制用户操作: ${newWriter.id}")
-            return newWriter.id
         }
     }
 
@@ -236,6 +315,7 @@ class RecordingSession(
         val current: RecordingWriter
         val id: String?
         val wasUser: Boolean
+        val executor: ExecutorService?
         synchronized(lock) {
             if (stopping) return currentId
             current = writer ?: return null
@@ -248,33 +328,50 @@ class RecordingSession(
             captureLoop = null
             userJob?.cancel()
             userJob = null
+            userScope?.cancel()
             userScope = null
-            // 只恢复仍由录制包装器占位的后端；录制期间重连 / 替换的新后端不要被旧对象覆盖。
-            val currentByMode = controllers.all().associateBy { it.mode }
-            originals.forEach { original ->
-                if (currentByMode[original.mode] is RecordingDeviceController) {
-                    controllers.register(original)
-                }
-            }
-            originals = emptyList()
+            unwrapControllersLocked()
+            executor = contextExecutor
+            contextExecutor = null
+            contextResolver = null
         }
         // close() 会等待写入队列收尾，放到锁外避免阻塞其它录制状态查询。
-        if (wasUser) {
-            runCatching { privileged?.stopInteractionRecord() }
+        var failed = false
+        try {
+            if (wasUser) {
+                runCatching { privileged?.stopInteractionRecord() }
+            }
+            // 先停止异步 context 生产，避免 writer 关闭后仍有任务尝试写入或被静默丢弃。
+            executor?.shutdownNow()
+            runCatching { executor?.awaitTermination(CONTEXT_SHUTDOWN_WAIT_MS, TimeUnit.MILLISECONDS) }
+            current.close()
+        } catch (t: Throwable) {
+            failed = true
+            logBus.error("停止录制失败: ${t.message}")
+        } finally {
+            synchronized(lock) {
+                writer = null
+                currentId = null
+                _active.value = false
+                _activeKind.value = RecordingMeta.KIND_SCRIPT
+                _inputSource.value = ""
+                stopping = false
+            }
+            if (failed) reportIssue(RecordingIssue.STOP_FAILED)
+            logBus.success("录制结束: $id")
         }
-        current.close()
-        contextExecutor?.shutdownNow()
-        contextExecutor = null
-        contextResolver = null
-        synchronized(lock) {
-            writer = null
-            currentId = null
-            _active.value = false
-            _activeKind.value = RecordingMeta.KIND_SCRIPT
-            stopping = false
-        }
-        logBus.success("录制结束: $id")
         return id
+    }
+
+    private fun unwrapControllersLocked() {
+        // 只恢复仍由录制包装器占位的后端；录制期间重连 / 替换的新后端不要被旧对象覆盖。
+        val currentByMode = controllers.all().associateBy { it.mode }
+        originals.forEach { original ->
+            if (currentByMode[original.mode] is RecordingDeviceController) {
+                controllers.register(original)
+            }
+        }
+        originals = emptyList()
     }
 
     private fun wrapControllers(all: List<DeviceController>, newWriter: RecordingWriter) {
@@ -295,7 +392,7 @@ class RecordingSession(
         val privilegedClient = privileged
         try {
             if (privilegedClient != null && privilegedClient.startInteractionRecord(0)) {
-                newWriter.setInputSource("shizuku")
+                updateInputSource(newWriter, "shizuku")
                 var consecutiveFailures = 0
                 while (userScope?.isActive == true) {
                     delay(POLL_INTERVAL_MS)
@@ -336,6 +433,11 @@ class RecordingSession(
                     captureContext = options.captureContext,
                 )
             }
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            throw t
+        } catch (t: Throwable) {
+            logBus.error("用户触摸采集异常: ${t.message}")
+            reportIssue(RecordingIssue.NO_INPUT_BACKEND)
         } finally {
             // 即使启动调用被取消 / 抛异常，也要确保特权进程停止采集，避免后台一直抓触摸。
             runCatching { privilegedClient?.stopInteractionRecord() }
@@ -468,7 +570,8 @@ class RecordingSession(
         val controller = controllers.controllerFor(Capability.SHELL)
         if (controller == null) {
             logBus.warn("用户触摸录制：没有可用的 Shell 后端，录制仅保留脚本动作")
-            newWriter.setInputSource("none")
+            updateInputSource(newWriter, "none")
+            reportIssue(RecordingIssue.NO_INPUT_BACKEND)
             return
         }
         // 采集用的诊断命令按线程作用域抑制，避免写进时间线；不要用命令前缀做全局黑名单，
@@ -485,10 +588,11 @@ class RecordingSession(
             }
         if (device == null) {
             logBus.warn("用户触摸录制：找不到可读触摸设备，录制仅保留脚本动作")
-            newWriter.setInputSource("none")
+            updateInputSource(newWriter, "none")
+            reportIssue(RecordingIssue.NO_TOUCH_DEVICE)
             return
         }
-        newWriter.setInputSource("shell")
+        updateInputSource(newWriter, "shell")
         val hasTimeout = runCatching {
             RecordingSuppression.withoutRecording {
                 controller.shell("command -v timeout >/dev/null 2>&1; echo \$?")
@@ -661,5 +765,6 @@ class RecordingSession(
         const val MAX_POLL_FAILURES = 8
         const val TAP_SLOP = 24.0
         const val LONG_PRESS_MS = 500L
+        const val CONTEXT_SHUTDOWN_WAIT_MS = 1_000L
     }
 }

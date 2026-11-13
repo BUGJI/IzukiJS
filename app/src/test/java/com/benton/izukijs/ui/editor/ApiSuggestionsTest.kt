@@ -42,4 +42,12 @@ class ApiSuggestionsTest {
         val text = "log('x'); selector.fi"
         assertEquals(10, ApiSuggestions.tokenStart(text, text.length))
     }
+
+    @Test
+    fun tokenEndCoversTheRestOfTheIdentifier() {
+        val text = "selector.c|lick()"
+        val cursor = text.indexOf('|') + 1
+        assertEquals(text.indexOf("()"), ApiSuggestions.tokenEnd(text, cursor))
+        assertEquals(14, ApiSuggestions.tokenEnd("selector.click", 14))
+    }
 }

@@ -5,6 +5,7 @@ import com.benton.izukijs.controller.record.InputTextEvent
 import com.benton.izukijs.controller.record.PressKeyEvent
 import com.benton.izukijs.controller.record.RecordingCursor
 import com.benton.izukijs.controller.record.ShellEvent
+import com.benton.izukijs.controller.record.SwipeEvent
 import com.benton.izukijs.vision.Box
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -72,6 +73,23 @@ class ReplayPipelineActionsTest {
         val shellNode = node(ActionType.Shell, JSONObject().put("cmd", "echo hi"))
         assertTrue(shellActions.execute(shellNode, null, selfResolver).success)
         assertTrue(shellActions.notes.isEmpty())
+    }
+
+    @Test
+    fun tolerantSwipeMismatchOnlyReportsDifference() {
+        val actions = ReplayPipelineActions(
+            RecordingCursor(listOf(SwipeEvent(0, 1, 2, 3, 4, 300, true))),
+            ReplayClock(),
+        )
+        val node = node(
+            ActionType.Swipe,
+            JSONObject().put("begin", true).put("end", true),
+        )
+
+        val result = actions.execute(node, Box(100, 100, 200, 200), selfResolver)
+
+        assertTrue(result.success)
+        assertTrue(actions.mismatches.any { it.contains("Swipe 坐标不一致") })
     }
 
     @Test

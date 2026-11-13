@@ -123,6 +123,42 @@ class RecordingScriptExporterTest {
     }
 
     @Test
+    fun warnsWhenFramesWereTruncated() {
+        val dir = temporary.newFolder("rec-truncated")
+        val meta = RecordingMeta(id = "rec-truncated", name = "demo", complete = true, truncated = true)
+        val script = RecordingScriptExporter.build(
+            RecordingReader(meta, dir, listOf(ClickEvent(timestamp = 10, x = 1, y = 2, success = true))),
+        )
+        assertTrue(script.contains("达到帧数上限"))
+    }
+
+    @Test
+    fun frameCommentDoesNotDependOnPackageName() {
+        val dir = temporary.newFolder("rec-frame")
+        val meta = RecordingMeta(id = "rec-frame", name = "demo", complete = true)
+        val script = RecordingScriptExporter.build(
+            RecordingReader(
+                meta,
+                dir,
+                listOf(
+                    UserActionEvent(
+                        timestamp = 10,
+                        kind = UserActionKind.TAP,
+                        x = 1,
+                        y = 2,
+                        packageName = "",
+                        beforeFrame = "frames/before.jpg",
+                        afterFrame = "frames/after.jpg",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(script.contains("// frame: frames/before.jpg"))
+        assertTrue(script.contains("// afterFrame: frames/after.jpg"))
+    }
+
+    @Test
     fun escapesTextAndFlattensShellComments() {
         val script = RecordingScriptExporter.build(
             reader(

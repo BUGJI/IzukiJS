@@ -699,11 +699,24 @@
     <string name="record_detail_status_ok">正常</string>
     <string name="record_detail_status_interrupted">未正常结束</string>
     <string name="record_detail_status_truncated">帧已截断</string>
-    <string name="record_detail_stale_frame">该帧已截断，画面为之前的旧帧</string>
+    <string name="record_detail_stale_frame">该帧复用了上一帧画面（画面未变化或达到帧上限）</string>
     <string name="record_detail_rename">重命名</string>
     <string name="record_detail_rename_title">重命名录制</string>
     <string name="record_detail_renamed">已重命名</string>
     <string name="record_detail_rename_failed">重命名失败</string>
+    <string name="record_detail_frame_before">前</string>
+    <string name="record_detail_frame_after">后</string>
+    <string name="record_detail_validation">校验</string>
+    <string name="record_detail_validating">校验中…</string>
+    <string name="record_detail_validation_ok">校验通过</string>
+    <string name="record_detail_validation_failed">校验发现 %1$d 个问题</string>
+    <string name="record_detail_validation_missing">无法读取录制进行校验</string>
+    <string name="record_detail_export_to_script">生成脚本</string>
+    <string name="record_detail_script_creating">生成中…</string>
+    <string name="record_detail_script_name">%1$s 脚本</string>
+    <string name="record_detail_script_created">已生成脚本「%1$s」</string>
+    <string name="record_detail_script_create_failed">生成脚本失败</string>
+    <string name="record_detail_active_readonly">录制仍在进行，时间线可能不完整；停止后可查看完整内容。</string>
     <string name="record_event_tap">点击</string>
     <string name="record_event_tap_with_text">点击「%1$s」</string>
     <string name="record_event_long_click">长按</string>
@@ -740,6 +753,15 @@
     <string name="record_page_sample_interval_desc">默认 700ms；越小越完整，占用也越大。</string>
     <string name="record_page_start_failed">启动用户录制失败</string>
     <string name="record_page_stop_failed">停止用户录制失败</string>
+    <string name="record_page_starting">正在启动…</string>
+    <string name="record_page_stopping">正在停止…</string>
+    <string name="record_page_input_source">输入源：%1$s</string>
+    <string name="record_page_input_source_none">无</string>
+    <string name="record_page_load_failed">读取录制列表失败，请重试</string>
+    <string name="record_issue_start_rejected">已有其它录制在进行，无法启动用户录制</string>
+    <string name="record_issue_no_backend">没有可用的触摸采集后端，本次录制仅记录脚本动作</string>
+    <string name="record_issue_no_touch">未找到可读的触摸设备，本次录制仅记录脚本动作</string>
+    <string name="record_issue_screenshot">截图采样连续失败，录制可能缺少画面</string>
     <string name="record_page_need_input_backend">没有可用的触摸采集后端：请启用 Shizuku / Root，或连接无线调试</string>
     <string name="record_page_capture_permission_hint">屏幕录制未授权：录制仍会记录坐标与控件，但没有截图帧。可在「权限」页开启屏幕录制。</string>
     <string name="user_record_notification_channel">用户操作录制</string>
@@ -832,6 +854,15 @@
     <string name="editor_history_restore">恢复</string>
     <string name="editor_history_restored">已恢复历史版本</string>
     <string name="editor_history_restore_failed">读取历史版本失败</string>
+    <string name="editor_conflict_title">脚本已在别处修改</string>
+    <string name="editor_conflict_message">「%1$s」的磁盘内容与编辑器保存基准不一致。自动保存已暂停，请选择处理方式。</string>
+    <string name="editor_conflict_reload">重新加载磁盘版本</string>
+    <string name="editor_conflict_overwrite">覆盖保存</string>
+    <string name="editor_conflict_save_copy">另存为副本</string>
+    <string name="editor_conflict_overwritten">已覆盖保存</string>
+    <string name="editor_conflict_copy_name">%1$s 副本</string>
+    <string name="editor_conflict_copy_created">已另存为「%1$s」</string>
+    <string name="editor_conflict_copy_failed">另存为副本失败</string>
 
     <!-- 蓝牙 HID -->
     <string name="hid_scan">扫描</string>

@@ -46,6 +46,17 @@ object ApiSuggestions {
         return start + match.range.first
     }
 
+    /** 当前标识符在光标之后的结束下标，用于把整个 token 一起替换掉。 */
+    fun tokenEnd(text: String, cursor: Int): Int {
+        if (cursor < 0 || cursor >= text.length) return cursor
+        var end = cursor
+        while (end < text.length && isTokenChar(text[end])) end++
+        return end
+    }
+
+    private fun isTokenChar(char: Char): Boolean =
+        char.isLetterOrDigit() || char == '_' || char == '$'
+
     fun suggestions(token: String, limit: Int = 6): List<ApiSuggestion> {
         if (token.isEmpty()) return emptyList()
         val dot = token.lastIndexOf('.')

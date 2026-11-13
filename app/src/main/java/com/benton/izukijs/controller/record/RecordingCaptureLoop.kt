@@ -10,7 +10,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class FrameSample(val timestamp: Long, val path: String)
 
@@ -25,19 +28,32 @@ class RecordingCaptureLoop(
     private val intervalMs: Long,
     private val logBus: LogBus,
     private val captureProvider: () -> Bitmap?,
+    private val onCaptureFailure: () -> Unit = {},
 ) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val lock = Any()
+    private val afterLock = Any()
     private val samples = ArrayDeque<FrameSample>()
+    private val afterJobs = mutableSetOf<Job>()
     private var job: Job? = null
 
     @Volatile
     private var stopped = false
 
+    @Volatile
+    private var acceptingAfter = true
+
+    @Volatile
+    private var consecutiveFailures = 0
+
+    @Volatile
+    private var failureReported = false
+
     fun start() {
         if (job != null) return
         stopped = false
+        acceptingAfter = true
         job = scope.launch {
             // 先抓一帧，保证第一下点击也有可用的“动作前”画面。
             captureOnce()
@@ -49,47 +65,67 @@ class RecordingCaptureLoop(
     }
 
     fun stop() {
-        stopped = true
-        job?.cancel()
+        // 先停止采样，但保留一小段窗口让已排队的动作后补帧完成，避免 stop 前最后一击丢帧。
+        val sampling = job
+        sampling?.cancel()
         job = null
+        acceptingAfter = false
+        val pending = synchronized(afterLock) {
+            buildList {
+                addAll(afterJobs)
+                sampling?.let(::add)
+            }
+        }
+        if (pending.isNotEmpty()) {
+            runCatching {
+                runBlocking {
+                    withTimeoutOrNull(STOP_GRACE_MS) { pending.joinAll() }
+                }
+            }
+        }
+        stopped = true
         scope.cancel()
+        synchronized(afterLock) { afterJobs.clear() }
         synchronized(lock) { samples.clear() }
     }
 
     /**
      * 返回动作时间点之前最近的一帧。
      *
-     * 采样队列只保留最近 [MAX_SAMPLES] 帧，动作时间早于所有样本时不再乱退最早一帧；
-     * 只有样本起点仅略晚于动作（容忍一个采样间隔内的时钟抖动）才回退，避免把
-     * 动作之后的画面标成 beforeFrame。
+     * 采样队列只保留最近 [MAX_SAMPLES] 帧。找不到动作前的帧时返回 null，
+     * 不再用动作之后的画面冒充 beforeFrame。
      */
     fun frameBefore(timestamp: Long): String? = synchronized(lock) {
         samples.lastOrNull { it.timestamp <= timestamp }?.path
-            ?: samples.firstOrNull { it.timestamp <= timestamp + FALLBACK_TOLERANCE_MS }?.path
     }
 
     /** 动作后补一帧，捕捉页面跳转后的画面；[actionSeq] 用于把帧回填到动作。 */
     fun scheduleAfter(timestamp: Long, actionSeq: Long? = null) {
-        if (stopped) return
+        if (stopped || !acceptingAfter) return
         if (writer.frameCapReached()) {
             writer.markFrameCapReached()
             return
         }
-        scope.launch {
+        val job = scope.launch {
             delay(AFTER_DELAY_MS)
-            val latest = synchronized(lock) { samples.lastOrNull()?.timestamp ?: 0L }
-            if (latest <= timestamp) {
-                val sample = captureOnce() ?: return@launch
-                if (actionSeq != null && actionSeq > 0L) {
-                    writer.record(
-                        ContextEvent(
-                            timestamp = sample.timestamp,
-                            refSeq = actionSeq,
-                            afterFrame = sample.path,
-                        ),
-                    )
-                }
+            // 如果采样线程已经抓到了足够晚的帧，直接复用，避免重复截图。
+            val existing = synchronized(lock) {
+                samples.lastOrNull { it.timestamp >= timestamp + AFTER_DELAY_MS }
             }
+            val sample = existing ?: captureOnce() ?: return@launch
+            if (actionSeq != null && actionSeq > 0L) {
+                writer.record(
+                    ContextEvent(
+                        timestamp = sample.timestamp,
+                        refSeq = actionSeq,
+                        afterFrame = sample.path,
+                    ),
+                )
+            }
+        }
+        synchronized(afterLock) { afterJobs.add(job) }
+        job.invokeOnCompletion {
+            synchronized(afterLock) { afterJobs.remove(job) }
         }
     }
 
@@ -103,26 +139,43 @@ class RecordingCaptureLoop(
         val bitmap = runCatching {
             OverlayCoordinator.withoutOverlay { captureProvider() }
         }.getOrElse {
-            logBus.debug("用户录制截图失败: ${it.message}")
-            null
-        } ?: return null
+            noteCaptureFailure(it.message)
+            return null
+        } ?: run {
+            noteCaptureFailure(null)
+            return null
+        }
         val elapsed = (System.currentTimeMillis() - startedWall).coerceAtLeast(0L)
         try {
+            val timestamp = writer.timestampOf(startedWall)
             val path = writer.recordScreencap(
                 bitmap = bitmap,
-                atMs = writer.timestampOf(startedWall),
+                atMs = timestamp,
                 elapsedMs = elapsed,
                 source = RecordSource.USER,
-            ) ?: return null
-            val timestamp = writer.timestampOf(startedWall)
-            val sample = FrameSample(timestamp, path)
-            synchronized(lock) {
-                samples.addLast(sample)
-                while (samples.size > MAX_SAMPLES) samples.removeFirst()
+            )
+            if (path != null) {
+                consecutiveFailures = 0
+                failureReported = false
+                val sample = FrameSample(timestamp, path)
+                synchronized(lock) {
+                    samples.addLast(sample)
+                    while (samples.size > MAX_SAMPLES) samples.removeFirst()
+                }
+                return sample
             }
-            return sample
+            return null
         } finally {
             runCatching { bitmap.recycle() }
+        }
+    }
+
+    private fun noteCaptureFailure(message: String?) {
+        if (message != null) logBus.debug("用户录制截图失败: $message")
+        consecutiveFailures++
+        if (consecutiveFailures >= FAILURE_REPORT_THRESHOLD && !failureReported) {
+            failureReported = true
+            onCaptureFailure()
         }
     }
 
@@ -130,6 +183,7 @@ class RecordingCaptureLoop(
         const val MIN_INTERVAL_MS = 250L
         const val AFTER_DELAY_MS = 220L
         const val MAX_SAMPLES = 12
-        const val FALLBACK_TOLERANCE_MS = 500L
+        const val STOP_GRACE_MS = 350L
+        const val FAILURE_REPORT_THRESHOLD = 3
     }
 }

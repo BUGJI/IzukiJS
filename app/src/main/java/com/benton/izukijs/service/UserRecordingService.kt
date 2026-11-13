@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.MainActivity
 import com.benton.izukijs.R
+import com.benton.izukijs.controller.record.RecordingIssue
 import com.benton.izukijs.controller.record.UserRecordingOptions
 import java.util.concurrent.Executors
 
@@ -42,8 +43,13 @@ class UserRecordingService : Service() {
                 )
                 val container = (application as IzukiApp).container
                 worker.execute {
-                    val id = container.recordingSession.startUserRecording(options)
-                    if (id == null) {
+                    val started = try {
+                        container.recordingSession.startUserRecording(options) != null
+                    } catch (t: Throwable) {
+                        container.recordingSession.reportIssue(RecordingIssue.START_FAILED)
+                        false
+                    }
+                    if (!started) {
                         stopForeground(STOP_FOREGROUND_REMOVE)
                         stopSelf()
                     }
@@ -53,9 +59,15 @@ class UserRecordingService : Service() {
             ACTION_STOP -> {
                 val container = (application as IzukiApp).container
                 worker.execute {
-                    container.recordingSession.stop()
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
+                    try {
+                        container.recordingSession.stop()
+                    } catch (t: Throwable) {
+                        container.recordingSession.reportIssue(RecordingIssue.STOP_FAILED)
+                    } finally {
+                        // 无论停止是否异常都要撤掉前台通知，避免服务状态卡死。
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
                 }
             }
         }

@@ -89,7 +89,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
-import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.ScriptVersion
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.core.log.LogEntry
@@ -114,6 +113,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val viewModel: EditorViewModel = appViewModel { EditorViewModel(it) }
     val history by viewModel.history.collectAsStateWithLifecycle()
     val runPrompt by viewModel.runPrompt.collectAsStateWithLifecycle()
+    val persistedContent by viewModel.savedContent.collectAsStateWithLifecycle()
+    val conflict by viewModel.conflict.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
@@ -155,6 +156,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     // 保留 State 而非解包：日志在子组件内读取，避免每次日志刷新都重组整个编辑器（含文本框排版）。
     val logsState = container.logBus.entries.collectAsStateWithLifecycle()
     val editorSettings by container.editorSettingsRepository.settings.collectAsStateWithLifecycle()
+    // 变量弹窗直接观察仓库，运行中 state.set() 的变化也能实时刷新。
+    val envData by container.scriptEnvRepository.data.collectAsStateWithLifecycle()
     val isDark = LocalIzukiDarkTheme.current
     val highlighter = remember(isDark) {
         JsSyntaxHighlighter(
@@ -175,12 +178,20 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             val text = container.scriptRepository.readAsync(found)
             editorValue = TextFieldValue(text)
             savedCode = text
+            viewModel.bindDocument(found.id, text)
             undoStack.clear()
             redoStack.clear()
             canUndo = false
             canRedo = false
             loaded = true
+        } else {
+            // 进程回收后 ViewModel 是新的，用恢复出来的保存基准重新绑定。
+            viewModel.bindDocument(found.id, savedCode)
         }
+    }
+
+    LaunchedEffect(persistedContent) {
+        persistedContent?.let { savedCode = it }
     }
 
     val current = script
@@ -226,7 +237,9 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     val text = editorValue.text
-    val dirty = text != savedCode
+    // ViewModel 的保存基准优先于本地镜像，避免并发保存完成顺序造成误判。
+    val effectiveSaved = persistedContent ?: savedCode
+    val dirty = text != effectiveSaved
 
     val completionToken = if (editorFocused && !findVisible && editorValue.selection.collapsed) {
         ApiSuggestions.tokenAt(text, editorValue.selection.start)
@@ -272,8 +285,10 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     fun applyCompletion(suggestion: ApiSuggestion) {
         val cursor = editorValue.selection.start
         val start = ApiSuggestions.tokenStart(text, cursor)
+        // 光标位于 token 中间时把后缀一起替换，避免补全后出现 "selector.x.x" 之类的重复。
+        val end = ApiSuggestions.tokenEnd(text, cursor)
         val inserted = suggestion.text
-        val newText = text.substring(0, start) + inserted + text.substring(cursor)
+        val newText = text.substring(0, start) + inserted + text.substring(end)
         recordEdit(snapshot(), force = true)
         editorValue = TextFieldValue(
             text = newText,
@@ -367,16 +382,9 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
-    // 串行写盘由 ViewModel 负责，这里只同步「已保存内容」用于脏标记。
-    suspend fun persist(content: String): Boolean {
-        val ok = viewModel.persist(
-            current,
-            content,
-            expectedSha256 = ScriptRepository.sha256(savedCode),
-        )
-        if (ok) savedCode = content
-        return ok
-    }
+    // 串行写盘与保存基准都由 ViewModel 负责；这里只根据结果决定是否继续后续动作。
+    suspend fun persist(content: String, force: Boolean = false): PersistOutcome =
+        viewModel.persist(current, content, force = force)
 
     fun openHistory() {
         viewModel.openHistory(current.id)
@@ -385,53 +393,69 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     fun restoreVersion(version: ScriptVersion) {
         scope.launch {
             val content = viewModel.readVersion(version)
-            if (content.isBlank()) {
+            if (content == null) {
                 snackbar.show(resources.getString(R.string.editor_history_restore_failed))
                 return@launch
             }
             val before = snapshot()
             // 恢复前强制留档当前内容，避免自动保存节流把当前版本吞掉。
             viewModel.recordCurrent(current.id, editorValue.text)
-            editorValue = TextFieldValue(content)
-            recordEdit(before, force = true)
-            if (persist(content)) {
-                snackbar.show(resources.getString(R.string.editor_history_restored))
-            } else {
-                snackbar.show(resources.getString(R.string.editor_save_failed))
+            when (val outcome = persist(content)) {
+                is PersistOutcome.Saved -> {
+                    // 使用实际落盘内容，避免恢复期间被更新版本保存取代后编辑器与磁盘不一致。
+                    editorValue = TextFieldValue(outcome.content)
+                    recordEdit(before, force = true)
+                    viewModel.closeHistory()
+                    // 对话框先关闭再提示，避免 snackbar 挂起导致弹窗迟迟不消失。
+                    scope.launch {
+                        snackbar.show(resources.getString(R.string.editor_history_restored))
+                    }
+                }
+
+                is PersistOutcome.Conflict -> viewModel.closeHistory()
+                is PersistOutcome.Failed -> {
+                    snackbar.show(resources.getString(R.string.editor_save_failed))
+                }
             }
-            viewModel.closeHistory()
         }
     }
 
     // 自动保存：停止输入片刻后静默落盘，避免只依赖返回时写盘导致丢失。
     // 写盘用 NonCancellable 包裹，防止下一次按键取消协程时写到一半被中断。
-    LaunchedEffect(text, editorSettings.autoSave) {
+    // 冲突未解决时暂停自动保存，避免每次输入都重复失败。
+    LaunchedEffect(text, editorSettings.autoSave, effectiveSaved) {
         if (!editorSettings.autoSave) return@LaunchedEffect
-        if (text == savedCode) return@LaunchedEffect
+        if (conflict != null) return@LaunchedEffect
+        if (text == effectiveSaved) return@LaunchedEffect
         delay(AUTOSAVE_DELAY_MS)
-        if (!persist(text)) {
-            snackbar.show(resources.getString(R.string.editor_save_failed))
+        when (persist(text)) {
+            is PersistOutcome.Failed ->
+                snackbar.show(resources.getString(R.string.editor_save_failed))
+
+            else -> Unit
         }
     }
 
-    // 保存成功后再执行后续动作（返回 / 运行）；写盘失败时留在编辑器，避免丢失内容。
+    // 保存成功后再执行后续动作（返回 / 运行）；写盘失败或冲突时留在编辑器，避免丢失内容。
     fun saveAndThen(action: () -> Unit) {
         val content = editorValue.text
-        if (content == savedCode) {
+        if (content == effectiveSaved) {
             action()
             return
         }
         scope.launch {
-            if (!persist(content)) {
-                snackbar.show(resources.getString(R.string.editor_save_failed))
-                return@launch
+            when (persist(content)) {
+                is PersistOutcome.Saved -> action()
+                is PersistOutcome.Conflict -> Unit
+                is PersistOutcome.Failed ->
+                    snackbar.show(resources.getString(R.string.editor_save_failed))
             }
-            action()
         }
     }
 
     /** 查找栏打开时优先关闭查找，而不是直接保存退出编辑器。 */
     fun requestBack() {
+        if (conflict != null) return
         if (findVisible) {
             findVisible = false
         } else {
@@ -443,11 +467,24 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         haptics.tap()
         val fullText = editorValue.text
         scope.launch {
-            if (!persist(fullText)) {
-                snackbar.show(resources.getString(R.string.editor_save_failed))
+            val outcome = if (fullText == effectiveSaved) {
+                PersistOutcome.Saved(fullText)
+            } else {
+                persist(fullText)
             }
-            message?.let { snackbar.show(resources.getString(it)) }
-            viewModel.requestRun(current, runText)
+            when (outcome) {
+                is PersistOutcome.Saved -> {
+                    message?.let {
+                        // 提示异步展示，不能挡住真正的运行请求。
+                        scope.launch { snackbar.show(resources.getString(it)) }
+                    }
+                    viewModel.requestRun(current, runText)
+                }
+
+                is PersistOutcome.Conflict -> Unit
+                is PersistOutcome.Failed ->
+                    snackbar.show(resources.getString(R.string.editor_save_failed))
+            }
         }
     }
 
@@ -718,10 +755,10 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     if (variablesOpen) {
-        val (env, state) = viewModel.variables(current.id)
+        val entry = envData[current.id]
         EditorVariablesDialog(
-            env = env,
-            state = state,
+            env = entry?.values.orEmpty(),
+            state = entry?.state.orEmpty(),
             onDismiss = { variablesOpen = false },
         )
     }
@@ -741,6 +778,68 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
             initial = prompt.initial,
             onDismiss = { viewModel.dismissRun() },
             onConfirm = { values -> viewModel.confirmRun(current, values) },
+        )
+    }
+
+    if (conflict != null) {
+        EditorConflictDialog(
+            scriptName = current.name,
+            onReload = {
+                scope.launch {
+                    val disk = runCatching { container.scriptRepository.readAsync(current) }.getOrNull()
+                    if (disk == null) {
+                        snackbar.show(resources.getString(R.string.editor_save_failed))
+                        return@launch
+                    }
+                    val before = snapshot()
+                    recordEdit(before, force = true)
+                    editorValue = TextFieldValue(disk)
+                    viewModel.resetSavedContent(current.id, disk)
+                }
+            },
+            onOverwrite = {
+                scope.launch {
+                    when (val outcome = persist(editorValue.text, force = true)) {
+                        is PersistOutcome.Saved -> {
+                            scope.launch {
+                                snackbar.show(resources.getString(R.string.editor_conflict_overwritten))
+                            }
+                        }
+
+                        is PersistOutcome.Conflict -> Unit
+                        is PersistOutcome.Failed ->
+                            snackbar.show(resources.getString(R.string.editor_save_failed))
+                    }
+                }
+            },
+            onSaveCopy = {
+                scope.launch {
+                    val copyName = resources.getString(R.string.editor_conflict_copy_name, current.name)
+                    val created = runCatching {
+                        container.scriptRepository.createAsync(copyName, editorValue.text)
+                    }.getOrNull()
+                    if (created == null) {
+                        snackbar.show(resources.getString(R.string.editor_conflict_copy_failed))
+                        return@launch
+                    }
+                    // 本地内容已经安全保存到副本，原脚本重新加载磁盘版本退出冲突。
+                    val disk = runCatching { container.scriptRepository.readAsync(current) }.getOrNull()
+                    if (disk != null) {
+                        val before = snapshot()
+                        recordEdit(before, force = true)
+                        editorValue = TextFieldValue(disk)
+                        viewModel.resetSavedContent(current.id, disk)
+                    } else {
+                        viewModel.clearConflict()
+                    }
+                    scope.launch {
+                        snackbar.show(
+                            resources.getString(R.string.editor_conflict_copy_created, created.name),
+                        )
+                    }
+                }
+            },
+            onDismiss = { viewModel.clearConflict() },
         )
     }
 }

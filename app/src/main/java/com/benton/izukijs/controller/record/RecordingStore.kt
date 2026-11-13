@@ -418,7 +418,6 @@ class RecordingStore(private val root: File) {
         private var first = Long.MAX_VALUE
         private var last = 0L
         private var userInputSource = ""
-        private var staleFrames = false
         private val frames = HashSet<String>()
 
         fun add(event: RecordEvent) {
@@ -431,7 +430,6 @@ class RecordingStore(private val root: File) {
             }
             if (event is ScreenshotEvent) {
                 frames.add(event.frame)
-                if (event.stale) staleFrames = true
                 if (width == 0) {
                     width = event.width
                     height = event.height
@@ -452,7 +450,6 @@ class RecordingStore(private val root: File) {
                 frameCount = frames.size,
                 eventCount = eventCount,
                 durationMs = if (first == Long.MAX_VALUE) 0L else (last - first).coerceAtLeast(0L),
-                truncated = staleFrames,
                 kind = if (userInputSource.isNotBlank()) {
                     RecordingMeta.KIND_USER
                 } else {
