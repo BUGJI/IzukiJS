@@ -45,6 +45,44 @@ class RunLogRegistryTest {
     }
 
     @Test
+    fun recordsExplicitRunIdWithoutThreadContext() {
+        val runId = RunLogRegistry.newRunId()
+        RunLogRegistry.begin(runId, "script", "测试")
+        val worker = Thread {
+            // 模拟 QuickJS bridge 线程：没有协程上下文，只靠显式 runId。
+            RunLogRegistry.record(entry(1, LogLevel.INFO, "PROBE|bridge"), runId)
+        }
+        worker.start()
+        worker.join()
+        RunLogRegistry.finish(runId, RunStatus.SUCCEEDED)
+        val record = RunLogRegistry.find(runId)
+        assertNotNull(record)
+        assertEquals(listOf("PROBE|bridge"), record!!.snapshot().map { it.message })
+    }
+
+    @Test
+    fun fallsBackToActiveRunWithoutThreadContext() {
+        val runId = RunLogRegistry.newRunId()
+        RunLogRegistry.begin(runId, "script", "测试")
+        RunLogRegistry.exit()
+        RunLogRegistry.record(entry(1, LogLevel.INFO, "fallback"))
+        val record = RunLogRegistry.find(runId)
+        assertNotNull(record)
+        assertEquals(listOf("fallback"), record!!.snapshot().map { it.message })
+        RunLogRegistry.finish(runId, RunStatus.SUCCEEDED)
+    }
+
+    @Test
+    fun explicitRunIdStillRecordsTrailingOutputAfterFinish() {
+        val runId = RunLogRegistry.newRunId()
+        RunLogRegistry.begin(runId, "script", "测试")
+        val record = RunLogRegistry.find(runId)!!
+        RunLogRegistry.finish(runId, RunStatus.SUCCEEDED)
+        RunLogRegistry.record(entry(1, LogLevel.INFO, "late"), runId)
+        assertEquals(listOf("late"), record.snapshot().map { it.message })
+    }
+
+    @Test
     fun filtersByLevelAndGrep() {
         val runId = RunLogRegistry.newRunId()
         val record = RunLogRegistry.begin(runId, "script", "测试")

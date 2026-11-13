@@ -53,6 +53,16 @@ object RunLogRegistry {
     private val current = ThreadLocal<String?>()
     private val sequence = AtomicLong(0)
 
+    /**
+     * 最近一次开始的 run。
+     *
+     * QuickJS 的 JS → Java bridge 回调不一定运行在挂着 [current] 的协程线程上，
+     * 此时 `console.log` 取不到 runId。脚本运行由全局锁串行化，因此用最近开始的 run
+     * 兜底不会串到别的运行；仅当该 run 仍在 RUNNING 时生效，避免污染历史记录。
+     */
+    @Volatile
+    private var lastActiveRunId: String? = null
+
     fun newRunId(): String =
         "run-${System.currentTimeMillis().toString(36)}-${sequence.incrementAndGet().toString(36)}"
 
@@ -65,6 +75,7 @@ object RunLogRegistry {
                 runs.remove(oldest)
             }
         }
+        lastActiveRunId = runId
         return record
     }
 
@@ -89,7 +100,19 @@ object RunLogRegistry {
     }
 
     fun record(entry: LogEntry) {
-        val runId = current.get() ?: return
+        val runId = current.get() ?: lastActiveRunId ?: return
+        val record = synchronized(runs) { runs[runId] } ?: return
+        // 兜底只用于仍在运行的脚本；显式 runId（ConsoleApi）允许补记收尾输出。
+        if (current.get() == null && record.status != RunStatus.RUNNING) return
+        record.append(entry)
+    }
+
+    /** 显式归档：用于 JS bridge 等不继承协程 ThreadLocal 的线程。 */
+    fun record(entry: LogEntry, runId: String?) {
+        if (runId == null) {
+            record(entry)
+            return
+        }
         val record = synchronized(runs) { runs[runId] } ?: return
         record.append(entry)
     }
@@ -99,6 +122,7 @@ object RunLogRegistry {
         record.status = status
         record.error = error
         record.finishedAt = System.currentTimeMillis()
+        if (lastActiveRunId == runId) lastActiveRunId = null
     }
 
     fun find(runId: String): RunLogRecord? = synchronized(runs) { runs[runId] }

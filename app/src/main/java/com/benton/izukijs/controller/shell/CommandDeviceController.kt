@@ -31,6 +31,10 @@ abstract class CommandDeviceController(
     @Volatile
     private var adbKeyboardInstalled: Boolean? = null
 
+    /** 最近一次用剪贴板输入后是否成功恢复原内容；null 表示未走剪贴板。 */
+    @Volatile
+    private var clipboardRestored: Boolean? = null
+
     protected open val supportedCapabilities: Set<Capability> = setOf(
         Capability.GESTURE,
         Capability.KEY,
@@ -79,11 +83,15 @@ abstract class CommandDeviceController(
      */
     override fun inputText(text: String): Boolean = inputText(text, TextInputMethod.AUTO)
 
-    override fun inputText(text: String, method: TextInputMethod): Boolean = when (method) {
-        TextInputMethod.INPUT -> inputTextViaInput(text)
-        TextInputMethod.CLIPBOARD -> pasteText(text)
-        TextInputMethod.BROADCAST -> broadcastText(text)
-        TextInputMethod.AUTO -> autoInput(text)
+    override fun inputText(text: String, method: TextInputMethod): Boolean {
+        // 每次输入先清空状态，保证调用方读到的是本次操作的真实结果。
+        clipboardRestored = null
+        return when (method) {
+            TextInputMethod.INPUT -> inputTextViaInput(text)
+            TextInputMethod.CLIPBOARD -> pasteText(text)
+            TextInputMethod.BROADCAST -> broadcastText(text)
+            TextInputMethod.AUTO -> autoInput(text)
+        }
     }
 
     private fun autoInput(text: String): Boolean {
@@ -98,10 +106,18 @@ abstract class CommandDeviceController(
     private fun inputTextViaInput(text: String): Boolean =
         exec("input ${displayOption()}text ${escapeForInputText(text)}")
 
-    /** 写入系统剪贴板后发送粘贴键（KEYCODE_PASTE），依赖当前焦点在可编辑控件上。 */
+    /**
+     * 写入系统剪贴板后发送粘贴键（KEYCODE_PASTE），依赖当前焦点在可编辑控件上。
+     *
+     * 写入前快照原剪贴板并在粘贴完成后恢复，避免破坏用户正在粘贴的内容。
+     * Android 10+ 后台读取剪贴板可能被系统拦截，此时拿不到快照，按约定不恢复
+     * （恢复为空同样会清掉用户数据），并通过 [lastClipboardRestored] 报告 false。
+     */
     private fun pasteText(text: String): Boolean {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
             ?: return false
+        clipboardRestored = null
+        val previous = runCatching { clipboard.primaryClip }.getOrNull()
         val written = runCatching {
             clipboard.setPrimaryClip(ClipData.newPlainText(CLIPBOARD_LABEL, text))
         }.isSuccess
@@ -109,8 +125,20 @@ abstract class CommandDeviceController(
             logBus.warn("${mode.displayName} 写入剪贴板失败")
             return false
         }
-        return exec("input ${displayOption()}keyevent $KEYCODE_PASTE")
+        val pasted = exec("input ${displayOption()}keyevent $KEYCODE_PASTE")
+        if (previous == null) {
+            clipboardRestored = false
+            logBus.debug("原剪贴板不可读（后台读取受限），跳过恢复")
+        } else {
+            // 让目标应用先消化 PASTE 事件，再恢复剪贴板。
+            runCatching { Thread.sleep(CLIPBOARD_RESTORE_DELAY_MS) }
+            clipboardRestored = runCatching { clipboard.setPrimaryClip(previous) }.isSuccess
+            if (clipboardRestored != true) logBus.warn("${mode.displayName} 恢复剪贴板失败")
+        }
+        return pasted
     }
+
+    override fun lastClipboardRestored(): Boolean? = clipboardRestored
 
     /** 通过 ADBKeyboard 广播输入任意 Unicode 文本。 */
     private fun broadcastText(text: String): Boolean {
@@ -193,5 +221,8 @@ abstract class CommandDeviceController(
         const val KEYCODE_PASTE = 279
 
         const val CLIPBOARD_LABEL = "izuki"
+
+        /** 粘贴事件投递后等待目标应用读取剪贴板的时长，随后恢复原内容。 */
+        const val CLIPBOARD_RESTORE_DELAY_MS = 250L
     }
 }

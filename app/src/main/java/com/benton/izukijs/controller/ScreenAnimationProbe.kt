@@ -35,10 +35,19 @@ object ScreenAnimationProbe {
         for (index in firstSamples.indices) {
             if (firstSamples[index] != secondSamples[index]) changed++
         }
-        val animating = changed >= maxOf(MIN_CHANGED_SAMPLES, firstSamples.size / CHANGE_DIVISOR)
+        val animating = isAnimationChange(changed, firstSamples.size)
         remember(animating)
         return animating
     }
+
+    /**
+     * 判定采样变化是否足以构成「持续动画」。
+     *
+     * 阈值不能太低：光标闪烁 / 单个进度圈只影响极少数采样点，却会误伤本来可以 dump 的界面。
+     * 768 个采样点下约为 32 点，兼顾小动效与整屏动画。
+     */
+    fun isAnimationChange(changed: Int, samples: Int): Boolean =
+        changed >= maxOf(MIN_CHANGED_SAMPLES, samples / CHANGE_DIVISOR)
 
     private fun sample(bitmap: Bitmap): IntArray {
         val columns = SAMPLE_COLUMNS
@@ -69,6 +78,11 @@ object ScreenAnimationProbe {
 
     private const val SAMPLE_COLUMNS = 24
     private const val SAMPLE_ROWS = 32
-    private const val MIN_CHANGED_SAMPLES = 4
-    private const val CHANGE_DIVISOR = 200
+
+    /**
+     * 至少变化这么多采样点才判动画。24×32=768 点时的实际阈值取
+     * `max(16, 768 / 24) = 32`，避免光标/小圆点触发误判。
+     */
+    private const val MIN_CHANGED_SAMPLES = 16
+    private const val CHANGE_DIVISOR = 24
 }

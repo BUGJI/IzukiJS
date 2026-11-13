@@ -5,6 +5,20 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-11-13
+### 修复
+
+- 脚本 `console.*` 输出现在会进入 `get_run_log` / `read_logs(run_id=...)`：runId 显式注入
+  QuickJS bridge，活跃 run 兜底仅在运行中生效，收尾输出仍可补记。
+- `text` 使用剪贴板输入后会快照并恢复原剪贴板；后台读取受限无法快照时返回
+  `clipboard_restored=false`，不误清用户内容。
+- `text(dismiss_ime=true)` 会在 ESC 后校验 IME 状态，失败回退 `back`，不再只凭按键未抛异常就报成功。
+- 动画探测阈值改为 `max(16, 采样数/24)`；检测到动画时仍以 2.5s 预算尝试 `uiautomator dump`，
+  并区分「动画中 dump 超时」与普通失败。
+- `virtual_screen action=start` 启动失败改为返回工具错误（带 `state` / `lastStopReason` / `retryable`），
+  不再以 `state=idle` 伪装成功；MCP 增加请求耗时的调试日志。
+- `click(by=text)` 的 OCR 兜底路径补齐 `hit_checked` / `hit_reason`，与坐标点击语义一致。
+
 ## [1.2.0] - 2026-11-13
 ### 新增
 

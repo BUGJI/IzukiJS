@@ -54,7 +54,7 @@ class LogBus(private val capacity: Int = 500) {
         sink = value
     }
 
-    fun log(level: LogLevel, message: String) {
+    fun log(level: LogLevel, message: String, runId: String? = null) {
         if (level.ordinal < minLevel.ordinal) {
             PerfMetrics.count("log.dropped")
             return
@@ -67,7 +67,7 @@ class LogBus(private val capacity: Int = 500) {
                 while (buffer.size > capacity) buffer.removeFirst()
             }
             Log.println(level.toLogcatPriority(), "IzukiJS", message)
-            RunLogRegistry.record(entry)
+            RunLogRegistry.record(entry, runId)
             sink?.invoke(entry)
             scheduleEmit()
         }
@@ -93,7 +93,7 @@ class LogBus(private val capacity: Int = 500) {
         }
     }
 
-    fun debug(message: String) = log(LogLevel.DEBUG, message)
+    fun debug(message: String, runId: String? = null) = log(LogLevel.DEBUG, message, runId)
 
     /**
      * 按稳定 [key] 采样 DEBUG 日志：同一类操作在 [intervalMs] 内只记录第一条。
@@ -120,13 +120,13 @@ class LogBus(private val capacity: Int = 500) {
         debug(message)
     }
 
-    fun info(message: String) = log(LogLevel.INFO, message)
+    fun info(message: String, runId: String? = null) = log(LogLevel.INFO, message, runId)
 
-    fun success(message: String) = log(LogLevel.SUCCESS, message)
+    fun success(message: String, runId: String? = null) = log(LogLevel.SUCCESS, message, runId)
 
-    fun warn(message: String) = log(LogLevel.WARN, message)
+    fun warn(message: String, runId: String? = null) = log(LogLevel.WARN, message, runId)
 
-    fun error(message: String) = log(LogLevel.ERROR, message)
+    fun error(message: String, runId: String? = null) = log(LogLevel.ERROR, message, runId)
 
     fun clear() {
         synchronized(lock) {

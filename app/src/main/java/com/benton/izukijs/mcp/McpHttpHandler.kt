@@ -78,7 +78,13 @@ class McpHttpHandler(
         }
 
         val bodyText = String(request.body, Charsets.UTF_8)
+        val startedAt = System.currentTimeMillis()
         val responseText = protocol.handle(bodyText)
+        // 只记录长度与耗时：用于定位「业务已完成但客户端读超时」这类传输层问题。
+        logBus.debug(
+            "MCP POST 完成 session=${sessionId.take(8)} " +
+                "${System.currentTimeMillis() - startedAt}ms → ${responseText?.length ?: 0}B",
+        )
         val sessionHeader = mapOf("Mcp-Session-Id" to sessionId)
         return if (responseText == null) {
             // 纯通知：返回 202，无正文。

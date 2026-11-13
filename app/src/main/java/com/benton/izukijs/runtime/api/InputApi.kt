@@ -6,7 +6,9 @@ import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GesturePoint
 import com.benton.izukijs.controller.GestureStroke
+import com.benton.izukijs.controller.ImeStateProbe
 import com.benton.izukijs.controller.TextInputMethod
+import com.benton.izukijs.controller.record.RecordingSuppression
 import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
@@ -272,6 +274,31 @@ class InputApi(
         val ok = controller?.inputText(text, method) ?: false
         logBus.debug("输入文本 \"${text.preview()}\" [${method.name.lowercase()}]${controller.resultTag(ok)}")
         return ok
+    }
+
+    /** 最近一次输入是否走剪贴板、以及原剪贴板是否恢复；null 表示未走剪贴板后端。 */
+    fun lastClipboardRestored(): Boolean? =
+        controllers.controllerFor(Capability.TEXT)?.lastClipboardRestored()
+
+    /**
+     * 收起软键盘并校验结果。
+     *
+     * ESC 对多数输入框有效，但 Compose / 部分输入法会吞掉该键；此时回退到 back，
+     * 再读 `dumpsys input_method` 确认。无法校验（无 Shell 后端 / 输出不可解析）时
+     * 返回 false，避免像过去那样「按了就报成功」。
+     */
+    fun dismissIme(): Boolean {
+        if (!press(KeyEvent.KEYCODE_ESCAPE)) return false
+        val shownAfterEscape = imeShown() ?: return false
+        if (!shownAfterEscape) return true
+        if (!back()) return false
+        return imeShown()?.let { !it } ?: false
+    }
+
+    private fun imeShown(): Boolean? {
+        val shell = controllers.controllerFor(Capability.SHELL) ?: return null
+        val result = RecordingSuppression.withoutRecording { shell.shell("dumpsys input_method") }
+        return ImeStateProbe.isImeShown(result?.stdout)
     }
 
     @JavascriptInterface

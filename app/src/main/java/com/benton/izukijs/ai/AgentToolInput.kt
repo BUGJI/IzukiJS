@@ -63,6 +63,13 @@ internal fun AgentTools.doClick(args: JSONObject): String {
             put("value", value)
             put("long", long)
             matchSource?.let { put("match_source", it) }
+            // 与坐标点击保持一致：明确区分「未校验」「校验通过」「无可校验控件」。
+            put("hit_checked", matchSource == "ui")
+            when {
+                matchSource == "ocr" -> put("hit_reason", "文本匹配来自 OCR，无控件可校验")
+                matchSource == "ui" -> put("hit_reason", "控件树匹配成功")
+                else -> put("hit_reason", "未匹配到控件或 OCR 文字")
+            }
             if (!clicked) put("message", "未匹配到控件或 OCR 文字")
         }
     }
@@ -145,18 +152,26 @@ internal fun AgentTools.doText(args: JSONObject): String {
             id?.let { put("value", it) }
         }
     }
+    var usedInputApi = false
     val ok = if (by == "id") {
-        selectorApi.setTextById(id!!, text) || focusAndInput(id, text, method)
+        selectorApi.setTextById(id!!, text) || run {
+            usedInputApi = true
+            focusAndInput(id, text, method)
+        }
     } else {
+        usedInputApi = true
         inputApi.inputWithMethod(text, method)
     }
-    // 输入后收起软键盘：ESC（keyevent 111）比 back 更可靠；无障碍后端不支持该键，会静默无效果。
-    val imeDismissed = ok && dismissIme && inputApi.press(KeyEvent.KEYCODE_ESCAPE)
+    // 只有真正走了输入 API 才读取剪贴板状态，避免读到上一次调用的残留值。
+    val clipboardRestored = if (ok && usedInputApi) inputApi.lastClipboardRestored() else null
+    // 输入后收起软键盘：ESC 更可靠，失败时回退到 back，并用 IME 状态确认是否真的收起。
+    val imeDismissed = ok && dismissIme && inputApi.dismissIme()
     return jsonOf {
         put("ok", ok)
         put("method", method)
         put("dismiss_ime", dismissIme)
         if (dismissIme) put("ime_dismissed", imeDismissed)
+        clipboardRestored?.let { put("clipboard_restored", it) }
     }
 }
 

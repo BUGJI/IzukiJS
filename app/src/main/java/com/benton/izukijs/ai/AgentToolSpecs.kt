@@ -86,7 +86,8 @@ internal fun buildAgentToolSpecs(shellAvailable: Boolean): List<ToolSpec> = buil
         ToolSpec(
             "click",
             "点击或长按。by=coord（默认）用 x/y 像素坐标；normalized=true 时 x/y 为 0~1 比例（推荐，免疫截图缩放）。by=text|id|desc 时按 value 匹配控件。long=true 长按。" +
-                "坐标点击默认不做命中校验，结果含 hit_checked=false；需要命中的控件做自校验时传 hit=true（代价是一次控件树读取），结果会返回 hit 并置 hit_checked=true。",
+                "坐标点击默认不做命中校验，结果含 hit_checked=false；需要命中的控件做自校验时传 hit=true（代价是一次控件树读取），结果会返回 hit 并置 hit_checked=true。" +
+                "by=text 走 OCR 兜底时同样返回 hit_checked=false 与 hit_reason，控件树命中则为 true。",
             objectSchema(
                 mapOf(
                     "by" to enumProp("定位方式", listOf("coord", "text", "id", "desc")),
@@ -148,7 +149,7 @@ internal fun buildAgentToolSpecs(shellAvailable: Boolean): List<ToolSpec> = buil
                     "by" to enumProp("按控件属性设置", listOf("id")),
                     "value" to stringProp("by=id 时的控件 id"),
                     "method" to enumProp("输入方式", listOf("auto", "input", "clipboard", "broadcast")),
-                    "dismiss_ime" to booleanProp("输入后收起软键盘（Shizuku/无线调试/Root 下发送 ESC keyevent 111 生效；无障碍后端忽略）"),
+                    "dismiss_ime" to booleanProp("输入后收起软键盘；发送 ESC 失败时回退 back，并用 IME 状态校验后返回 ime_dismissed（需要 Shell 后端才能校验）"),
                     "dry_run" to booleanProp("只返回将要执行的操作，不真正输入"),
                 ),
                 required = listOf("text"),

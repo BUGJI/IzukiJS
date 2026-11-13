@@ -42,6 +42,7 @@ class ScriptApiEnvironment(
     private val runMode: RunMode,
     private val scriptId: String,
     private val scriptName: String,
+    private val runId: String? = null,
     private val pushDispatcher: NotificationDispatcher?,
     private val recordingSession: RecordingSession?,
     private val exitRequested: () -> Boolean,
@@ -87,7 +88,7 @@ class ScriptApiEnvironment(
         ctx.appendJavascriptInterface(globalApi)
         ctx.appendJavascriptInterface(inputApi)
         ctx.addJavascriptInterface(deviceApi, "device")
-        ctx.addJavascriptInterface(ConsoleApi(logBus), "console")
+        ctx.addJavascriptInterface(ConsoleApi(logBus, runId), "console")
         ctx.addJavascriptInterface(
             PermissionsApi(
                 context,

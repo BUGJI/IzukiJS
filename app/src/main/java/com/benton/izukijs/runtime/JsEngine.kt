@@ -37,6 +37,7 @@ class JsEngine(
     private val runMode: RunMode = RunMode.FOREGROUND,
     private val scriptId: String = "",
     private val scriptName: String = "",
+    private val runId: String? = null,
     private val pushDispatcher: NotificationDispatcher? = null,
     private val recordingSession: com.benton.izukijs.controller.record.RecordingSession? = null,
 ) : Closeable {
@@ -103,6 +104,7 @@ class JsEngine(
             runMode = runMode,
             scriptId = scriptId,
             scriptName = scriptName,
+            runId = runId,
             pushDispatcher = pushDispatcher,
             recordingSession = recordingSession,
             exitRequested = { exitRequested },

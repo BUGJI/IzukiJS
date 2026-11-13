@@ -291,6 +291,7 @@ class ScriptExecutionManager(
                 effectiveRunMode,
                 scriptId = scriptId,
                 scriptName = scriptName,
+                runId = session.runId,
                 pushDispatcher = notificationDispatcher,
                 recordingSession = recordingSession,
             )

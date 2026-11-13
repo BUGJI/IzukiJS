@@ -103,6 +103,12 @@ interface TextController {
 
     /** 执行无障碍全局动作（返回/主页/最近任务等）。 */
     fun globalAction(action: Int): Boolean = false
+
+    /**
+     * 最近一次文本输入是否走剪贴板、以及原剪贴板是否成功恢复。
+     * null 表示未走剪贴板或不支持该后端。
+     */
+    fun lastClipboardRestored(): Boolean? = null
 }
 
 /** 截图能力。 */

@@ -61,24 +61,34 @@ object UiautomatorDumper {
                 NodeTreeResult.NoBackend
             }
 
-        // 界面持续动画时 uiautomator 会一直等 idle。先用两帧差快速判断，直接跳过无意义的 dump。
-        if (timeoutMs >= ANIMATION_PROBE_MIN_BUDGET_MS && animationProbe?.invoke() == true) {
-            logBus.warn("检测到界面持续动画，已跳过 uiautomator dump（改用 ocr / 截图）")
-            return NodeTreeResult.Failure("界面持续动画，已跳过控件树读取；请改用 ocr / 截图")
+        // 界面持续动画时 uiautomator 会一直等 idle。两帧差只用于「调整预算」而非直接放弃：
+        // 小动效（光标闪烁 / 进度圈）的界面往往仍能 dump 成功，只是慢一点。
+        val animating = timeoutMs >= ANIMATION_PROBE_MIN_BUDGET_MS && animationProbe?.invoke() == true
+        val dumpTimeoutMs = if (animating) {
+            logBus.warn("检测到界面持续动画，仍尝试读取控件树（预算 ${ANIMATED_DUMP_TIMEOUT_MS}ms）")
+            maxOf(timeoutMs, ANIMATED_DUMP_TIMEOUT_MS)
+        } else {
+            timeoutMs
         }
 
         // 每次 dump 使用唯一临时文件，避免多实例 / 多用户 / 并发 dump 相互覆盖。
         val path = "/data/local/tmp/izuki_ui_dump_${Process.myPid()}_${SEQ.incrementAndGet()}.xml"
-        val dumped = runDump(shell, "uiautomator dump $path", timeoutMs)
+        val dumped = runDump(shell, "uiautomator dump $path", dumpTimeoutMs)
         if (dumped == null) {
             // 界面持续动画时 uiautomator 会一直等 idle，直到其内部超时（实测可达 11s+）。
             // 这里主动放弃并终止该进程，避免把设备队列堵在无意义的空转上。
-            logBus.warn("uiautomator dump 超过 ${timeoutMs}ms 未返回，已主动放弃（界面可能持续动画）")
+            logBus.warn("uiautomator dump 超过 ${dumpTimeoutMs}ms 未返回，已主动放弃（界面可能持续动画）")
             runCatching {
                 internalShell(shell, "pkill -9 uiautomator 2>/dev/null || killall -9 uiautomator 2>/dev/null")
             }
             runCatching { internalShell(shell, "rm -f $path") }
-            return NodeTreeResult.Failure("uiautomator dump 超时（界面持续动画）")
+            return NodeTreeResult.Failure(
+                if (animating) {
+                    "界面持续动画，控件树读取超时（已尝试 dump）"
+                } else {
+                    "uiautomator dump 超时（界面持续动画）"
+                },
+            )
         }
         // uiautomator dump 的退出码不可靠（不同 ROM 文案不同），以能否读到文件为准。
         val xml = internalShell(shell, "cat $path; rm -f $path")?.stdout
@@ -219,6 +229,12 @@ object UiautomatorDumper {
 
     /** 两帧差探测本身约需 0.5~1s，预算过小时跳过，避免探测把超时撑爆。 */
     private const val ANIMATION_PROBE_MIN_BUDGET_MS = 1_200L
+
+    /**
+     * 探测到动画后仍尝试 dump 的预算。默认 1.5s 对含小动效的界面偏短，
+     * 放宽到 2.5s；仍失败才快速返回，避免回到过去 11s+ 的空转。
+     */
+    private const val ANIMATED_DUMP_TIMEOUT_MS = 2_500L
 
     /** 超时终止 uiautomator 后，等待后台线程自行退出的宽限时长。 */
     private const val ABANDON_GRACE_MS = 500L

@@ -55,9 +55,15 @@ internal fun McpToolRegistry.virtualScreenTool(
                 ).normalized(),
             )
             val ok = manager.startBlocking(options)
-            McpToolResult.text(
-                virtualScreenStateJson(manager).put("ok", ok).toString(),
-            )
+            val payload = virtualScreenStateJson(manager)
+                .put("ok", ok)
+                .put("retryable", !ok)
+            // 启动失败必须走 error：过去用普通文本返回 state=idle，客户端会把失败当成功。
+            if (ok) {
+                McpToolResult.text(payload.toString())
+            } else {
+                McpToolResult.error(payload.toString())
+            }
         }
 
         "stop" -> {

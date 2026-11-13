@@ -91,6 +91,8 @@ class RecordingDeviceController(
         },
     ) { inner.globalAction(action) }
 
+    override fun lastClipboardRestored(): Boolean? = inner.lastClipboardRestored()
+
     override fun shell(cmd: String): ShellResult? {
         val startedWall = System.currentTimeMillis()
         val result = inner.shell(cmd)
