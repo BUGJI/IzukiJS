@@ -56,6 +56,8 @@ class AccessibilityController(
 
     override fun inputText(text: String): Boolean = service?.inputText(text) ?: false
 
+    override fun hasEditableFocus(): Boolean? = service?.hasEditableFocus()
+
     override fun pressKey(keyCode: Int): Boolean {
         val svc = service ?: return false
         val globalAction = when (keyCode) {

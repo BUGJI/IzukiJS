@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.hid.HidConnectionState
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
@@ -90,6 +91,7 @@ fun HidSetupScreen(onBack: () -> Unit) {
     var targetCenter by remember { mutableStateOf<IntOffset?>(null) }
     var hit by remember { mutableStateOf(false) }
     var verifyState by remember { mutableStateOf(VerifyState.IDLE) }
+    var showForgetConfirm by remember { mutableStateOf(false) }
 
     val requiredPermissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
@@ -207,12 +209,17 @@ fun HidSetupScreen(onBack: () -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Button(onClick = { startScan() }) { Text(stringResource(R.string.hid_scan_devices)) }
-                        // 已连接或正在自动重连时都提供「断开」：点它彻底断开并忘记设备，后续不再重试。
-                        // 扫描中优先服务用户选设备，不显示该按钮。
+                        // 已连接或正在自动重连时提供两个动作：断开保留记忆地址，忘记设备才清除配对。
+                        // 扫描中优先服务用户选设备，不显示这些按钮。
                         if (connected != null ||
                             (reconnecting && state != HidConnectionState.SCANNING)
                         ) {
-                            OutlinedButton(onClick = { manager.revoke() }) { Text(stringResource(R.string.hid_disconnect)) }
+                            OutlinedButton(onClick = { manager.disconnect() }) {
+                                Text(stringResource(R.string.hid_disconnect))
+                            }
+                            OutlinedButton(onClick = { showForgetConfirm = true }) {
+                                Text(stringResource(R.string.hid_forget))
+                            }
                         }
                         if (hidReady) {
                             OutlinedButton(
@@ -258,6 +265,21 @@ fun HidSetupScreen(onBack: () -> Unit) {
             }
         }
         }
+    }
+
+    if (showForgetConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.hid_forget_title),
+            message = stringResource(R.string.hid_forget_message),
+            confirmLabel = stringResource(R.string.hid_forget),
+            destructive = true,
+            onConfirm = {
+                showForgetConfirm = false
+                manager.revoke()
+                scope.launch { snackbar.show(resources.getString(R.string.hid_forgotten)) }
+            },
+            onDismiss = { showForgetConfirm = false },
+        )
     }
 }
 

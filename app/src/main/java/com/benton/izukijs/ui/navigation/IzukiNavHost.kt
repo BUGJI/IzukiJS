@@ -36,6 +36,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -74,6 +75,7 @@ import com.benton.izukijs.ui.run.RunScreen
 import com.benton.izukijs.ui.schedule.ScheduleScreen
 import com.benton.izukijs.ui.scriptedit.ScriptEditScreen
 import com.benton.izukijs.ui.scripts.ScriptsScreen
+import com.benton.izukijs.ui.settings.NotificationChannelPage
 import com.benton.izukijs.ui.settings.RecordingDetailPage
 import com.benton.izukijs.ui.settings.SettingsCategory
 import com.benton.izukijs.ui.settings.SettingsDetailScreen
@@ -87,12 +89,21 @@ object Routes {
     const val ARG_SETTINGS_CATEGORY = "category"
     const val ARG_FLOW_ID = "flowId"
     const val ARG_RECORDING_ID = "recordingId"
+    const val ARG_CHANNEL_ID = "channelId"
 
     /** 主界面占位路由：四个底部标签由 [HorizontalPager] 承载，此路由只作为详情页的返回落点。 */
     const val MAIN = "main"
 
+    /** 通知点击后的主界面标签路由；由 [IzukiNavHost] 切换 pager 处理。 */
+    const val TAB_RUN = "tab:run"
+    const val TAB_SCRIPTS = "tab:scripts"
+    const val TAB_LOGS = "tab:logs"
+    const val TAB_SETTINGS = "tab:settings"
+
     const val SETTINGS_DETAIL = "settings/{$ARG_SETTINGS_CATEGORY}"
     const val RECORDING_DETAIL = "recording/{$ARG_RECORDING_ID}"
+    const val NOTIFY_CHANNEL_NEW = "notify_channel_new"
+    const val NOTIFY_CHANNEL_EDIT = "notify_channel/{$ARG_CHANNEL_ID}"
     const val EDITOR = "editor/{$ARG_SCRIPT_ID}"
     const val SCRIPT_EDIT = "script_edit/{$ARG_SCRIPT_ID}"
     const val SETUP = "setup"
@@ -116,6 +127,8 @@ object Routes {
     fun settingsDetail(category: SettingsCategory) = "settings/${category.key}"
 
     fun recordingDetail(id: String) = "recording/${Uri.encode(id)}"
+
+    fun notifyChannelEdit(id: String) = "notify_channel/${Uri.encode(id)}"
 }
 
 /** 底部导航的四个主标签，顺序即 [HorizontalPager] 的页序。 */
@@ -144,7 +157,11 @@ private val WIDE_LAYOUT_MIN_WIDTH = 600.dp
 private const val NAV_ANIM_MS = 180
 
 @Composable
-fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
+fun IzukiNavHost(
+    requestedRoute: String? = null,
+    onRequestedRouteHandled: () -> Unit = {},
+    navController: NavHostController = rememberNavController(),
+) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     // 仅当停留在主界面（未打开任何详情页）时展示底部标签。
@@ -157,6 +174,25 @@ fun IzukiNavHost(navController: NavHostController = rememberNavController()) {
     fun selectTab(index: Int) {
         if (pagerState.currentPage == index) return
         scope.launch { pagerState.animateScrollToPage(index) }
+    }
+
+    // 通知点击携带的目标路由：标签页切 pager，其余页面走 NavHost。
+    LaunchedEffect(requestedRoute) {
+        val route = requestedRoute ?: return@LaunchedEffect
+        val tab = when (route) {
+            Routes.TAB_RUN -> BottomItem.RUN.ordinal
+            Routes.TAB_SCRIPTS -> BottomItem.SCRIPTS.ordinal
+            Routes.TAB_LOGS -> BottomItem.LOGS.ordinal
+            Routes.TAB_SETTINGS -> BottomItem.SETTINGS.ordinal
+            else -> null
+        }
+        if (tab != null) {
+            if (currentRoute != Routes.MAIN) navController.popBackStack(Routes.MAIN, inclusive = false)
+            pagerState.scrollToPage(tab)
+        } else {
+            navController.navigate(route) { launchSingleTop = true }
+        }
+        onRequestedRouteHandled()
     }
 
     // 全局唯一的 Snackbar 宿主：通过 CompositionLocal 提供给所有页面，替代零散的 Toast。
@@ -252,7 +288,7 @@ private fun MainNavigationRail(pagerState: PagerState, onSelectTab: (Int) -> Uni
             NavigationRailItem(
                 selected = pagerState.currentPage == index,
                 onClick = { onSelectTab(index) },
-                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                icon = { Icon(item.icon(), contentDescription = null) },
                 label = { Text(stringResource(item.labelRes)) },
             )
         }
@@ -267,7 +303,7 @@ private fun MainNavigationBar(pagerState: PagerState, onSelectTab: (Int) -> Unit
             NavigationBarItem(
                 selected = pagerState.currentPage == index,
                 onClick = { onSelectTab(index) },
-                icon = { Icon(item.icon(), contentDescription = stringResource(item.labelRes)) },
+                icon = { Icon(item.icon(), contentDescription = null) },
                 label = { Text(stringResource(item.labelRes)) },
             )
         }
@@ -445,6 +481,15 @@ private fun DetailNavHost(
                             launchSingleTop = true
                         }
                     },
+                    onOpenChannelEditor = { channelId ->
+                        navController.navigate(
+                            if (channelId == null) {
+                                Routes.NOTIFY_CHANNEL_NEW
+                            } else {
+                                Routes.notifyChannelEdit(channelId)
+                            },
+                        ) { launchSingleTop = true }
+                    },
                 )
             }
 
@@ -487,6 +532,18 @@ private fun DetailNavHost(
             } else {
                 RecordingContent()
             }
+        }
+        composable(Routes.NOTIFY_CHANNEL_NEW) {
+            NotificationChannelRoute(navController = navController, channelId = null)
+        }
+        composable(
+            route = Routes.NOTIFY_CHANNEL_EDIT,
+            arguments = listOf(navArgument(Routes.ARG_CHANNEL_ID) { type = NavType.StringType }),
+        ) { entry ->
+            NotificationChannelRoute(
+                navController = navController,
+                channelId = entry.arguments?.getString(Routes.ARG_CHANNEL_ID).orEmpty(),
+            )
         }
         composable(
             route = Routes.EDITOR,
@@ -571,5 +628,33 @@ private fun DetailNavHost(
                 },
             )
         }
+    }
+}
+
+/** 渠道编辑页复用 Activity 作用域的 SettingsViewModel，避免每个路由各建一份。 */
+@Composable
+private fun NotificationChannelRoute(
+    navController: NavHostController,
+    channelId: String?,
+) {
+    val context = LocalContext.current
+    val settingsOwner = remember(context) {
+        context.findActivity() as? ViewModelStoreOwner
+    }
+
+    @Composable
+    fun Content() {
+        NotificationChannelPage(
+            channelId = channelId,
+            onBack = { navController.popBackStack() },
+        )
+    }
+
+    if (settingsOwner != null) {
+        CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
+            Content()
+        }
+    } else {
+        Content()
     }
 }

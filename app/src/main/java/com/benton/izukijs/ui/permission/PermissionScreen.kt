@@ -48,8 +48,11 @@ import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.IzukiAccessibilityService
 import com.benton.izukijs.service.ScreenCaptureService
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.IzukiPageScaffold
+import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageColumn
+import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 
@@ -61,6 +64,16 @@ private enum class PermissionGroup(@StringRes val labelRes: Int) {
     READ(R.string.perm_group_read),
     OPERATE(R.string.perm_group_operate),
     OTHER(R.string.perm_group_other),
+}
+
+private enum class RevokeTarget(
+    @StringRes val labelRes: Int,
+    @StringRes val messageRes: Int,
+) {
+    HID(R.string.control_hid, R.string.perm_revoke_hid_message),
+    ACCESSIBILITY(R.string.control_accessibility, R.string.perm_revoke_accessibility_message),
+    SHIZUKU(R.string.control_shizuku, R.string.perm_revoke_shizuku_message),
+    ROOT(R.string.control_root, R.string.perm_revoke_root_message),
 }
 
 /**
@@ -79,6 +92,8 @@ fun PermissionScreen(
     val readyModes by container.controllerManager.effectiveReadyModes.collectAsStateWithLifecycle()
     val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val snackbar = LocalSnackbarController.current
+    val haptics = rememberAppHaptics()
 
     val shizukuManager = container.shizukuManager
     val rootManager = container.rootManager
@@ -148,6 +163,7 @@ fun PermissionScreen(
     val pagerState = rememberPagerState(pageCount = { PermissionGroup.entries.size })
     val scope = rememberCoroutineScope()
     var infoSheet by remember { mutableStateOf<PermissionInfo?>(null) }
+    var pendingRevoke by remember { mutableStateOf<RevokeTarget?>(null) }
 
     // 任一读取 / 操作后端就绪即视为该维度已授权。
     val readReady = screenCaptureActive || accessibilityReady || shizukuReady || adbReady || rootReady
@@ -185,16 +201,16 @@ fun PermissionScreen(
             ScreenCaptureService.stop(context)
         },
         openHid = onOpenHid,
-        revokeHid = { container.hidManager.revoke() },
+        revokeHid = { pendingRevoke = RevokeTarget.HID },
         openAccessibilitySettings = {
             openSystemSettings(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         },
-        disableAccessibility = { IzukiAccessibilityService.instance?.disable() },
+        disableAccessibility = { pendingRevoke = RevokeTarget.ACCESSIBILITY },
         requestShizuku = { shizukuManager.requestPermission(SHIZUKU_REQUEST_CODE) },
-        revokeShizuku = { shizukuManager.revoke() },
+        revokeShizuku = { pendingRevoke = RevokeTarget.SHIZUKU },
         openAdb = onOpenAdb,
         refreshRoot = { rootManager.refresh() },
-        revokeRoot = { rootManager.revoke() },
+        revokeRoot = { pendingRevoke = RevokeTarget.ROOT },
         openUsageAccessSettings = {
             openSystemSettings(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         },
@@ -300,5 +316,29 @@ fun PermissionScreen(
 
     infoSheet?.let { info ->
         PermissionInfoSheet(info = info, onDismiss = { infoSheet = null })
+    }
+
+    pendingRevoke?.let { target ->
+        val label = stringResource(target.labelRes)
+        ConfirmDialog(
+            title = stringResource(R.string.perm_revoke_confirm_title, label),
+            message = stringResource(target.messageRes),
+            confirmLabel = stringResource(R.string.perm_action_revoke),
+            destructive = true,
+            onConfirm = {
+                pendingRevoke = null
+                haptics.reject()
+                when (target) {
+                    RevokeTarget.HID -> container.hidManager.revoke()
+                    RevokeTarget.ACCESSIBILITY -> IzukiAccessibilityService.instance?.disable()
+                    RevokeTarget.SHIZUKU -> shizukuManager.revoke()
+                    RevokeTarget.ROOT -> rootManager.revoke()
+                }
+                scope.launch {
+                    snackbar.show(context.getString(R.string.perm_revoke_done, label))
+                }
+            },
+            onDismiss = { pendingRevoke = null },
+        )
     }
 }

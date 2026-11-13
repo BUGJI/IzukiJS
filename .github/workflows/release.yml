@@ -99,6 +99,12 @@ jobs:
                    izukijs-armeabi-v7a-release.apk izukijs-x86_64-release.apk; do
             test -f "$ASSETS/$f" || { echo "::error::缺少 $f"; exit 1; }
           done
+          # 兼容 1.2.0 及更早的客户端：它们的更新检查仍按 app-<abi>-release.apk
+          # 匹配资源，只认新名字会让老用户永远收不到自动更新。等老版本基本退场后
+          # 可删除这段别名副本。
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            cp "$ASSETS/izukijs-$abi-release.apk" "$ASSETS/app-$abi-release.apk"
+          done
           ls -lh "$ASSETS"
 
       # 上传前断言证书指纹，防止再次发布出签名不一致的包。

@@ -86,6 +86,32 @@ class VirtualScreenApi(
     fun awaitFrameRaw(timeoutMs: Int): Boolean =
         manager.awaitFrame(timeoutMs.toLong().coerceAtLeast(0L))
 
+    @JavascriptInterface
+    fun frameSeqRaw(): Double = manager.frameSeq().toDouble()
+
+    /** 等待比 [afterFrameSeq] 更新的帧；[afterFrameSeq] < 0 时以当前帧为基准。 */
+    @JavascriptInterface
+    fun awaitChangeRaw(afterFrameSeq: Double, timeoutMs: Int): Boolean {
+        val baseline = if (afterFrameSeq >= 0.0) afterFrameSeq.toLong() else manager.frameSeq()
+        return manager.awaitFrameAfter(baseline, timeoutMs.toLong().coerceAtLeast(0L))
+    }
+
+    @JavascriptInterface
+    fun awaitStableRaw(optionsJson: String): String {
+        val options = runCatching {
+            if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
+        }.getOrDefault(JSONObject())
+        val stableMs = options.optLong("stableMs", options.optLong("stable_ms", DEFAULT_STABLE_MS))
+        val timeoutMs = options.optLong("timeoutMs", options.optLong("timeout_ms", DEFAULT_STABLE_TIMEOUT_MS))
+        val intervalMs = options.optLong("intervalMs", options.optLong("interval_ms", DEFAULT_STABLE_INTERVAL_MS))
+        val result = manager.awaitStable(stableMs, timeoutMs, intervalMs)
+        return JSONObject().apply {
+            put("ok", result.ok)
+            put("frameSeq", result.frameSeq)
+            put("elapsedMs", result.elapsedMs)
+        }.toString()
+    }
+
     /** 直接捕获当前目标屏并保存；[source] 缺省为 virtual。 */
     @JavascriptInterface
     fun captureRaw(path: String, source: String): String? {
@@ -141,5 +167,9 @@ class VirtualScreenApi(
 
     private companion object {
         val CAPTURE_WAIT_MS: Long get() = DeveloperTuning.current.captureWaitMs.toLong()
+
+        const val DEFAULT_STABLE_MS = 300L
+        const val DEFAULT_STABLE_TIMEOUT_MS = 3_000L
+        const val DEFAULT_STABLE_INTERVAL_MS = 80L
     }
 }

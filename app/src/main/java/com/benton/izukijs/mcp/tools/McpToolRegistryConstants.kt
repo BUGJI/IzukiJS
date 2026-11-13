@@ -9,6 +9,8 @@ internal const val DEFAULT_INPUT_FRAME_WAIT_MS = 600
 internal const val MAX_INPUT_FRAME_WAIT_MS = 3_000
 internal const val DEFAULT_CAPTURE_FRAME_WAIT_MS = 1_000
 internal const val MAX_CAPTURE_FRAME_WAIT_MS = 3_000
+internal const val DEFAULT_CAPTURE_STABLE_MS = 300
+internal const val MAX_CAPTURE_STABLE_MS = 5_000
 
 /** MCP 工具在单线程执行器上运行，所有阻塞桥都必须有硬超时。 */
 internal const val UNLOCK_TIMEOUT_MS = 60_000L

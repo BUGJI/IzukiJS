@@ -40,7 +40,7 @@ object ScriptApiCatalog {
             kind = Kind.GLOBAL,
             suggestions = listOf(
                 "click(", "longClick(", "swipe(", "gesture(", "press(",
-                "input(", "inputWithMethod(", "back(", "home(", "recents(",
+                "input(", "inputWithMethod(", "inputInfo(", "back(", "home(", "recents(",
             ),
         ),
     )
@@ -50,7 +50,7 @@ object ScriptApiCatalog {
             name = "device",
             kind = Kind.NAMESPACE,
             suggestions = listOf(
-                "width(", "height(", "screenWidth(", "screenHeight(",
+                "width(", "height(", "screenWidth(", "screenHeight(", "rotation(",
                 "model(", "brand(", "androidVersion(", "batteryLevel(",
             ),
         ),
@@ -117,7 +117,8 @@ object ScriptApiCatalog {
             kind = Kind.NAMESPACE,
             need = "ocr",
             suggestions = listOf(
-                "recognize(", "recognizePath(", "recognizeBlocksJson(", "recognizeBlocks(", "find(",
+                "recognize(", "recognizePath(", "recognizeBlocksJson(", "recognizeBlocks(",
+                "lines(", "dedupeLines(", "find(",
             ),
         ),
         Entry(
@@ -197,6 +198,7 @@ object ScriptApiCatalog {
             suggestions = listOf(
                 "available(", "active(", "mode(", "allowed(", "start(", "stop(",
                 "launch(", "displayId(", "size(", "info(", "target(", "awaitFrame(", "capture(",
+                "frameSeq(", "awaitChange(", "awaitStable(",
             ),
         ),
     )

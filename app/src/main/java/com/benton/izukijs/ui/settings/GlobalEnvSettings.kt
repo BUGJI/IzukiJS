@@ -36,7 +36,10 @@ import kotlinx.coroutines.launch
  * 全局环境变量编辑。所有脚本默认共享；脚本内同名变量优先。
  */
 @Composable
-fun GlobalEnvSettings(onBack: () -> Unit = {}) {
+fun GlobalEnvSettings(
+    onBack: () -> Unit = {},
+    onBackRequest: ((() -> Unit) -> Unit)? = null,
+) {
     val container = rememberAppContainer()
     val snackbar = LocalSnackbarController.current
     val resources = LocalResources.current
@@ -59,7 +62,14 @@ fun GlobalEnvSettings(onBack: () -> Unit = {}) {
         scope.launch { snackbar.show(resources.getString(R.string.settings_env_saved)) }
     }
 
-    BackHandler(enabled = dirty) { showDiscard = true }
+    // 顶栏返回由外层 Scaffold 提供，必须和系统返回共用同一套 dirty 拦截。
+    val requestBack = remember(dirty, onBack) {
+        {
+            if (dirty) showDiscard = true else onBack()
+        }
+    }
+    LaunchedEffect(requestBack) { onBackRequest?.invoke(requestBack) }
+    BackHandler(enabled = dirty) { requestBack() }
 
     SectionCard(stringResource(R.string.settings_env)) {
         Text(

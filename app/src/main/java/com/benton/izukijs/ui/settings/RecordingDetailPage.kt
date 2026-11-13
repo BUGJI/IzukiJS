@@ -30,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,8 +86,8 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
     var loadFailed by remember(id) { mutableStateOf(false) }
     var reloadToken by remember(id) { mutableIntStateOf(0) }
     var visibleCount by remember(id) { mutableIntStateOf(MAX_ROWS) }
-    var renameOpen by remember(id) { mutableStateOf(false) }
-    var nameDraft by remember(id) { mutableStateOf("") }
+    var renameOpen by rememberSaveable(id) { mutableStateOf(false) }
+    var nameDraft by rememberSaveable(id) { mutableStateOf("") }
     var validation by remember(id) { mutableStateOf<RecordingValidation?>(null) }
     var validating by remember(id) { mutableStateOf(false) }
     var creatingScript by remember(id) { mutableStateOf(false) }
@@ -106,7 +107,7 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
         try {
             val loaded = viewModel.loadRecording(id)
             reader = loaded
-            nameDraft = loaded?.meta?.name.orEmpty()
+            if (!renameOpen) nameDraft = loaded?.meta?.name.orEmpty()
         } catch (t: kotlinx.coroutines.CancellationException) {
             throw t
         } catch (t: Throwable) {

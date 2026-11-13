@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -27,6 +28,7 @@ import androidx.core.app.NotificationCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogEntry
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.runtime.RunControl
@@ -132,6 +134,13 @@ class FloatingWindowService : android.app.Service() {
         return START_NOT_STICKY
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 旋转后屏幕可用范围变化，重新约束悬浮条位置，避免拖到屏幕外后找不回来。
+        val view = rootView
+        if (view != null) view.post { clampToScreen() } else clampToScreen()
+    }
+
     override fun onDestroy() {
         isActive = false
         OverlayCoordinator.unregister(overlayListener)
@@ -140,6 +149,18 @@ class FloatingWindowService : android.app.Service() {
         rootView?.let { runCatching { windowManager.removeView(it) } }
         rootView = null
         super.onDestroy()
+    }
+
+    private fun clampToScreen() {
+        val view = rootView ?: return
+        if (!::params.isInitialized) return
+        val metrics = resources.displayMetrics
+        val width = view.width
+        val height = view.height
+        if (width <= 0 || height <= 0) return
+        params.x = params.x.coerceIn(0, (metrics.widthPixels - width).coerceAtLeast(0))
+        params.y = params.y.coerceIn(0, (metrics.heightPixels - height).coerceAtLeast(0))
+        runCatching { windowManager.updateViewLayout(view, params) }
     }
 
     private fun showPanel() {
@@ -257,8 +278,13 @@ class FloatingWindowService : android.app.Service() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (event.rawX - touchX).toInt()
-                    params.y = startY + (event.rawY - touchY).toInt()
+                    val metrics = resources.displayMetrics
+                    val width = container.width.takeIf { it > 0 } ?: 0
+                    val height = container.height.takeIf { it > 0 } ?: 0
+                    params.x = (startX + (event.rawX - touchX).toInt())
+                        .coerceIn(0, (metrics.widthPixels - width).coerceAtLeast(0))
+                    params.y = (startY + (event.rawY - touchY).toInt())
+                        .coerceIn(0, (metrics.heightPixels - height).coerceAtLeast(0))
                     runCatching { windowManager.updateViewLayout(container, params) }
                     true
                 }
@@ -382,6 +408,13 @@ class FloatingWindowService : android.app.Service() {
             .setSmallIcon(R.drawable.ic_stat_script)
             .setContentTitle(getString(R.string.notif_floating_title))
             .setContentText(getString(R.string.notif_floating_text))
+            .setContentIntent(
+                NotificationIntents.contentIntent(
+                    context = this,
+                    route = com.benton.izukijs.ui.navigation.Routes.SETUP,
+                    requestCode = 15,
+                ),
+            )
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()

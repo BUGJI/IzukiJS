@@ -88,6 +88,12 @@ enum class NotifyChannelType(val key: String) {
     BARK("bark"),
     TELEGRAM("telegram"),
     NTFY("ntfy"),
+    DINGTALK_GROUP("dingtalk_group"),
+    WEWORK_ROBOT("wework_robot"),
+    FEISHU_ROBOT("feishu_robot"),
+    SERVERCHAN("serverchan"),
+    PUSHPLUS("pushplus"),
+    GOTIFY("gotify"),
     ;
 
     companion object {
@@ -124,6 +130,8 @@ data class NotifyChannel(
     val topic: String = "",
     val token: String = "",
     val priority: String = "",
+    /** 类型专属字段；新渠道统一走这里，敏感键由 [NotificationSettingsRepository] 加密。 */
+    val config: Map<String, String> = emptyMap(),
     val timeoutMs: Int = DEFAULT_TIMEOUT_MS,
     val retries: Int = 1,
 ) {
@@ -144,6 +152,7 @@ data class NotifyChannel(
         fun newChannel(type: NotifyChannelType): NotifyChannel = NotifyChannel(
             id = UUID.randomUUID().toString().take(8),
             type = type,
+            config = NotifyChannelSpecs.defaults(type),
         )
     }
 }
@@ -251,6 +260,16 @@ object NotificationSettingsCodec {
         putIfNotEmpty("topic", channel.topic)
         putIfNotEmpty("token", channel.token)
         putIfNotEmpty("priority", channel.priority)
+        if (channel.config.isNotEmpty()) {
+            put(
+                "config",
+                JSONObject().apply {
+                    channel.config.forEach { (key, value) ->
+                        if (value.isNotEmpty()) put(key, value)
+                    }
+                },
+            )
+        }
         put("timeoutMs", channel.timeoutMs)
         put("retries", channel.retries)
     }
@@ -296,6 +315,13 @@ object NotificationSettingsCodec {
             topic = json.optString("topic"),
             token = json.optString("token"),
             priority = json.optString("priority"),
+            config = json.optJSONObject("config")?.let { obj ->
+                buildMap {
+                    obj.keys().forEach { key ->
+                        obj.optString(key).takeIf { it.isNotEmpty() }?.let { put(key, it) }
+                    }
+                }
+            }.orEmpty(),
             timeoutMs = json.optInt("timeoutMs", NotifyChannel.DEFAULT_TIMEOUT_MS)
                 .coerceIn(1_000, 60_000),
             retries = json.optInt("retries", 1).coerceIn(0, 5),
@@ -363,6 +389,11 @@ object NotifyTemplate {
         "time" to formatTime(event.timestamp),
         "error" to event.errorTail.orEmpty(),
         "runId" to event.runId.orEmpty(),
+        // 兼容 SmsForwarder 的模板占位符。
+        "MSG_TITLE" to event.title,
+        "MSG_TIME" to formatTime(event.timestamp),
+        "MSG_FROM" to (event.scriptName ?: event.source.key),
+        "MSG_CONTENT" to event.text,
     )
 
     fun formatDuration(durationMs: Long): String {

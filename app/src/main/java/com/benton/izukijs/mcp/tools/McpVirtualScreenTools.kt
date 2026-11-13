@@ -40,6 +40,8 @@ internal fun McpToolRegistry.virtualScreenTool(
             ),
             "after_frame" to McpSchemas.integer("wait_next_frame 的基准 frameSeq，通常传上一条输入响应里的 frameSeq"),
             "frame_timeout_ms" to McpSchemas.integer("wait_next_frame 的超时（毫秒），默认 1000"),
+            "wait_stable" to McpSchemas.boolean("截图前等待画面稳定（连续两帧一致），用于避开过渡帧"),
+            "stable_ms" to McpSchemas.integer("wait_stable 的稳定持续时长（毫秒），默认 300"),
         ),
         required = listOf("action"),
     ),
@@ -90,12 +92,34 @@ internal fun McpToolRegistry.virtualScreenTool(
                     .toLong()
                 manager.awaitFrameAfter(baseline, timeout)
             }
+            val stable = if (args.optBoolean("wait_stable", false)) {
+                manager.awaitStable(
+                    stableMs = args.optInt("stable_ms", DEFAULT_CAPTURE_STABLE_MS)
+                        .coerceIn(0, MAX_CAPTURE_STABLE_MS)
+                        .toLong(),
+                    timeoutMs = args.optInt("frame_timeout_ms", DEFAULT_CAPTURE_FRAME_WAIT_MS)
+                        .coerceIn(0, MAX_CAPTURE_FRAME_WAIT_MS)
+                        .toLong(),
+                )
+            } else {
+                null
+            }
             val source = bundle.captureProvider(ScreenTarget.VIRTUAL, CAPTURE_WAIT_MS)
                 ?: return@McpTool McpToolResult.error(
                     "虚拟屏已启动，但尚未收到画面帧；请先用 action=launch 启动一个应用，" +
                         "或等待首帧绘制后重试",
                 )
-            encodeCapture(source, args)
+            encodeCapture(
+                source,
+                args,
+                JSONObject().apply {
+                    put("frameSeq", manager.frameSeq())
+                    stable?.let {
+                        put("stable", it.ok)
+                        put("stableElapsedMs", it.elapsedMs)
+                    }
+                },
+            )
         }
 
         "launch" -> {

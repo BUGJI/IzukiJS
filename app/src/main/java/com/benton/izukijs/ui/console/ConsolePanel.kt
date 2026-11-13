@@ -33,6 +33,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.minimumInteractiveComponentSize
+
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -42,6 +44,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,10 +88,15 @@ fun ConsolePanel(
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
     val listState = rememberLazyListState()
-    var enabledLevels by remember { mutableStateOf(LogLevel.entries.toSet()) }
-    var query by remember { mutableStateOf("") }
-    var wrapLines by remember { mutableStateOf(true) }
-    var follow by remember { mutableStateOf(true) }
+    var enabledLevelNames by rememberSaveable {
+        mutableStateOf(LogLevel.entries.map { it.name })
+    }
+    val enabledLevels = remember(enabledLevelNames) {
+        enabledLevelNames.mapNotNull { name -> LogLevel.entries.firstOrNull { it.name == name } }.toSet()
+    }
+    var query by rememberSaveable { mutableStateOf("") }
+    var wrapLines by rememberSaveable { mutableStateOf(true) }
+    var follow by rememberSaveable { mutableStateOf(true) }
     var confirmClear by remember { mutableStateOf(false) }
     var levelMenuOpen by remember { mutableStateOf(false) }
 
@@ -203,10 +212,10 @@ fun ConsolePanel(
                                     }
                                 },
                                 onClick = {
-                                    enabledLevels = if (level in enabledLevels) {
-                                        enabledLevels - level
+                                    enabledLevelNames = if (level in enabledLevels) {
+                                        enabledLevelNames - level.name
                                     } else {
-                                        enabledLevels + level
+                                        enabledLevelNames + level.name
                                     }
                                 },
                             )
@@ -246,7 +255,7 @@ fun ConsolePanel(
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = {
                     query = ""
-                    enabledLevels = LogLevel.entries.toSet()
+                    enabledLevelNames = LogLevel.entries.map { it.name }
                 }) { Text(stringResource(R.string.console_reset_filter)) }
             }
             else -> Box(modifier = Modifier.fillMaxSize()) {
@@ -268,6 +277,7 @@ fun ConsolePanel(
                             overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Ellipsis,
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .minimumInteractiveComponentSize()
                                 .clickable(onClickLabel = stringResource(R.string.common_copy)) { copyLine(entry) },
                         )
                     }

@@ -115,6 +115,8 @@
     <string name="run_recent">Run latest script</string>
     <string name="run_no_scripts">No scripts yet, create one in Scripts</string>
     <string name="run_permissions_title">Permissions &amp; capabilities</string>
+    <string name="run_error_already_running">Could not start: another script is already running</string>
+    <string name="run_error_read_failed">Failed to read the script</string>
     <string name="run_capture_label">Screen recording</string>
     <string name="run_quick_title">Quick launch</string>
     <string name="run_quick_empty">Scripts you have run will appear here; tap to run again.</string>
@@ -142,6 +144,10 @@
     <string name="scripts_default_name">New script</string>
     <string name="scripts_search">Search names or tags</string>
     <string name="scripts_empty">No scripts yet. Tap + in the corner to create one.</string>
+    <string name="scripts_load_failed">Failed to load scripts. Try again.</string>
+    <string name="common_retry">Retry</string>
+    <string name="common_loading">Loading…</string>
+    <string name="common_range_hint">Enter %1$d–%2$d</string>
     <string name="scripts_no_match">No scripts match \"%1$s\"</string>
     <string name="scripts_name">Name</string>
     <string name="scripts_create">Create</string>
@@ -269,6 +275,12 @@
     <string name="perm_root_con_1">Device must be rooted, high barrier</string>
     <string name="perm_action_detect_root">Detect Root</string>
     <string name="perm_action_revoke">Revoke</string>
+    <string name="perm_revoke_confirm_title">Revoke %1$s?</string>
+    <string name="perm_revoke_hid_message">This disconnects and forgets the paired HID device. You will need to scan and pair again.</string>
+    <string name="perm_revoke_accessibility_message">This turns off the Izuki accessibility service. Layout reading, screenshots and gestures stop immediately.</string>
+    <string name="perm_revoke_shizuku_message">This revokes Shizuku authorization. Input, screenshots and Shell access stop immediately.</string>
+    <string name="perm_revoke_root_message">This revokes Root authorization. Related capabilities stop immediately.</string>
+    <string name="perm_revoke_done">Revoked %1$s</string>
     <string name="perm_floating_control">Show floating control bar</string>
     <string name="perm_floating_debug">Show layout / OCR debug panel</string>
     <string name="perm_floating_debug_desc">Automatically hides while capturing layout / OCR so it is not captured on screen.</string>
@@ -317,6 +329,9 @@
     <string name="unlock_pattern_missing">Nothing recorded</string>
     <string name="unlock_pattern_record">Start recording</string>
     <string name="unlock_pattern_clear">Clear recording</string>
+    <string name="unlock_pattern_clear_title">Clear unlock recording?</string>
+    <string name="unlock_pattern_clear_message">Auto-unlock will stop working until you record the unlock action again. This cannot be undone.</string>
+    <string name="unlock_pattern_cleared">Unlock recording cleared</string>
     <string name="unlock_record_confirm_title">Start recording unlock actions</string>
     <string name="unlock_record_confirm_text">The screen will be locked and woken automatically. Complete the unlock on the lock screen; recording stops automatically when the device is unlocked. The full unlock action is supported.</string>
     <string name="unlock_record_start">Start recording</string>
@@ -386,11 +401,17 @@
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
+    <string name="settings_search_placeholder">Search settings</string>
+    <string name="settings_search_empty">No matching settings</string>
+    <string name="settings_search_open">Open settings page</string>
     <string name="settings_control">Control backends</string>
     <string name="settings_vision">Recognition &amp; capture</string>
     <string name="settings_run">Script runtime</string>
     <string name="settings_notify">Notifications</string>
-    <string name="settings_notify_summary">%1$d channels · notifications %2$s</string>
+    <plurals name="settings_notify_summary">
+        <item quantity="one">%1$d channel · notifications %2$s</item>
+        <item quantity="other">%1$d channels · notifications %2$s</item>
+    </plurals>
     <string name="settings_display">Floating window &amp; virtual display</string>
     <string name="settings_unlock">Secure unlock</string>
     <string name="settings_editor">Editor</string>
@@ -420,7 +441,10 @@
     <string name="settings_unlock_credential_missing">No credential</string>
     <string name="settings_ai_configured">Configured</string>
     <string name="settings_ai_not_configured">Not configured</string>
-    <string name="settings_storage_summary">%1$d MB · keep %2$d days</string>
+    <plurals name="settings_storage_summary">
+        <item quantity="one">%1$d MB · keep %2$d day</item>
+        <item quantity="other">%1$d MB · keep %2$d days</item>
+    </plurals>
     <string name="settings_backup_summary">Export / Import / Reset</string>
     <string name="settings_local">Local</string>
     <string name="settings_online">Online</string>
@@ -571,6 +595,11 @@
     <string name="virtual_screen_status_short_starting">starting</string>
     <string name="virtual_screen_status_short_active">running</string>
     <string name="virtual_screen_status_short_failed">failed</string>
+    <string name="virtual_screen_error_no_backend">Shizuku authorization is required, and the system must be Android 10+</string>
+    <string name="virtual_screen_error_background_disabled">Background virtual display is not allowed in settings</string>
+    <string name="virtual_screen_error_frame_source">Failed to create the virtual display frame source: %1$s</string>
+    <string name="virtual_screen_error_create">Failed to create the virtual display: %1$s</string>
+    <string name="virtual_screen_error_create_generic">Failed to create the virtual display. Check Shizuku permission or ROM restrictions.</string>
     <string name="virtual_screen_run_hint">Background virtual display is running · press Home on the Run page for the PiP preview</string>
     <string name="virtual_screen_page_title">Virtual screen</string>
     <string name="virtual_screen_start">Start virtual screen</string>
@@ -624,7 +653,10 @@
     <string name="storage_export_log">Export</string>
     <string name="storage_log_cleared">Logs cleared</string>
     <string name="storage_export_log_chooser">Export log</string>
-    <string name="storage_days">%1$d days</string>
+    <plurals name="storage_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
     <string name="storage_cache_images_title">Cached images</string>
     <string name="storage_cache_images_desc">Temporary screenshots and templates. Clear them while no script is using them.</string>
     <string name="storage_cache_images_usage">%1$d files, %2$s</string>
@@ -647,6 +679,12 @@
     <string name="update_downloading">Downloading… %1$d%%</string>
     <string name="update_downloading_unknown">Downloading…</string>
     <string name="update_download_failed">Download failed: %1$s</string>
+    <string name="update_download_failed_short">Update download failed</string>
+    <string name="update_error_apk_missing">The installer file is missing. Download again.</string>
+    <string name="update_error_install_launch">Could not launch the installer</string>
+    <string name="update_retry">Retry</string>
+    <string name="update_downloading_title">Downloading update</string>
+    <string name="update_background">Download in background</string>
     <string name="update_dialog_title">New version v%1$s available</string>
     <string name="update_dialog_no_changelog">No release notes.</string>
     <string name="update_download">Download &amp; install</string>
@@ -780,9 +818,9 @@
     <string name="backup_import_failed">Import failed: %1$s</string>
     <string name="backup_export_failed">Export failed</string>
     <string name="backup_reset_title">Reset</string>
-    <string name="backup_reset_desc">Restore all settings to defaults; scripts are unaffected.</string>
+    <string name="backup_reset_desc">Restore all settings to defaults; scripts are unaffected. This also clears the unlock PIN / pattern, access token and push keys.</string>
     <string name="backup_reset_button">Reset to defaults</string>
-    <string name="backup_reset_confirm">Reset all settings to defaults? This cannot be undone.</string>
+    <string name="backup_reset_confirm">Reset all settings to defaults? The unlock PIN / pattern, MCP access token and push keys will also be cleared, and auto-unlock will stop working. This cannot be undone.</string>
     <string name="backup_reset_done">Settings reset</string>
     <string name="backup_reset_failed">Reset failed</string>
 
@@ -820,9 +858,11 @@
     <!-- Editor -->
     <string name="editor_title">Script editor</string>
     <string name="editor_loading">Loading…</string>
+    <string name="editor_load_failed">Failed to read the script. Try again.</string>
     <string name="editor_not_found">Script not found: %1$s</string>
     <string name="editor_save_failed">Save failed</string>
     <string name="editor_unsaved">Unsaved</string>
+    <string name="editor_saving">Saving…</string>
     <string name="editor_console">Console</string>
     <string name="editor_console_count">%1$d</string>
     <string name="editor_expand_console">Expand console</string>
@@ -835,6 +875,8 @@
     <string name="editor_replace">Replace with</string>
     <string name="editor_replace_one">Replace</string>
     <string name="editor_replace_all">Replace all</string>
+    <string name="editor_replace_all_confirm_title">Replace all matches?</string>
+    <string name="editor_replace_all_confirm_message">All matches in this script will be changed at once. You can undo the change.</string>
     <string name="editor_match_of">%1$d/%2$d</string>
     <string name="editor_match_none">No matches</string>
     <string name="editor_prev_match">Previous</string>
@@ -852,6 +894,8 @@
     <string name="editor_history_empty">No versions yet. Older content is archived automatically after you save changes.</string>
     <string name="editor_history_blank">(empty)</string>
     <string name="editor_history_restore">Restore</string>
+    <string name="editor_restore_confirm_title">Restore this version?</string>
+    <string name="editor_restore_confirm_message">The current content is saved to history first. The editor will switch to this version; you can undo it.</string>
     <string name="editor_history_restored">Version restored</string>
     <string name="editor_history_restore_failed">Failed to read version</string>
     <string name="editor_conflict_title">Script changed elsewhere</string>
@@ -877,6 +921,10 @@
     <string name="hid_hit">Hit</string>
     <string name="hid_scan_devices">Scan devices</string>
     <string name="hid_disconnect">Disconnect</string>
+    <string name="hid_forget">Forget device</string>
+    <string name="hid_forget_title">Forget the paired HID device?</string>
+    <string name="hid_forget_message">This clears the remembered device address and disconnects. You will need to scan and pair again.</string>
+    <string name="hid_forgotten">HID device forgotten</string>
     <string name="hid_verify">Verify HID</string>
     <string name="hid_empty">No devices found. Make sure the dongle is powered and advertising, then tap Scan in the top-right corner.</string>
     <string name="hid_device_meta">%1$s · RSSI %2$d</string>
@@ -897,9 +945,13 @@
     <string name="schedule_edit_title">Edit scheduled task</string>
     <string name="schedule_empty">No scheduled tasks yet. Tap + in the corner to run a script daily at a fixed time or on a repeating interval.</string>
     <string name="schedule_select_script">Select script</string>
+    <string name="schedule_no_scripts">No scripts available. Create one on the Scripts tab first.</string>
     <string name="schedule_hour">Hour</string>
+    <string name="schedule_hour_invalid">Enter 0–23</string>
     <string name="schedule_minute">Minute</string>
-    <string name="schedule_interval">Repeat interval (minutes, 0 = once)</string>
+    <string name="schedule_minute_invalid">Enter 0–59</string>
+    <string name="schedule_interval">Repeat interval (minutes)</string>
+    <string name="schedule_interval_hint">At least 1 minute</string>
     <string name="schedule_next_interval">Next %1$s · every %2$d min</string>
     <string name="schedule_next_once">Once · %1$s</string>
     <string name="schedule_next_cron">Cron %1$s · next %2$s</string>
@@ -960,6 +1012,8 @@
     <string name="flow_remove_step">Remove step</string>
     <string name="flow_save">Save</string>
     <string name="flow_started">Flow started: %1$s</string>
+    <string name="flow_run_busy">A script or flow is already running; not started: %1$s</string>
+    <string name="flow_run_empty">The flow has no executable steps: %1$s</string>
 
     <!-- Console -->
     <string name="console_empty">No output</string>
@@ -996,6 +1050,13 @@
     <!-- Notification system -->
     <string name="notif_event_channel">Notifications</string>
     <string name="notif_event_channel_desc">Script messages and run results</string>
+    <string name="notif_channel_low">Notifications · Info</string>
+    <string name="notif_channel_low_desc">Normal updates and success messages, shown silently</string>
+    <string name="notif_channel_default">Notifications · Standard</string>
+    <string name="notif_channel_default_desc">Warnings and run results worth noticing</string>
+    <string name="notif_channel_high">Notifications · Important</string>
+    <string name="notif_channel_high_desc">Failures and errors, with sound and heads-up display</string>
+    <string name="notif_test_text">Notification channel test</string>
     <string name="notif_run_success_title">✔ %1$s finished</string>
     <string name="notif_run_failed_title">✘ %1$s failed</string>
     <string name="notif_run_timeout_title">⏱ %1$s timed out</string>
@@ -1059,6 +1120,41 @@
     <string name="notif_type_bark">Bark</string>
     <string name="notif_type_telegram">Telegram</string>
     <string name="notif_type_ntfy">ntfy</string>
+    <string name="notif_type_dingtalk_group">DingTalk group robot</string>
+    <string name="notif_type_wework_robot">WeCom group robot</string>
+    <string name="notif_type_feishu_robot">Feishu group robot</string>
+    <string name="notif_type_serverchan">ServerChan</string>
+    <string name="notif_type_pushplus">PushPlus</string>
+    <string name="notif_type_gotify">Gotify</string>
+    <string name="notif_field_secret">Secret</string>
+    <string name="notif_field_msg_type">Message type</string>
+    <string name="notif_field_at_all">@all</string>
+    <string name="notif_field_at_mobiles">@mobiles (comma separated)</string>
+    <string name="notif_field_at_dingtalk_ids">@DingTalk IDs (comma separated)</string>
+    <string name="notif_field_at_user_ids">@user IDs (comma separated)</string>
+    <string name="notif_field_at_open_ids">@open IDs (comma separated)</string>
+    <string name="notif_field_title_template">Title template</string>
+    <string name="notif_field_webhook">Webhook URL</string>
+    <string name="notif_field_send_key">SendKey</string>
+    <string name="notif_field_channel">Channel</string>
+    <string name="notif_field_openid">OpenID</string>
+    <string name="notif_field_website">Service host</string>
+    <string name="notif_field_template">Template</string>
+    <string name="notif_field_callback_url">Callback URL</string>
+    <string name="notif_field_valid_time">Valid time (seconds)</string>
+    <string name="notif_field_title">Title</string>
+    <string name="notif_field_message_card">Message card JSON</string>
+    <string name="notif_field_badge">Badge</string>
+    <string name="notif_field_level">Notification level</string>
+    <string name="notif_field_url_action">Message URL</string>
+    <string name="notif_field_call">Continuous alert</string>
+    <string name="notif_field_auto_copy">Auto copy (blank auto-detects codes)</string>
+    <string name="notif_field_transformation">Encryption</string>
+    <string name="notif_field_encryption_key">Encryption key</string>
+    <string name="notif_field_iv">IV</string>
+    <string name="notif_field_response">Response keyword</string>
+    <string name="notif_option_on">On</string>
+    <string name="notif_option_off">Off</string>
     <string name="notif_field_url">Request URL</string>
     <string name="notif_field_method">Method</string>
     <string name="notif_field_headers">Headers (Name: Value per line)</string>
@@ -1078,6 +1174,12 @@
     <string name="notif_new_title">New channel</string>
     <string name="notif_edit_title">Edit channel</string>
     <string name="notif_local_hint">The local channel always posts to the system notification shade.</string>
+    <string name="notif_section_channel_basic">Basics</string>
+    <string name="notif_section_channel_config">Channel configuration</string>
+    <string name="notif_section_channel_delivery">Filtering and delivery</string>
+    <string name="notif_channel_enabled">Enable this channel</string>
+    <string name="notif_channel_enabled_desc">When off, this channel receives no notifications.</string>
+    <string name="notif_channel_missing">Channel not found; it may have been deleted.</string>
 
     <!-- Debug overlay -->
     <string name="debug_drag_me">Debug · drag me</string>
@@ -1138,20 +1240,30 @@
     <string name="mcp_allow_scripts_desc">Allow listing saved scripts and triggering run / stop.</string>
     <string name="mcp_allow_unlock">Allow unlock tool</string>
     <string name="mcp_allow_unlock_desc">Expose the unlock tool so external AI can trigger one automatic lock-screen unlock; enable and configure it under Settings → Security unlock first.</string>
+    <string name="mcp_error_no_token">No access token configured</string>
+    <string name="mcp_error_start_failed">Start failed: %1$s</string>
+    <string name="mcp_allow_unlock_confirm_title">Allow external AI to unlock?</string>
+    <string name="mcp_allow_unlock_confirm_message">Any client with the MCP token can request an unlock. Only enable this for clients you trust.</string>
     <string name="mcp_allow_recording">Allow recording control</string>
     <string name="mcp_allow_recording_desc">Allow MCP to start / stop / delete user-action recordings. Reading recordings and events is available by default.</string>
     <string name="mcp_auto_unlock">Auto-unlock before actions</string>
     <string name="mcp_auto_unlock_desc">Before main-screen read / control tools, try to unlock if the device is locked or the screen is off. Virtual-screen and script tools are unaffected.</string>
+    <string name="mcp_auto_unlock_needs_unlock">Enable “Allow unlock tool” and configure auto-unlock credentials under Settings → Security unlock first.</string>
     <string name="mcp_security_title">Security</string>
     <string name="mcp_security_desc">Constrain risky actions from external AI; normal commands and apps are unaffected.</string>
     <string name="mcp_allow_dangerous_shell">Allow dangerous Shell</string>
     <string name="mcp_allow_dangerous_shell_desc">Permit rm -rf /, mkfs, dd to block devices, pm uninstall, settings put, etc. Off by default.</string>
+    <string name="mcp_allow_dangerous_shell_confirm_title">Allow dangerous Shell commands?</string>
+    <string name="mcp_allow_dangerous_shell_confirm_message">External AI will be able to delete data, format partitions or uninstall apps. Only enable this if you fully trust the client.</string>
+    <string name="mcp_allow_dangerous_shell_needs_shell">Enable “Allow Shell” first; this option has no effect otherwise.</string>
+    <string name="common_enable">Enable</string>
     <string name="mcp_blocked_packages">Blocked packages</string>
     <string name="mcp_blocked_packages_desc">Refuse to launch these apps; trailing * acts as a prefix wildcard (e.g. com.bank.*). Comma or newline separated.</string>
     <string name="mcp_blocked_save">Save list</string>
     <string name="mcp_blocked_saved">Blocklist saved</string>
     <string name="mcp_copy_endpoint">Copy endpoint</string>
     <string name="mcp_copy_config">Copy config JSON</string>
+    <string name="mcp_copy_config_requires_running">Start the server and set an access token before copying the client config.</string>
     <string name="mcp_copied">Copied</string>
     <string name="mcp_notif_title">Izuki JS MCP server running</string>
     <string name="mcp_notif_channel">MCP server</string>
@@ -1167,6 +1279,7 @@
     <string name="adb_state_pairing">Pairing…</string>
     <string name="adb_state_connecting">Connecting…</string>
     <string name="adb_state_connected">Connected</string>
+    <string name="adb_action_working">Working…</string>
     <string name="adb_state_error">Connection failed</string>
     <string name="adb_open_dev_options">Open Developer options</string>
     <string name="adb_open_app_settings">Open app settings</string>
@@ -1206,6 +1319,8 @@
     <string name="adb_message_pairing">Pairing…</string>
     <string name="adb_message_pair_success">Paired and connected</string>
     <string name="adb_message_pair_failed">Pairing or connection failed. Check the code and port.</string>
+    <string name="adb_error_pair_failed">Pairing failed</string>
+    <string name="adb_error_connect_failed">Connection failed</string>
     <string name="adb_message_connected">Wireless debugging connected</string>
     <string name="adb_message_connect_failed">Connection failed. Make sure Wireless debugging is enabled.</string>
     <string name="adb_message_disconnected">Disconnected</string>

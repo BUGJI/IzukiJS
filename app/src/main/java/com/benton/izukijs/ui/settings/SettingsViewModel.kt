@@ -19,6 +19,7 @@ import com.benton.izukijs.i18n.AppLanguage
 import com.benton.izukijs.mcp.McpStatus
 import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.core.notification.NotificationSettings
+import com.benton.izukijs.core.notification.NotifyChannel
 import com.benton.izukijs.notification.NotifyReport
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
@@ -191,6 +192,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     suspend fun sendNotificationTest(channelId: String): NotifyReport = withContext(Dispatchers.IO) {
         container.notificationDispatcher.sendTest(channelId)
     }
+
+    suspend fun sendNotificationTest(channel: NotifyChannel): NotifyReport =
+        withContext(Dispatchers.IO) {
+            container.notificationDispatcher.sendTest(channel)
+        }
+
+    fun notificationChannel(id: String): NotifyChannel? =
+        container.notificationSettingsRepository.channel(id)
 
     fun saveLanguage(value: AppLanguage) = container.languageRepository.save(value)
 

@@ -57,7 +57,8 @@
 - **蓝牙 HID 注入**：通过外部 HID 硬件（如 ESP32 数位板狗，固件见
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)）以真实硬件事件控制设备，适用于需要硬件级输入的场景。
 - **通知系统**：脚本用 `push.send()` 主动发送，手动 / 定时 / 编排 / MCP 运行结果自动通知；
-  支持本地系统通知、Webhook、Bark、Telegram、ntfy 多渠道与分级过滤，默认仅失败提醒，编排默认只发汇总。
+  支持本地系统通知、Webhook、Bark、Telegram、ntfy，以及钉钉群/企业机器人、企微群机器人、
+  飞书群机器人、Server酱、PushPlus、Gotify 多渠道与分级过滤，默认仅失败提醒，编排默认只发汇总。
 - **系统能力扩展**：按需开启通知监听（`notify.*` 读取 / 等待新通知 / 清除）与脚本运行进度通知
   （`notify.progress`，Android 16+ 支持分段、节点、颜色与实时更新，低版本自动降级）、使用情况访问
   （`app.foreground()` 等前台与使用记录）、应用列表（`app.list()` 枚举已安装应用）、全部文件访问
@@ -92,20 +93,15 @@ Izuki JS 是一个面向个人设备自动化与无障碍场景的实验性运�
 
 ## 控制模式与能力
 
-| 能力 | 无障碍 | Shizuku | 无线调试 | Root | 蓝牙 HID |
-|---|---|---|---|---|---|
-| 手势 / 绝对坐标 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 键盘 / 文本 | 部分 | ✅ | ✅ | ✅ | ✅ |
-| 读控件树 | ✅ | △ dump | △ dump | △ dump | ❌ |
-| 截图 | ✅(API30+) | ✅ | ✅ | ✅ | ❌ |
-| Shell | ❌ | ✅ | ✅ | ✅ | ❌ |
+无障碍 / Shizuku / 无线调试 / Root / 蓝牙 HID 统一按**能力**协商，可混合使用：
+例如无障碍读控件树，HID / Shizuku / 无线调试注入输入。
 
-> 无线调试需要 Android 11+，并手动开启开发者选项与无线调试；重启后通常需重新开启。
-> Android 17+ 首次使用还需允许「本地网络」权限，否则系统会弹出「选择要连接的设备」并中断配对。
-> 它只提供 Shell 级能力，后台虚拟屏与 Shizuku 特权解锁仍依赖 Shizuku。
+完整能力矩阵、授权方式、风险、手势 / 按键限制与截图来源见
+[`docs/CONTROL_MODES.md`](docs/CONTROL_MODES.md)。
 
-> 「读控件树」中 Shizuku / 无线调试 / Root 的 `△ dump` 指通过 `uiautomator dump` 获取控件树（约 1~2 秒、
-> 偶发失败），用于 AI Agent 读屏兜底；**脚本的 `selector.*` 仍只支持无障碍**。
+> 脚本侧 `selector.*` 读控件树只有无障碍支持；Shizuku / 无线调试 / Root 的
+> `uiautomator dump` 仅用于 AI Agent / MCP 读屏兜底。无线调试需要 Android 11+，
+> 只提供 Shell 级能力，后台虚拟屏与 Shizuku 特权解锁仍依赖 Shizuku。
 
 除控制后端外，「权限与能力」页另有开关式的读取 / 操作辅助能力：通知监听（`notify.*`）、
 使用情况访问（`app.foreground()` 等）、应用列表（`app.list()`）、全部文件访问（`fs.*`），
@@ -162,7 +158,8 @@ cd IzukiJS
 （该文件已被 `.gitignore` 忽略，不会提交）。
 
 产物包含通用包与按 ABI 拆分包（本地文件名为 `app-universal-release.apk` 与
-`app-<abi>-release.apk`）；发布到 Release 时会统一重命名为 `izukijs-*`。
+`app-<abi>-release.apk`）；发布到 Release 时以 `izukijs-*` 为正式名称，并额外保留一份
+`app-<abi>-release.apk` 副本，供 1.2.0 及更早版本的客户端应用内更新使用。
 
 ### 首次使用
 
@@ -216,12 +213,27 @@ if (ai.available()) {
 
 ## 文档
 
+完整索引与「按任务查找」见 [`docs/README.md`](docs/README.md)。所有开发文档为简体中文。
+
+### 使用与脚本
+
 | 文档 | 内容 |
 |---|---|
 | [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md) | 脚本 API 速查：全局函数、输入、选择器、找图、OCR、AI 等 |
 | [`docs/TOOLS.md`](docs/TOOLS.md) | 工具与权限说明：控制模式、持续录屏、调试悬浮窗、定时任务、日志 |
-| [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | 蓝牙 HID 控制协议：GATT 服务、帧格式、坐标映射、连接流程 |
+| [`docs/CONTROL_MODES.md`](docs/CONTROL_MODES.md) | 控制模式能力矩阵、授权风险、手势 / 按键限制 |
 | [`docs/MCP.md`](docs/MCP.md) | MCP 服务器：启用、客户端配置、工具与资源、安全说明 |
+| [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | 蓝牙 HID 控制协议：GATT 服务、帧格式、坐标映射、连接流程 |
+
+### 开发与维护
+
+| 文档 | 内容 |
+|---|---|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 环境、构建、测试、代码风格、提交与 PR |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | 分层、包职责、脚本运行链路、数据与线程模型 |
+| [`docs/EXTENDING.md`](docs/EXTENDING.md) | 新增控制后端、脚本 API、MCP 工具、pipeline 识别 / 动作 |
+| [`docs/TESTING.md`](docs/TESTING.md) | 测试分层、现有覆盖、录制回放回归、设备矩阵 |
+| [`docs/RELEASING.md`](docs/RELEASING.md) | 版本号、签名、CI、Release 流程 |
 | [`docs/PERF.md`](docs/PERF.md) | 性能基线：指标含义、采集开关、对比场景与 adb 查看方式 |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录 |
 
@@ -233,23 +245,36 @@ app/src/main/java/com/benton/izukijs/
 ├── mcp/           # MCP 服务器：JSON-RPC 协议、HTTP 传输、工具与资源
 ├── controller/    # 控制抽象层与各后端实现
 │   ├── accessibility/  # 无障碍
+│   ├── adb/            # 无线调试
 │   ├── shizuku/        # Shizuku
 │   ├── root/           # Root
 │   ├── hid/            # 蓝牙 HID（协议 / GATT 客户端 / 控制器）
+│   ├── record/         # 操作录制 / 回放
 │   └── shell/          # 命令后端
 ├── runtime/       # QuickJS 运行时与脚本 API 绑定（runtime/api）
+├── pipeline/      # MaaFramework 风格声明式流水线
 ├── virtualscreen/ # 后台虚拟屏：设置、帧源、预览渲染与生命周期
+├── privileged/    # Shizuku UserService、AIDL、虚拟屏 / 解锁特权实现
 ├── ocr/           # 本地 MLKit / 在线 OCR 引擎
 ├── vision/        # 统一识别：找图 / 找色 / 特征 / OCR 后处理 / And-Or / ONNX
 ├── service/       # 前台服务：脚本、悬浮窗、调试叠加、录屏、通知监听、快捷磁贴
 ├── schedule/      # 定时任务与开机重注册
-├── data/          # 脚本仓库、编辑器设置、配置备份
+├── flow/          # 多脚本串行编排
+├── subscription/  # 脚本订阅同步
+├── notification/  # 本地通知与远程推送渠道
+├── update/        # 应用内更新
+├── data/          # 脚本仓库、历史、环境变量、编辑器设置
+├── backup/        # 配置导出 / 导入 / 重置
 ├── security/      # 密钥加密
+├── core/          # 日志、性能、网络、权限、存储等基础设施
 ├── ui/            # Compose 界面（run / scripts / editor / settings / pip / ...）
 └── model/         # ControlMode / Capability 等
 
 app/src/main/cpp/  # QuickJS 中断回调 JNI 垫片
+app/src/main/assets/runtime/prelude.js  # 脚本门面层
 ```
+
+完整包职责、关键链路与持久化位置见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## 技术栈
 

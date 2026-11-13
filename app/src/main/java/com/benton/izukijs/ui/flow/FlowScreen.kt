@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.flow.FlowOrder
+import com.benton.izukijs.flow.FlowRunStart
 import com.benton.izukijs.flow.ScriptFlow
 import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
@@ -108,11 +109,15 @@ fun FlowScreen(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         IconButton(
                                             onClick = {
-                                                container.flowRunner.run(flow, manual = true)
+                                                val result = container.flowRunner.run(flow, manual = true)
                                                 scope.launch {
                                                     snackbar.show(
                                                         resources.getString(
-                                                            R.string.flow_started,
+                                                            when (result) {
+                                                                FlowRunStart.STARTED -> R.string.flow_started
+                                                                FlowRunStart.BUSY -> R.string.flow_run_busy
+                                                                FlowRunStart.EMPTY -> R.string.flow_run_empty
+                                                            },
                                                             flow.name,
                                                         ),
                                                     )
@@ -164,6 +169,16 @@ fun FlowScreen(
 
 @Composable
 private fun describeFlow(flow: ScriptFlow): String {
+    val order = stringResource(
+        when (flow.order) {
+            FlowOrder.SEQUENTIAL -> R.string.flow_order_sequential
+            FlowOrder.RANDOM -> R.string.flow_order_random
+        },
+    )
+    val steps = stringResource(R.string.flow_step_count, flow.steps.size)
+    if (!flow.enabled) {
+        return "$steps · $order · ${stringResource(R.string.flow_disabled)}"
+    }
     val time = formatMonthDayTime(flow.triggerAtMillis)
     val trigger = when (flow.kind) {
         ScheduleKind.TIME -> stringResource(R.string.flow_next_once, time)
@@ -194,13 +209,5 @@ private fun describeFlow(flow: ScriptFlow): String {
     } else {
         stringResource(R.string.schedule_conditions_suffix, conditionParts.joinToString(" / "))
     }
-    val order = stringResource(
-        when (flow.order) {
-            FlowOrder.SEQUENTIAL -> R.string.flow_order_sequential
-            FlowOrder.RANDOM -> R.string.flow_order_random
-        },
-    )
-    val steps = stringResource(R.string.flow_step_count, flow.steps.size)
-    val enabled = if (flow.enabled) "" else " · " + stringResource(R.string.flow_disabled)
-    return "$steps · $order · $trigger$conditions$enabled"
+    return "$steps · $order · $trigger$conditions"
 }

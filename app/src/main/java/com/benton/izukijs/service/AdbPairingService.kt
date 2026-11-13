@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.R
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.controller.adb.AdbPairingDiscovery
 import com.benton.izukijs.di.appContainer
 import kotlinx.coroutines.CoroutineScope
@@ -206,6 +207,13 @@ class AdbPairingService : Service() {
             .setContentTitle(getString(R.string.adb_notify_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(
+                NotificationIntents.contentIntent(
+                    context = this,
+                    route = com.benton.izukijs.ui.navigation.Routes.ADB,
+                    requestCode = 13,
+                ),
+            )
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)

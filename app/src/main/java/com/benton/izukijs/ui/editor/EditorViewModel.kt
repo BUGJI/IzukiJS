@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 /** 版本历史弹窗状态。 */
 data class EditorHistoryState(
@@ -57,6 +58,10 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
     // UI 只观察该值计算脏标记，避免多个并发保存的完成顺序把 savedCode 回退。
     private val _savedContent = MutableStateFlow<String?>(null)
     val savedContent: StateFlow<String?> = _savedContent.asStateFlow()
+
+    private val savingCount = AtomicInteger(0)
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
     private val _conflict = MutableStateFlow<EditorConflict?>(null)
     val conflict: StateFlow<EditorConflict?> = _conflict.asStateFlow()
@@ -101,37 +106,42 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
         content: String,
         force: Boolean = false,
     ): PersistOutcome = withContext(NonCancellable) {
-        persistQueue.run(script.id) {
-            val expectedSha256 = if (force) {
-                null
-            } else {
-                _savedContent.value?.let { ScriptRepository.sha256(it) }
-            }
-            val outcome = try {
-                container.scriptRepository.writeAsync(
-                    script = script,
-                    content = content,
-                    expectedSha256 = expectedSha256,
-                )
-                PersistOutcome.Saved(content)
-            } catch (e: ScriptStaleException) {
-                PersistOutcome.Conflict(e.actualSha256)
-            } catch (t: Throwable) {
-                PersistOutcome.Failed(t.message)
-            }
-            when (outcome) {
-                is PersistOutcome.Saved -> {
-                    _savedContent.value = outcome.content
-                    if (_conflict.value?.scriptId == script.id) _conflict.value = null
+        _saving.value = savingCount.incrementAndGet() > 0
+        try {
+            persistQueue.run(script.id) {
+                val expectedSha256 = if (force) {
+                    null
+                } else {
+                    _savedContent.value?.let { ScriptRepository.sha256(it) }
                 }
-
-                is PersistOutcome.Conflict -> {
-                    _conflict.value = EditorConflict(script.id, outcome.actualSha256)
+                val outcome = try {
+                    container.scriptRepository.writeAsync(
+                        script = script,
+                        content = content,
+                        expectedSha256 = expectedSha256,
+                    )
+                    PersistOutcome.Saved(content)
+                } catch (e: ScriptStaleException) {
+                    PersistOutcome.Conflict(e.actualSha256)
+                } catch (t: Throwable) {
+                    PersistOutcome.Failed(t.message)
                 }
+                when (outcome) {
+                    is PersistOutcome.Saved -> {
+                        _savedContent.value = outcome.content
+                        if (_conflict.value?.scriptId == script.id) _conflict.value = null
+                    }
 
-                is PersistOutcome.Failed -> Unit
+                    is PersistOutcome.Conflict -> {
+                        _conflict.value = EditorConflict(script.id, outcome.actualSha256)
+                    }
+
+                    is PersistOutcome.Failed -> Unit
+                }
+                outcome
             }
-            outcome
+        } finally {
+            _saving.value = savingCount.decrementAndGet() > 0
         }
     }
 

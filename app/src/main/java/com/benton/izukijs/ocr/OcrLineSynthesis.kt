@@ -40,12 +40,22 @@ data class OcrLineMatch(
  */
 object OcrLineSynthesis {
 
-    fun synthesize(blocks: List<OcrBlock>): List<OcrLine> {
+    /**
+     * 行聚合参数。默认值保持原有自适应行为；显式指定时用于脚本 / MCP 的稳定输出。
+     *
+     * [maxGapY] 为同一行的最大垂直中心差（像素），[maxGapX] 为同行拆段的最大水平间距。
+     */
+    data class Options(
+        val maxGapY: Int? = null,
+        val maxGapX: Int? = null,
+    )
+
+    fun synthesize(blocks: List<OcrBlock>, options: Options = Options()): List<OcrLine> {
         if (blocks.isEmpty()) return emptyList()
         val sorted = blocks.sortedWith(compareBy({ it.y }, { it.left }))
         val rows = ArrayList<MutableList<OcrBlock>>()
         for (block in sorted) {
-            val row = rows.firstOrNull { sameRow(it, block) }
+            val row = rows.firstOrNull { sameRow(it, block, options.maxGapY) }
             if (row == null) {
                 rows.add(mutableListOf(block))
             } else {
@@ -53,11 +63,15 @@ object OcrLineSynthesis {
             }
         }
         val out = ArrayList<OcrLine>(rows.size)
-        rows.forEach { row -> out.addAll(splitIntoSegments(row)) }
+        rows.forEach { row -> out.addAll(splitIntoSegments(row, options.maxGapX)) }
         return out.sortedWith(compareBy({ it.top }, { it.left }))
     }
 
-    private fun sameRow(row: MutableList<OcrBlock>, block: OcrBlock): Boolean {
+    private fun sameRow(
+        row: MutableList<OcrBlock>,
+        block: OcrBlock,
+        maxGapY: Int?,
+    ): Boolean {
         val rowTop = row.minOf { it.top }
         val rowBottom = row.maxOf { it.bottom }
         val rowHeight = (rowBottom - rowTop).coerceAtLeast(1)
@@ -66,14 +80,15 @@ object OcrLineSynthesis {
             return true
         }
         val center = (rowTop + rowBottom) / 2
-        return kotlin.math.abs(center - block.y) <= maxOf(rowHeight, block.height) / 2
+        val limit = maxGapY ?: (maxOf(rowHeight, block.height) / 2)
+        return kotlin.math.abs(center - block.y) <= limit
     }
 
-    private fun splitIntoSegments(row: List<OcrBlock>): List<OcrLine> {
+    private fun splitIntoSegments(row: List<OcrBlock>, maxGapX: Int?): List<OcrLine> {
         val ordered = row.sortedBy { it.left }
         if (ordered.isEmpty()) return emptyList()
         val lineHeight = (ordered.maxOf { it.bottom } - ordered.minOf { it.top }).coerceAtLeast(1)
-        val maxGap = maxOf(MIN_JOIN_GAP_PX, (lineHeight * JOIN_GAP_FACTOR).toInt())
+        val maxGap = maxGapX ?: maxOf(MIN_JOIN_GAP_PX, (lineHeight * JOIN_GAP_FACTOR).toInt())
         val segments = ArrayList<MutableList<OcrBlock>>()
         var current = mutableListOf(ordered.first())
         segments.add(current)

@@ -27,6 +27,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** 立即执行编排的同步受理结果，用于给用户真实反馈。 */
+enum class FlowRunStart { STARTED, BUSY, EMPTY }
+
 /**
  * 脚本编排执行器：将步骤串行交给 [ScriptExecutionManager]，一步结束后再启动下一步。
  *
@@ -57,19 +60,31 @@ class FlowRunner(
     private var stopRequested = false
 
     /** 立即执行一条编排；[manual] 为 true 时不修改触发调度。 */
-    fun run(flow: ScriptFlow, manual: Boolean = false) {
+    fun run(flow: ScriptFlow, manual: Boolean = false): FlowRunStart {
+        if (flow.steps.isEmpty()) {
+            logBus.error("编排没有可执行步骤: ${flow.name}")
+            if (!manual) flowManager.onFinished(flow, false)
+            return FlowRunStart.EMPTY
+        }
+        if (!running.compareAndSet(false, true)) {
+            logBus.warn("编排跳过：已有编排正在运行（${flow.name}）")
+            if (!manual) flowManager.onSkipped(flow)
+            return FlowRunStart.BUSY
+        }
+        if (executionManager.running.value) {
+            running.set(false)
+            logBus.warn("编排跳过：已有脚本正在运行（${flow.name}）")
+            if (!manual) flowManager.onSkipped(flow)
+            return FlowRunStart.BUSY
+        }
         scope.launch {
-            if (!running.compareAndSet(false, true)) {
-                logBus.warn("编排跳过：已有编排正在运行（${flow.name}）")
-                if (!manual) flowManager.onSkipped(flow)
-                return@launch
-            }
             try {
                 runInternal(flow, manual)
             } finally {
                 running.set(false)
             }
         }
+        return FlowRunStart.STARTED
     }
 
     /** 请求停止当前编排；返回 false 表示该编排当前未运行。 */

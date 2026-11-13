@@ -58,10 +58,21 @@ var h = device.height();
 
 // ==================== 交互区域 ====================
 // 点赞与滑动都集中在屏幕右下角 2/3 处，并叠加随机抖动
-var AREA_CX = w * 0.70;         // 锚点 X
-var AREA_CY = h * 0.75;         // 锚点 Y
-var AREA_X_JITTER = w * 0.09;   // 横向随机半径
-var AREA_Y_JITTER = h * 0.05;   // 纵向随机半径
+var AREA_CX = 0;
+var AREA_CY = 0;
+var AREA_X_JITTER = 0;
+var AREA_Y_JITTER = 0;
+
+// 运行时可能横竖屏切换，每轮都重新读取宽高，避免仍用旧方向的坐标。
+function refreshArea() {
+  w = device.width();
+  h = device.height();
+  AREA_CX = w * 0.70;         // 锚点 X
+  AREA_CY = h * 0.75;         // 锚点 Y
+  AREA_X_JITTER = w * 0.09;   // 横向随机半径
+  AREA_Y_JITTER = h * 0.05;   // 纵向随机半径
+}
+refreshArea();
 
 // 是否支持复杂轨迹手势（不支持时回退为 swipe / click）
 var hasGesture = (typeof gesture === "function");
@@ -185,6 +196,7 @@ function main() {
   toast("开始运行，计划 " + RUN_MINUTES + " 分钟");
 
   while (Date.now() < deadline) {
+    refreshArea();
     swipeUp();
     sleep(600);
     watched++;

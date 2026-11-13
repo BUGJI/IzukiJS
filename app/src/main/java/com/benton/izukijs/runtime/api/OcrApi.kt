@@ -59,43 +59,63 @@ class OcrApi(
     }
 
     /** 识别指定图像（调用方转移所有权，本方法负责 recycle）。供 MCP 按 target 识别虚拟屏。 */
-    fun recognizeBlocksJson(source: Bitmap): String? {
-        val width = source.width
-        val height = source.height
-        val result = try {
-            ocrProcessor.recognize(source)
-        } finally {
-            source.recycle()
-        } ?: return null
-        val blocks = JSONArray()
-        result.blocks.forEach { block ->
-            blocks.put(
+    fun recognizeBlocksJson(source: Bitmap): String? = recognizeBlocksJson(source, JSONObject())
+
+    /** 带 ROI 的结构化识别；[source] 由本方法负责 recycle。 */
+    fun recognizeBlocksJson(source: Bitmap, options: JSONObject): String? {
+        val bitmap = source
+        return try {
+            val roi = resolveRois(options, bitmap.width, bitmap.height)?.firstOrNull() ?: return null
+            val crop = if (isFull(roi, bitmap)) {
+                bitmap
+            } else {
+                Bitmap.createBitmap(bitmap, roi.left, roi.top, roi.width, roi.height)
+            }
+            try {
+                val result = ocrProcessor.recognize(crop) ?: return null
+                val blocks = JSONArray()
+                result.blocks.forEach { block ->
+                    blocks.put(
+                        JSONObject().apply {
+                            put("text", block.text)
+                            put("x", roi.left + block.x)
+                            put("y", roi.top + block.y)
+                            put("w", block.width)
+                            put("h", block.height)
+                            put("left", roi.left + block.left)
+                            put("top", roi.top + block.top)
+                            put("right", roi.left + block.right)
+                            put("bottom", roi.top + block.bottom)
+                            if (block.suspicious) put("suspicious", true)
+                            block.confidence?.let { put("conf", it) }
+                        },
+                    )
+                }
                 JSONObject().apply {
-                    put("text", block.text)
-                    put("x", block.x)
-                    put("y", block.y)
-                    put("w", block.width)
-                    put("h", block.height)
-                    put("left", block.left)
-                    put("top", block.top)
-                    put("right", block.right)
-                    put("bottom", block.bottom)
-                    if (block.suspicious) put("suspicious", true)
-                    block.confidence?.let { put("conf", it) }
-                },
-            )
+                    put("text", result.text)
+                    put("image", JSONObject().put("w", bitmap.width).put("h", bitmap.height))
+                    put("blocks", blocks)
+                    if (blocks.length() == 0) {
+                        put("empty", true)
+                        put("reason", EMPTY_REASON)
+                    }
+                }.also {
+                    val suspicious = result.blocks.count { block -> block.suspicious }
+                    logBus.debug(
+                        "OCR 结构化识别 → ${result.blocks.size} 块（${bitmap.width}×${bitmap.height}）" +
+                            if (suspicious > 0) "，$suspicious 块坐标已裁剪" else "",
+                    )
+                    if (result.blocks.isEmpty()) logBus.warn("OCR 结构化识别：$EMPTY_REASON")
+                }.toString()
+            } finally {
+                if (crop !== bitmap) crop.recycle()
+            }
+        } catch (t: Throwable) {
+            logBus.warn("OCR 结构化识别失败: ${t.message}")
+            null
+        } finally {
+            bitmap.recycle()
         }
-        val json = JSONObject().apply {
-            put("text", result.text)
-            put("image", JSONObject().put("w", width).put("h", height))
-            put("blocks", blocks)
-        }
-        val suspicious = result.blocks.count { it.suspicious }
-        logBus.debug(
-            "OCR 结构化识别 → ${result.blocks.size} 块（${width}×$height）" +
-                if (suspicious > 0) "，$suspicious 块坐标已裁剪" else "",
-        )
-        return json.toString()
     }
 
     /** 带选项的查找：支持 roi、threshold、fuzzy。 */
@@ -145,8 +165,34 @@ class OcrApi(
             logBus.warn("OCR 识别失败：无法获取屏幕截图")
             return null
         }
+        val options = runCatching {
+            if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
+        }.getOrDefault(JSONObject())
+        return recognizeBlocksJson(bitmap, options)
+    }
+
+    /**
+     * 带 ROI 的行聚合识别：同一行的多个 OCR 块按阅读顺序合并。
+     *
+     * `options` 支持 `roi` / `maxGapY` / `maxGapX`，返回
+     * `{"text","image","lines":[{"text","x","y","left","top","right","bottom","w","h","conf","blockCount"}]}`。
+     */
+    @JavascriptInterface
+    fun recognizeLinesJsonWithOptions(optionsJson: String): String? {
+        val bitmap = screenshot() ?: run {
+            logBus.warn("OCR 行识别失败：无法获取屏幕截图")
+            return null
+        }
+        val options = runCatching {
+            if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
+        }.getOrDefault(JSONObject())
+        return recognizeLinesJson(bitmap, options)
+    }
+
+    /** 识别指定图像（调用方转移所有权，本方法负责 recycle）。供 MCP 按 target 识别虚拟屏。 */
+    fun recognizeLinesJson(source: Bitmap, options: JSONObject): String? {
+        val bitmap = source
         return try {
-            val options = if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
             val roi = resolveRois(options, bitmap.width, bitmap.height)?.firstOrNull() ?: return null
             val crop = if (isFull(roi, bitmap)) {
                 bitmap
@@ -155,38 +201,51 @@ class OcrApi(
             }
             try {
                 val result = ocrProcessor.recognize(crop) ?: return null
-                val blocks = JSONArray()
-                result.blocks.forEach { block ->
-                    blocks.put(
+                val lineOptions = OcrLineSynthesis.Options(
+                    maxGapY = options.optIntOption("maxGapY", "max_gap_y"),
+                    maxGapX = options.optIntOption("maxGapX", "max_gap_x"),
+                )
+                val lines = OcrLineSynthesis.synthesize(result.blocks, lineOptions)
+                val array = JSONArray()
+                lines.forEach { line ->
+                    array.put(
                         JSONObject().apply {
-                            put("text", block.text)
-                            put("x", roi.left + block.x)
-                            put("y", roi.top + block.y)
-                            put("w", block.width)
-                            put("h", block.height)
-                            put("left", roi.left + block.left)
-                            put("top", roi.top + block.top)
-                            put("right", roi.left + block.right)
-                            put("bottom", roi.top + block.bottom)
-                            block.confidence?.let { put("conf", it) }
+                            put("text", line.text)
+                            put("x", roi.left + line.x)
+                            put("y", roi.top + line.y)
+                            put("w", line.width)
+                            put("h", line.height)
+                            put("left", roi.left + line.left)
+                            put("top", roi.top + line.top)
+                            put("right", roi.left + line.right)
+                            put("bottom", roi.top + line.bottom)
+                            line.confidence?.let { put("conf", it) }
+                            put("blockCount", line.blockCount)
                         },
                     )
                 }
                 JSONObject().apply {
                     put("text", result.text)
                     put("image", JSONObject().put("w", bitmap.width).put("h", bitmap.height))
-                    put("blocks", blocks)
+                    put("lines", array)
+                    if (array.length() == 0) {
+                        put("empty", true)
+                        put("reason", EMPTY_REASON)
+                    }
                 }.toString()
             } finally {
                 if (crop !== bitmap) crop.recycle()
             }
         } catch (t: Throwable) {
-            logBus.warn("OCR 结构化识别失败: ${t.message}")
+            logBus.warn("OCR 行识别失败: ${t.message}")
             null
         } finally {
             bitmap.recycle()
         }
     }
+
+    private fun JSONObject.optIntOption(vararg names: String): Int? =
+        names.firstOrNull { has(it) }?.let { optInt(it, -1) }?.takeIf { it >= 0 }
 
     private fun resolveRois(options: JSONObject, width: Int, height: Int): List<Box>? {
         val roi = options.optJSONObject("roi") ?: return listOf(Box(0, 0, width, height))
@@ -249,6 +308,7 @@ class OcrApi(
                     "OCR 识别 $label $head → $summary：${text.preview()}"
                 },
             )
+            if (text.isNullOrBlank()) logBus.warn("OCR 识别 $label：$EMPTY_REASON")
             text
         } finally {
             bitmap.recycle()
@@ -259,4 +319,9 @@ class OcrApi(
 
     private fun String.preview(max: Int = 120): String =
         if (length <= max) this else take(max) + "…"
+
+    private companion object {
+        const val EMPTY_REASON =
+            "未识别到文字：画面可能为空白或尚未加载；虚拟屏没有 launcher，退到根后请用 app.launch 重新启动应用"
+    }
 }

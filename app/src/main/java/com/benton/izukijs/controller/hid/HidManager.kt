@@ -1,6 +1,11 @@
 package com.benton.izukijs.controller.hid
 
+import android.content.ComponentCallbacks
 import android.content.Context
+import android.content.res.Configuration
+import android.hardware.display.DisplayManager
+import android.util.DisplayMetrics
+import android.view.Display
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
@@ -26,6 +31,10 @@ class HidManager(
 
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
+    /** 最近一次下发到固件的分辨率，避免每次旋转回调重复写入。 */
+    @Volatile
+    private var lastResolution: Pair<Int, Int>? = null
+
     fun init() {
         val lastAddress = prefs.getString(KEY_LAST_ADDRESS, null)
         if (lastAddress != null) client.setLastAddress(lastAddress)
@@ -39,6 +48,8 @@ class HidManager(
                     if (client.hidReady.value) syncResolution()
                 } else {
                     controllers.unregister(ControlMode.HID)
+                    // 重新连接后固件会丢失分辨率设置，下次就绪必须重新下发。
+                    lastResolution = null
                 }
             }
         }
@@ -67,6 +78,19 @@ class HidManager(
         if (lastAddress != null && client.hasPermissions()) {
             scope.launch(Dispatchers.IO) { runCatching { client.reconnectIfNeeded() } }
         }
+
+        // 横竖屏切换后坐标系跟着变化，必须把新分辨率重新下发给固件，
+        // 否则固件仍按旧宽高映射绝对坐标，点击会整体偏移。
+        context.registerComponentCallbacks(
+            object : ComponentCallbacks {
+                override fun onConfigurationChanged(newConfig: Configuration) {
+                    syncResolution()
+                }
+
+                @Suppress("OVERRIDE_DEPRECATION")
+                override fun onLowMemory() = Unit
+            },
+        )
     }
 
     fun connect(address: String) {
@@ -75,10 +99,14 @@ class HidManager(
         client.connect(address)
     }
 
-    fun disconnect() = client.disconnect()
+    fun disconnect() {
+        lastResolution = null
+        client.disconnect()
+    }
 
     /** 撤回 HID：断开并清除记忆的设备。 */
     fun revoke() {
+        lastResolution = null
         prefs.edit().remove(KEY_LAST_ADDRESS).apply()
         client.disconnect()
     }
@@ -88,8 +116,23 @@ class HidManager(
     fun stopScan() = client.stopScan()
 
     fun syncResolution() {
-        val metrics = context.resources.displayMetrics
-        client.send(HidProtocol.setResolution(metrics.widthPixels, metrics.heightPixels))
+        val metrics = DisplayMetrics()
+        val display = runCatching {
+            context.getSystemService(DisplayManager::class.java)
+                ?.getDisplay(Display.DEFAULT_DISPLAY)
+        }.getOrNull()
+        if (display != null) {
+            @Suppress("DEPRECATION")
+            display.getRealMetrics(metrics)
+        } else {
+            metrics.setTo(context.resources.displayMetrics)
+        }
+        val width = metrics.widthPixels.coerceAtLeast(1)
+        val height = metrics.heightPixels.coerceAtLeast(1)
+        val resolution = width to height
+        if (resolution == lastResolution) return
+        lastResolution = resolution
+        client.send(HidProtocol.setResolution(width, height))
     }
 
     private companion object {

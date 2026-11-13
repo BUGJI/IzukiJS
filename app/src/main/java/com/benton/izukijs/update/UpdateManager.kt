@@ -1,6 +1,7 @@
 package com.benton.izukijs.update
 
 import android.content.Context
+import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogBus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,12 @@ class UpdateManager(
 
     private var checkJob: Job? = null
 
+    /** 下载失败后 state 不再是 Available，重试与打开 GitHub 仍需要上一次发现的版本信息。 */
+    private var lastAvailableInfo: UpdateInfo? = null
+
+    /** 安装失败时 state 会变成 DownloadFailed，重试应优先重新安装已下载的包。 */
+    private var lastDownloadedFile: File? = null
+
     fun checkAutomatically() = check(manual = false)
 
     fun checkManually() = check(manual = true)
@@ -69,6 +76,8 @@ class UpdateManager(
                 is UpdateCheckResult.Failure -> _state.value = UpdateState.CheckFailed(result.message)
 
                 is UpdateCheckResult.Available -> {
+                    lastAvailableInfo = result.info
+                    lastDownloadedFile = null
                     _state.value = UpdateState.Available(result.info)
                     if (!manual) _prompt.value = result.info
                 }
@@ -81,7 +90,7 @@ class UpdateManager(
     }
 
     fun downloadAndInstall() {
-        val info = (_state.value as? UpdateState.Available)?.info ?: return
+        val info = (_state.value as? UpdateState.Available)?.info ?: lastAvailableInfo ?: return
         if (info.apkUrl.isNullOrBlank()) {
             openOnGitHub()
             return
@@ -99,33 +108,46 @@ class UpdateManager(
             }
             result.fold(
                 onSuccess = { file ->
+                    lastDownloadedFile = file
                     val installed = file.exists() && file.length() > 0L &&
                         runCatching { ApkInstaller.install(context, file) }.getOrDefault(false)
                     _state.value = if (installed) UpdateState.Idle else UpdateState.Downloaded(file)
                 },
                 onFailure = {
                     logBus?.warn("更新下载失败: ${it.message}")
-                    _state.value = UpdateState.DownloadFailed(it.message ?: "下载失败")
+                    _state.value = UpdateState.DownloadFailed(
+                        it.message ?: context.getString(R.string.update_download_failed_short),
+                    )
                 },
             )
         }
     }
 
     fun installDownloaded() {
-        val file = (_state.value as? UpdateState.Downloaded)?.file ?: return
+        val file = (_state.value as? UpdateState.Downloaded)?.file ?: lastDownloadedFile ?: return
         if (!file.exists() || file.length() <= 0L) {
-            _state.value = UpdateState.DownloadFailed("安装包不存在，请重新下载")
+            _state.value = UpdateState.DownloadFailed(context.getString(R.string.update_error_apk_missing))
             return
         }
         if (runCatching { ApkInstaller.install(context, file) }.getOrDefault(false)) {
             _state.value = UpdateState.Idle
         } else {
-            _state.value = UpdateState.DownloadFailed("无法启动安装程序")
+            _state.value = UpdateState.DownloadFailed(context.getString(R.string.update_error_install_launch))
+        }
+    }
+
+    /** 失败后的统一重试入口：已有安装包则重新安装，否则重新下载。 */
+    fun retry() {
+        val file = lastDownloadedFile
+        if (file != null && file.exists() && file.length() > 0L) {
+            installDownloaded()
+        } else {
+            downloadAndInstall()
         }
     }
 
     fun openOnGitHub() {
-        val info = (_state.value as? UpdateState.Available)?.info
+        val info = (_state.value as? UpdateState.Available)?.info ?: lastAvailableInfo
         _prompt.value = null
         ApkInstaller.openInBrowser(context, info?.releaseUrl?.ifBlank { UpdateChecker.RELEASES_PAGE } ?: UpdateChecker.RELEASES_PAGE)
     }

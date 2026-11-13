@@ -14,7 +14,7 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.benton.izukijs.IzukiApp
-import com.benton.izukijs.MainActivity
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.R
 import com.benton.izukijs.core.notification.ProgressSegment
 import com.benton.izukijs.core.notification.ScriptNotificationCenter
@@ -227,11 +227,10 @@ class ScriptForegroundService : Service() {
         }.getOrDefault(false)
     }
 
-    private fun contentIntent(): PendingIntent = PendingIntent.getActivity(
-        this,
-        0,
-        Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    private fun contentIntent(): PendingIntent = NotificationIntents.contentIntent(
+        context = this,
+        route = com.benton.izukijs.ui.navigation.Routes.TAB_RUN,
+        requestCode = 12,
     )
 
     private fun stopIntent(): PendingIntent = PendingIntent.getService(

@@ -13,8 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Build
@@ -28,19 +28,25 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PictureInPicture
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -69,7 +75,7 @@ enum class SettingsCategory(
     DISPLAY("display", R.string.settings_display, Icons.Filled.PictureInPicture),
     UNLOCK("unlock", R.string.settings_unlock, Icons.Filled.LockOpen),
     ENV("env", R.string.settings_env, Icons.Filled.Key),
-    LOG("log", R.string.settings_storage, Icons.Filled.Article),
+    LOG("log", R.string.settings_storage, Icons.AutoMirrored.Filled.Article),
     RECORD("record", R.string.settings_record, Icons.Filled.FiberManualRecord),
     BACKUP("backup", R.string.settings_backup, Icons.Filled.Backup),
     DEVELOPER("developer", R.string.settings_developer, Icons.Filled.Build),
@@ -91,12 +97,53 @@ fun SettingsScreen(
 ) {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
+    var query by rememberSaveable { mutableStateOf("") }
 
     IzukiPageScaffold(
         title = { Text(stringResource(R.string.settings_title)) },
     ) { padding ->
         PageColumn(modifier = Modifier.padding(padding).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(SectionGap))
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                placeholder = { Text(stringResource(R.string.settings_search_placeholder)) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(SectionGap))
+            if (query.isNotBlank()) {
+                val needle = query.trim()
+                val developerTitle = stringResource(R.string.settings_developer)
+                val results = settingsSearchEntries(
+                    onOpenCategory = onOpenCategory,
+                    onOpenAi = onOpenAi,
+                    onOpenMcp = onOpenMcp,
+                    onOpenSetup = onOpenSetup,
+                ).filter {
+                    (ui.developerSettings.unlocked || it.title != developerTitle) &&
+                        (it.title.contains(needle, ignoreCase = true) ||
+                            it.keywords.contains(needle, ignoreCase = true))
+                }
+                if (results.isEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_search_empty),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    CategoryGroup {
+                        results.forEach { entry ->
+                            CategoryRow(
+                                icon = entry.icon,
+                                title = entry.title,
+                                summary = stringResource(R.string.settings_search_open),
+                            ) { entry.open() }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(SectionGap))
+            } else {
             CategoryGroup {
                 CategoryRow(
                     category = SettingsCategory.GENERAL,
@@ -148,8 +195,9 @@ fun SettingsScreen(
                 ) { onOpenCategory(SettingsCategory.RUN) }
                 CategoryRow(
                     category = SettingsCategory.NOTIFY,
-                    summary = stringResource(
-                        R.string.settings_notify_summary,
+                    summary = pluralStringResource(
+                        R.plurals.settings_notify_summary,
+                        ui.notificationSettings.channels.size,
                         ui.notificationSettings.channels.size,
                         stringResource(
                             if (ui.notificationSettings.enabled) R.string.common_on else R.string.common_off,
@@ -226,8 +274,9 @@ fun SettingsScreen(
             CategoryGroup(stringResource(R.string.settings_group_data)) {
                 CategoryRow(
                     category = SettingsCategory.LOG,
-                    summary = stringResource(
-                        R.string.settings_storage_summary,
+                    summary = pluralStringResource(
+                        R.plurals.settings_storage_summary,
+                        ui.logSettings.retentionDays,
                         ui.logSettings.maxSizeMb,
                         ui.logSettings.retentionDays,
                     ),
@@ -262,10 +311,163 @@ fun SettingsScreen(
                     },
                 ) { onOpenCategory(SettingsCategory.ABOUT) }
             }
+            }
             Spacer(Modifier.height(SectionGap))
         }
     }
 }
+
+private data class SettingsSearchEntry(
+    val title: String,
+    val keywords: String,
+    val icon: ImageVector,
+    val open: () -> Unit,
+)
+
+@Composable
+private fun settingsSearchEntries(
+    onOpenCategory: (SettingsCategory) -> Unit,
+    onOpenAi: () -> Unit,
+    onOpenMcp: () -> Unit,
+    onOpenSetup: () -> Unit,
+): List<SettingsSearchEntry> = listOf(
+    SettingsSearchEntry(
+        stringResource(R.string.settings_language),
+        "语言 界面语言 language locale",
+        Icons.Filled.Settings,
+    ) { onOpenCategory(SettingsCategory.GENERAL) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_dynamic_color),
+        "主题 外观 颜色 动态取色 theme appearance color dynamic",
+        Icons.Filled.Settings,
+    ) { onOpenCategory(SettingsCategory.GENERAL) },
+    SettingsSearchEntry(
+        stringResource(R.string.ctrl_backends_title),
+        "控制 后端 启停 无障碍 shizuku root adb control backend accessibility",
+        Icons.Filled.Gamepad,
+    ) { onOpenCategory(SettingsCategory.CONTROL) },
+    SettingsSearchEntry(
+        stringResource(R.string.ctrl_read_priority_title),
+        "读取 优先级 read priority",
+        Icons.Filled.Gamepad,
+    ) { onOpenCategory(SettingsCategory.CONTROL) },
+    SettingsSearchEntry(
+        stringResource(R.string.ctrl_operate_priority_title),
+        "操作 优先级 operate priority",
+        Icons.Filled.Gamepad,
+    ) { onOpenCategory(SettingsCategory.CONTROL) },
+    SettingsSearchEntry(
+        stringResource(R.string.ocr_section_title),
+        "OCR 识别 在线 本地 recognition online local",
+        Icons.Filled.Visibility,
+    ) { onOpenCategory(SettingsCategory.VISION) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_vision),
+        "截图 缩放 capture screenshot scale",
+        Icons.Filled.Visibility,
+    ) { onOpenCategory(SettingsCategory.VISION) },
+    SettingsSearchEntry(
+        stringResource(R.string.perm_timeout_title),
+        "运行 超时 timeout run",
+        Icons.Filled.Code,
+    ) { onOpenCategory(SettingsCategory.RUN) },
+    SettingsSearchEntry(
+        stringResource(R.string.perm_wake_title),
+        "保持唤醒 息屏 wake keep awake",
+        Icons.Filled.Code,
+    ) { onOpenCategory(SettingsCategory.RUN) },
+    SettingsSearchEntry(
+        stringResource(R.string.notif_section_channels),
+        "通知 渠道 推送 notification channel push",
+        Icons.Filled.Notifications,
+    ) { onOpenCategory(SettingsCategory.NOTIFY) },
+    SettingsSearchEntry(
+        stringResource(R.string.notif_global_enabled),
+        "通知 开关 声音 notification enable sound",
+        Icons.Filled.Notifications,
+    ) { onOpenCategory(SettingsCategory.NOTIFY) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_floating_window),
+        "悬浮窗 悬浮控制条 display floating window",
+        Icons.Filled.PictureInPicture,
+    ) { onOpenCategory(SettingsCategory.DISPLAY) },
+    SettingsSearchEntry(
+        stringResource(R.string.virtual_screen_title),
+        "虚拟屏 后台 virtual screen display",
+        Icons.Filled.PictureInPicture,
+    ) { onOpenCategory(SettingsCategory.DISPLAY) },
+    SettingsSearchEntry(
+        stringResource(R.string.unlock_enable),
+        "解锁 自主解锁 unlock",
+        Icons.Filled.LockOpen,
+    ) { onOpenCategory(SettingsCategory.UNLOCK) },
+    SettingsSearchEntry(
+        stringResource(R.string.unlock_pattern_record),
+        "解锁 密码 PIN 图案 录制 unlock password pattern record",
+        Icons.Filled.LockOpen,
+    ) { onOpenCategory(SettingsCategory.UNLOCK) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_env),
+        "环境变量 变量 env variable",
+        Icons.Filled.Key,
+    ) { onOpenCategory(SettingsCategory.ENV) },
+    SettingsSearchEntry(
+        stringResource(R.string.storage_log_title),
+        "日志 存储 上限 log storage size",
+        Icons.AutoMirrored.Filled.Article,
+    ) { onOpenCategory(SettingsCategory.LOG) },
+    SettingsSearchEntry(
+        stringResource(R.string.storage_retention_days),
+        "日志 保留 天数 log retention days",
+        Icons.AutoMirrored.Filled.Article,
+    ) { onOpenCategory(SettingsCategory.LOG) },
+    SettingsSearchEntry(
+        stringResource(R.string.storage_auto_clean),
+        "日志 自动清理 clean auto",
+        Icons.AutoMirrored.Filled.Article,
+    ) { onOpenCategory(SettingsCategory.LOG) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_record),
+        "录制 回放 时间线 recording replay timeline",
+        Icons.Filled.FiberManualRecord,
+    ) { onOpenCategory(SettingsCategory.RECORD) },
+    SettingsSearchEntry(
+        stringResource(R.string.backup_export),
+        "备份 导入 导出 backup import export",
+        Icons.Filled.Backup,
+    ) { onOpenCategory(SettingsCategory.BACKUP) },
+    SettingsSearchEntry(
+        stringResource(R.string.backup_reset_button),
+        "重置 恢复默认 reset restore default",
+        Icons.Filled.Backup,
+    ) { onOpenCategory(SettingsCategory.BACKUP) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_developer),
+        "开发者 调试 developer debug",
+        Icons.Filled.Build,
+    ) { onOpenCategory(SettingsCategory.DEVELOPER) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_about),
+        "关于 版本 更新 about version update",
+        Icons.Filled.Info,
+    ) { onOpenCategory(SettingsCategory.ABOUT) },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_ai_agent),
+        "AI 智能体 模型 agent model",
+        Icons.Filled.AutoAwesome,
+    ) { onOpenAi() },
+    SettingsSearchEntry(
+        stringResource(R.string.settings_mcp_server),
+        "MCP 服务器 令牌 token server",
+        Icons.Filled.Hub,
+    ) { onOpenMcp() },
+    SettingsSearchEntry(
+        stringResource(R.string.run_permissions_title),
+        "权限 授权 能力 permission grant capability",
+        Icons.Filled.Lock,
+    ) { onOpenSetup() },
+)
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -275,21 +477,29 @@ fun SettingsDetailScreen(
     onOpenSetup: () -> Unit = {},
     onOpenMcp: () -> Unit = {},
     onOpenRecordingDetail: (String) -> Unit = {},
+    onOpenChannelEditor: (String?) -> Unit = {},
 ) {
     val category = SettingsCategory.fromKey(categoryKey)
+    // 环境变量页需要拦截未保存修改；让顶栏返回复用页面注册的 requestBack。
+    val envBackRequest = remember { mutableStateOf<(() -> Unit)?>(null) }
     SettingsDetailScaffold(
         title = category?.let { stringResource(it.titleRes) } ?: stringResource(R.string.settings_title),
-        onBack = onBack,
+        onBack = { envBackRequest.value?.invoke() ?: onBack() },
     ) {
         when (category) {
             SettingsCategory.GENERAL -> GeneralSettings()
             SettingsCategory.CONTROL -> ControlSettings(onOpenSetup = onOpenSetup)
             SettingsCategory.VISION -> VisionSettings()
             SettingsCategory.RUN -> RunSettings()
-            SettingsCategory.NOTIFY -> NotificationSettingsPage()
+            SettingsCategory.NOTIFY -> NotificationSettingsPage(
+                onOpenChannelEditor = onOpenChannelEditor,
+            )
             SettingsCategory.DISPLAY -> DisplaySettings(onOpenSetup = onOpenSetup)
             SettingsCategory.UNLOCK -> UnlockSettingsPage(onOpenMcp = onOpenMcp)
-            SettingsCategory.ENV -> GlobalEnvSettings(onBack = onBack)
+            SettingsCategory.ENV -> GlobalEnvSettings(
+                onBack = onBack,
+                onBackRequest = { envBackRequest.value = it },
+            )
             SettingsCategory.LOG -> StorageSettings()
             SettingsCategory.RECORD -> RecordingSettingsPage(onOpenDetail = onOpenRecordingDetail)
             SettingsCategory.BACKUP -> BackupSettingsScreen()

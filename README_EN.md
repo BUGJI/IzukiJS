@@ -64,8 +64,10 @@ OCR and AI-Agent recovery.
   device (e.g. an ESP32 digitizer dongle, firmware at
   [IzukiJS_HID](https://github.com/BUGJI/IzukiJS_HID)) for scenarios that need hardware-level input.
 - **Notification system**: scripts send with `push.send()`, and manual / scheduled / flow / MCP run
-  results are notified automatically; supports local system notifications, Webhook, Bark, Telegram and
-  ntfy channels with level filtering. Failures only by default, and flows send one summary by default.
+  results are notified automatically; supports local system notifications, Webhook, Bark, Telegram,
+  ntfy, DingTalk group/enterprise robots, WeCom group robots, Feishu group robots, ServerChan,
+  PushPlus and Gotify channels with level filtering. Failures only by default, and flows send one
+  summary by default.
 - **System capability extensions**: opt-in notification listening (`notify.*` read / wait for new /
   clear) and script progress notifications (`notify.progress`; Android 16+ supports segments,
   points, colors and live updates, with automatic fallback on older versions), usage access
@@ -110,17 +112,16 @@ is welcome.
 
 ## Control Modes & Capabilities
 
-| Capability | Accessibility | Shizuku | Root | Bluetooth HID |
-|---|---|---|---|---|
-| Gestures / absolute coordinates | ✅ | ✅ | ✅ | ✅ |
-| Keyboard / text | Partial | ✅ | ✅ | ✅ |
-| Read view tree | ✅ | △ dump | △ dump | ❌ |
-| Screenshot | ✅ (API30+) | ✅ | ✅ | ❌ |
-| Shell | ❌ | ✅ | ✅ | ❌ |
+Accessibility / Shizuku / Wireless debugging / Root / Bluetooth HID are negotiated **per capability**,
+so they can be mixed (for example, read the view tree with Accessibility and inject input with
+HID / Shizuku / Wireless debugging).
 
-> In "Read view tree", `△ dump` for Shizuku / Root means the tree is obtained via
-> `uiautomator dump` (about 1–2 s, occasionally fails) as a screen-reading fallback for the AI Agent;
-> **script-level `selector.*` still only supports Accessibility**.
+The full capability matrix, authorization, risks and gesture / key limitations are maintained in
+[`docs/CONTROL_MODES.md`](docs/CONTROL_MODES.md) (Chinese).
+
+> Script-level `selector.*` view-tree reading is only supported by Accessibility; the
+> `uiautomator dump` fallback on Shizuku / Wireless debugging / Root is used by the AI Agent and MCP
+> only. Wireless debugging requires Android 11+ and provides Shell-level capabilities.
 
 Besides the control backends, the "Permissions & Capabilities" page offers switch-based read /
 operate helpers: notification listening (`notify.*`), usage access (`app.foreground()` and more),
@@ -181,8 +182,9 @@ For proper signing, copy `keystore.properties.example` to `keystore.properties` 
 details (the file is ignored by `.gitignore` and never committed).
 
 Artifacts include a universal package plus the per-ABI splits (local file names are
-`app-universal-release.apk` and `app-<abi>-release.apk`); they are renamed to the `izukijs-*` prefix
-when published to a Release.
+`app-universal-release.apk` and `app-<abi>-release.apk`); they are published under the `izukijs-*`
+name, with an extra `app-<abi>-release.apk` copy so clients on 1.2.0 and earlier can still use the
+in-app updater.
 
 ### First Run
 
@@ -242,14 +244,29 @@ For the full API see [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md).
 
 ## Documentation
 
-> The documents under `docs/` are currently Chinese-only.
+> The developer documentation (including `CONTRIBUTING.md`, `AGENTS.md` and the files under
+> `docs/`) is currently Chinese-only. See [`docs/README.md`](docs/README.md) for the full index
+> and task-based navigation.
+
+### Usage & scripting
 
 | Document | Contents |
 |---|---|
 | [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md) | Script API reference: global functions, input, selectors, image matching, OCR, AI, and more |
 | [`docs/TOOLS.md`](docs/TOOLS.md) | Tools and permissions: control modes, continuous capture, debug overlay, scheduled tasks, logs |
+| [`docs/CONTROL_MODES.md`](docs/CONTROL_MODES.md) | Capability matrix, authorization risks, gesture / key limitations |
 | [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | Bluetooth HID control protocol: GATT services, frame format, coordinate mapping, connection flow |
 | [`docs/MCP.md`](docs/MCP.md) | MCP server: enabling, client setup, tools and resources, security notes |
+
+### Development & maintenance
+
+| Document | Contents |
+|---|---|
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Environment, build, tests, code style, commits and PRs |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Layers, package responsibilities, script run chain, data and threading |
+| [`docs/EXTENDING.md`](docs/EXTENDING.md) | Adding a control backend, script API, MCP tool, or pipeline recognition / action |
+| [`docs/TESTING.md`](docs/TESTING.md) | Test layers, current coverage, recording replay, device matrix |
+| [`docs/RELEASING.md`](docs/RELEASING.md) | Versioning, signing, CI and release process |
 | [`docs/PERF.md`](docs/PERF.md) | Performance baseline: metrics, toggle, comparison scenarios, and adb usage |
 | [`CHANGELOG.md`](CHANGELOG.md) | Release history |
 
@@ -261,22 +278,37 @@ app/src/main/java/com/benton/izukijs/
 ├── mcp/           # MCP server: JSON-RPC protocol, HTTP transport, tools & resources
 ├── controller/    # Control abstraction layer and backend implementations
 │   ├── accessibility/  # Accessibility
+│   ├── adb/            # Wireless debugging
 │   ├── shizuku/        # Shizuku
 │   ├── root/           # Root
 │   ├── hid/            # Bluetooth HID (protocol / GATT client / controller)
+│   ├── record/         # Action recording / replay
 │   └── shell/          # Command backend
 ├── runtime/       # QuickJS runtime and script API bindings (runtime/api)
+├── pipeline/      # MaaFramework-style declarative pipelines
+├── virtualscreen/ # Background virtual display
+├── privileged/    # Shizuku UserService, AIDL, privileged display / unlock
 ├── ocr/           # Local MLKit / online OCR engines
 ├── vision/        # Unified recognition: template / color / feature / OCR postprocess / And-Or / ONNX
 ├── service/       # Foreground services: scripts, overlay, debug overlay, capture, notification listener, Quick Settings tile
 ├── schedule/      # Scheduled tasks and boot re-registration
-├── data/          # Script repository, editor settings, config backup
+├── flow/          # Multi-script orchestration
+├── subscription/  # Script subscription sync
+├── notification/  # Local notifications and remote push channels
+├── update/        # In-app updates
+├── data/          # Script repository, history, env vars, editor settings
+├── backup/        # Config export / import / reset
 ├── security/      # Key encryption
+├── core/          # Logging, performance, network, permissions, storage
 ├── ui/            # Compose UI (run / scripts / editor / settings / ...)
 └── model/         # ControlMode / Capability, etc.
 
 app/src/main/cpp/  # JNI shim for QuickJS interrupt callbacks
+app/src/main/assets/runtime/prelude.js  # Script facade layer
 ```
+
+See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for package responsibilities, key chains and
+persistence locations (Chinese).
 
 ## Tech Stack
 

@@ -89,6 +89,7 @@ class McpToolRegistry(
             if (config.allowUnlock && screenUnlock != null) add(unlockTool())
             recordingSession?.let { add(recordingTool(it)) }
             if (config.allowScripts) addAll(scriptTools())
+            add(batchTool())
         }
         if (!config.autoUnlock || screenUnlock == null) return catalog
         return catalog.map { tool ->
@@ -100,7 +101,7 @@ class McpToolRegistry(
 
     private fun sharedTools(agentTools: AgentTools): List<McpTool> =
         agentTools.specs()
-            .filter { it.name != "screenshot" }
+            .filter { it.name != "screenshot" && it.name != "batch" }
             .map { spec ->
                 McpTool(
                     name = spec.name,
@@ -132,7 +133,7 @@ class McpToolRegistry(
     ): McpToolResult {
         if (args.optString("target").equals("virtual", ignoreCase = true)) {
             when (name) {
-                "ocr" -> return virtualOcr()
+                "ocr" -> return virtualOcr(args)
                 "ui_dump" -> return McpToolResult.error(
                     "后台虚拟屏不支持控件树，请改用 capture / ocr / 坐标输入",
                 )
@@ -144,13 +145,20 @@ class McpToolRegistry(
         return McpToolResult.text(agentTools.execute(name, args.toString()))
     }
 
-    private fun virtualOcr(): McpToolResult {
+    private fun virtualOcr(args: JSONObject): McpToolResult {
         val bitmap = bundle.captureProvider(ScreenTarget.VIRTUAL, CAPTURE_WAIT_MS)
             ?: return McpToolResult.error(
                 "虚拟屏未运行，或已启动但尚未收到画面帧；请先 start 并 launch 一个应用后重试",
             )
-        val json = bundle.ocrApi.recognizeBlocksJson(bitmap)
-            ?: return McpToolResult.error("OCR 未识别到文字")
+        val options = JSONObject()
+        args.optJSONObject("roi")?.let { options.put("roi", it) }
+        if (args.has("max_gap_y")) options.put("maxGapY", args.optInt("max_gap_y"))
+        if (args.has("max_gap_x")) options.put("maxGapX", args.optInt("max_gap_x"))
+        val json = if (args.optBoolean("lines", false)) {
+            bundle.ocrApi.recognizeLinesJson(bitmap, options)
+        } else {
+            bundle.ocrApi.recognizeBlocksJson(bitmap, options)
+        } ?: return McpToolResult.error("OCR 未识别到文字")
         return McpToolResult.text(json)
     }
 

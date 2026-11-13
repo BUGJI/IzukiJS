@@ -151,7 +151,7 @@ class DeviceApiBundle(
             return DeviceApiBundle(
                 screenshotProvider = screenshotProvider,
                 captureProvider = captureProvider,
-                inputApi = InputApi(controllers, logBus),
+                inputApi = InputApi(controllers, logBus, virtualScreen),
                 deviceApi = DeviceApi(context, virtualScreen),
                 appApi = AppApi(context, logBus, shellExec, appListEnabled, virtualScreen, recordingHooks),
                 shellApi = ShellApi(controllers, logBus),

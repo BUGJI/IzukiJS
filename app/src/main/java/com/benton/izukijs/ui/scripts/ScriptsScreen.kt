@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -57,6 +58,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -124,15 +126,17 @@ fun ScriptsScreen(
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var subscriptions by remember { mutableStateOf<Map<String, ScriptSubscription>>(emptyMap()) }
     var loaded by remember { mutableStateOf(false) }
-    var showNewDialog by remember { mutableStateOf(false) }
-    var newName by remember { mutableStateOf("") }
+    var loadError by remember { mutableStateOf(false) }
+    var showNewDialog by rememberSaveable { mutableStateOf(false) }
+    var newName by rememberSaveable { mutableStateOf("") }
     var showOverflow by remember { mutableStateOf(false) }
     var exportTarget by remember { mutableStateOf<ScriptInfo?>(null) }
     var deleteTarget by remember { mutableStateOf<ScriptInfo?>(null) }
-    var tagTarget by remember { mutableStateOf<ScriptInfo?>(null) }
-    var tagInput by remember { mutableStateOf("") }
+    var tagTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    val tagTarget = scripts.firstOrNull { it.id == tagTargetId }
+    var tagInput by rememberSaveable { mutableStateOf("") }
     var pendingScanFile by remember { mutableStateOf<File?>(null) }
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
 
     // 置顶优先，其次按所选排序方式；搜索只在已排序结果上过滤。
@@ -160,11 +164,18 @@ fun ScriptsScreen(
     }
 
     suspend fun refresh() = coroutineScope {
-        val scriptsDeferred = async { container.scriptRepository.listAsync() }
-        val subscriptionsDeferred = async { container.subscriptionRepository.listAsync() }
-        scripts = scriptsDeferred.await()
-        subscriptions = subscriptionsDeferred.await().associateBy { it.scriptId }
-        loaded = true
+        loadError = false
+        try {
+            val scriptsDeferred = async { container.scriptRepository.listAsync() }
+            val subscriptionsDeferred = async { container.subscriptionRepository.listAsync() }
+            scripts = scriptsDeferred.await()
+            subscriptions = subscriptionsDeferred.await().associateBy { it.scriptId }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            loadError = true
+        } finally {
+            loaded = true
+        }
     }
 
     // 仓库变更（含编辑器保存 / 导入删除）后重新拉取，避免列表停留在陈旧状态。
@@ -269,7 +280,7 @@ fun ScriptsScreen(
                 )
             },
             onEditTags = {
-                tagTarget = script
+                tagTargetId = script.id
                 tagInput = tags[script.id].orEmpty().joinToString(", ")
             },
             onEdit = { onEditScript(script.id) },
@@ -372,6 +383,13 @@ fun ScriptsScreen(
                     // 首次进入时用骨架屏占位，避免闪一下空状态。
                     !loaded -> ScriptsSkeleton()
 
+                    loadError && scripts.isEmpty() -> EmptyState(
+                        text = stringResource(R.string.scripts_load_failed),
+                        icon = Icons.Filled.Refresh,
+                        actionLabel = stringResource(R.string.common_retry),
+                        onAction = { scope.launch { refresh() } },
+                    )
+
                     scripts.isEmpty() -> EmptyState(
                         text = stringResource(R.string.scripts_empty),
                         icon = Icons.Filled.Add,
@@ -445,7 +463,7 @@ fun ScriptsScreen(
                             onOpenScript(created.id)
                         }
                     },
-                    enabled = !submitting,
+                    enabled = !submitting && newName.isNotBlank(),
                 ) { Text(stringResource(R.string.scripts_create)) }
             },
             dismissButton = {
@@ -456,7 +474,7 @@ fun ScriptsScreen(
 
     tagTarget?.let { target ->
         AlertDialog(
-            onDismissRequest = { tagTarget = null },
+            onDismissRequest = { tagTargetId = null },
             title = { Text(stringResource(R.string.scripts_edit_tags)) },
             text = {
                 OutlinedTextField(
@@ -470,11 +488,11 @@ fun ScriptsScreen(
             confirmButton = {
                 TextButton(onClick = {
                     container.scriptListPreferences.setTags(target.id, parseTagInput(tagInput))
-                    tagTarget = null
+                    tagTargetId = null
                 }) { Text(stringResource(R.string.common_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { tagTarget = null }) { Text(stringResource(R.string.common_cancel)) }
+                TextButton(onClick = { tagTargetId = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

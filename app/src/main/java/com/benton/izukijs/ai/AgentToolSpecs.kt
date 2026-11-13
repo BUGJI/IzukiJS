@@ -9,9 +9,24 @@ internal fun buildAgentToolSpecs(shellAvailable: Boolean): List<ToolSpec> = buil
         ToolSpec(
             "ocr",
             "识别当前屏幕文字，返回结构化文本块：每块含文字与中心坐标 (x,y)、宽高、置信度。坐标为屏幕像素，可直接用于 click。" +
-                "注意本地 OCR 有精度边界（0/O、I/l、简繁、生僻字形易混，置信度常为 0.5~0.8），" +
-                "不要用 OCR 文本做精确匹配或关键分支判断，优先用 ui_dump / find(source=ui) 的控件文本交叉验证。",
-            objectSchema(emptyMap()),
+            "注意本地 OCR 有精度边界（0/O、I/l、简繁、生僻字形易混，置信度常为 0.5~0.8），" +
+                "不要用 OCR 文本做精确匹配或关键分支判断，优先用 ui_dump / find(source=ui) 的控件文本交叉验证。" +
+                "lines=true 时按行聚合（同一行的多个块合并，按阅读顺序返回）。",
+            objectSchema(
+                mapOf(
+                    "lines" to booleanProp("是否按行聚合返回 lines（默认 false，返回 blocks）"),
+                    "max_gap_y" to numberProp("lines=true 时同一行的最大垂直中心差（像素）"),
+                    "max_gap_x" to numberProp("lines=true 时同行拆段的最大水平间距（像素）"),
+                    "roi" to objectSchema(
+                        mapOf(
+                            "x" to numberProp("ROI 左上角 x"),
+                            "y" to numberProp("ROI 左上角 y"),
+                            "w" to numberProp("ROI 宽度"),
+                            "h" to numberProp("ROI 高度"),
+                        ),
+                    ),
+                ),
+            ),
         ),
     )
     add(

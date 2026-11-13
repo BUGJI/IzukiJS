@@ -53,6 +53,47 @@ class OcrLineSynthesisTest {
     }
 
     @Test
+    fun maxGapYCanMergeBlocksWithSlightJitter() {
+        val blocks = listOf(
+            block("微信团队", 100, 100, 300, 128),
+            block("搜索", 310, 116, 400, 144),
+        )
+        assertEquals(2, OcrLineSynthesis.synthesize(blocks).size)
+        val merged = OcrLineSynthesis.synthesize(
+            blocks,
+            OcrLineSynthesis.Options(maxGapY = 18),
+        )
+        assertEquals(1, merged.size)
+        assertEquals(2, merged.first().blockCount)
+    }
+
+    @Test
+    fun maxGapXControlsSameRowSplitting() {
+        val blocks = listOf(
+            block("left", 100, 100, 200, 130),
+            block("right", 400, 100, 500, 130),
+        )
+        assertEquals(2, OcrLineSynthesis.synthesize(blocks).size)
+        val merged = OcrLineSynthesis.synthesize(
+            blocks,
+            OcrLineSynthesis.Options(maxGapX = 250),
+        )
+        assertEquals(1, merged.size)
+        assertEquals("left right", merged.first().text)
+    }
+
+    @Test
+    fun readingOrderIsTopThenLeft() {
+        val blocks = listOf(
+            block("B", 500, 200, 600, 230),
+            block("A", 100, 100, 200, 130),
+            block("C", 100, 300, 200, 330),
+        )
+        val lines = OcrLineSynthesis.synthesize(blocks)
+        assertEquals(listOf("A", "B", "C"), lines.map { it.text })
+    }
+
+    @Test
     fun matchesAcrossJoinedBlocksIgnoringWhitespace() {
         val lines = listOf(OcrLine("Read timed out", 100, 100, 500, 140))
         val matches = OcrMatcher.match(lines, "Read timed out")

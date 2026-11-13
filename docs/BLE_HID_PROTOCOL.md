@@ -5,6 +5,23 @@
 本协议约定 **Izuki JS App（Android，BLE Central / HID Host）** 与
 **外部 HID 数位板狗（如 ESP32，BLE Peripheral / HID Device）** 之间的控制通道。
 
+[返回文档索引](README.md) · 能力矩阵见 [CONTROL_MODES.md](CONTROL_MODES.md)
+
+## 目录
+
+- [1. 角色与数据流](#1-角色与数据流)
+- [2. 自定义 GATT 服务](#2-自定义-gatt-服务)
+- [3. HID 上报描述符（狗侧）](#3-hid-上报描述符狗侧)
+- [4. 帧格式](#4-帧格式)
+  - [4.1 App → 狗（Control 特征）](#41-app--狗control-特征)
+  - [4.2 狗 → App（Event 特征）](#42-狗--appevent-特征)
+  - [4.3 STATUS 状态位（`0x83` 载荷）](#43-status-状态位0x83-载荷)
+  - [4.4 ERROR 错误码（`0x84` 载荷）](#44-error-错误码0x84-载荷)
+- [5. 坐标映射](#5-坐标映射)
+- [6. 连接流程](#6-连接流程)
+- [7. 已知限制](#7-已知限制)
+- [8. 参考实现位置（Android 侧）](#8-参考实现位置android-侧)
+
 ## 1. 角色与数据流
 
 ```

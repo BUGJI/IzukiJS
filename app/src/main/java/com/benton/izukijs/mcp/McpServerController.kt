@@ -1,5 +1,7 @@
 package com.benton.izukijs.mcp
 
+import android.content.Context
+import com.benton.izukijs.R
 import com.benton.izukijs.mcp.core.McpAuditLog
 import com.benton.izukijs.mcp.core.McpBindMode
 import com.benton.izukijs.mcp.core.McpConfig
@@ -35,6 +37,7 @@ data class McpStatus(
  * 以便在服务常驻期间保持进程存活。
  */
 class McpServerController(
+    private val context: Context,
     private val logBus: LogBus,
     private val auditLog: McpAuditLog,
     private val configProvider: () -> McpConfig,
@@ -65,7 +68,7 @@ class McpServerController(
         if (server != null) return
         val config = configProvider()
         if (!config.isConfigured) {
-            _status.value = McpStatus(error = "未配置访问令牌")
+            _status.value = McpStatus(error = context.getString(R.string.mcp_error_no_token))
             return
         }
         if (config.bindMode == McpBindMode.LAN && !localNetworkPermissionGranted()) {
@@ -106,7 +109,9 @@ class McpServerController(
             logBus.error("MCP 服务启动失败：${t.message}")
             runCatching { httpServer.stop() }
             runCatching { dispatcher.shutdownNow() }
-            _status.value = McpStatus(error = "启动失败：${t.message}")
+            _status.value = McpStatus(
+                error = context.getString(R.string.mcp_error_start_failed, t.message.orEmpty()),
+            )
             return
         }
 

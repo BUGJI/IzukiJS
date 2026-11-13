@@ -13,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -80,6 +82,25 @@ class TriggerEditorState private constructor(
 
     fun nextTriggerMillis(): Long = computeNextTrigger(hourInt(), minuteInt())
 
+    /** 供 rememberSaveable 恢复草稿；全部编码为字符串，避免 Bundle 对混合类型的限制。 */
+    fun savedValues(): List<String> = listOf(
+        kind.name,
+        hour,
+        minute,
+        interval,
+        cron,
+        event.name,
+        conditionCharging.toString(),
+        conditionWifi.toString(),
+        conditionUnlocked.toString(),
+        foregroundPackage,
+        initialKind.name,
+        initialTriggerAtMillis.toString(),
+        initialHourValue.toString(),
+        initialMinuteValue.toString(),
+        initialIntervalValue.toString(),
+    )
+
     /**
      * 计算保存后的下次触发时间。
      *
@@ -112,6 +133,39 @@ class TriggerEditorState private constructor(
     }
 
     companion object {
+
+        fun restore(values: List<String>): TriggerEditorState {
+            require(values.size >= 15) { "Invalid TriggerEditorState snapshot" }
+            return TriggerEditorState(
+                initialKind = ScheduleKind.valueOf(values[10]),
+                initialHour = values[1],
+                initialMinute = values[2],
+                initialIntervalMinutes = values[14].toLongOrNull() ?: 60L,
+                initialCron = values[4],
+                initialEvent = ScheduleEvent.valueOf(values[5]),
+                initialConditions = ScheduleConditions(
+                    charging = values[6].toBoolean(),
+                    wifi = values[7].toBoolean(),
+                    unlocked = values[8].toBoolean(),
+                    foregroundPackage = values[9],
+                ),
+                initialTriggerAtMillis = values[11].toLongOrNull() ?: 0L,
+                initialHourValue = values[12].toIntOrNull() ?: 8,
+                initialMinuteValue = values[13].toIntOrNull() ?: 0,
+                initialIntervalValue = values[14].toLongOrNull() ?: 60L,
+            ).apply {
+                kind = ScheduleKind.valueOf(values[0])
+                hour = values[1]
+                minute = values[2]
+                interval = values[3]
+                cron = values[4]
+                event = ScheduleEvent.valueOf(values[5])
+                conditionCharging = values[6].toBoolean()
+                conditionWifi = values[7].toBoolean()
+                conditionUnlocked = values[8].toBoolean()
+                foregroundPackage = values[9]
+            }
+        }
 
         fun empty(): TriggerEditorState = TriggerEditorState(
             initialKind = ScheduleKind.TIME,
@@ -167,6 +221,11 @@ class TriggerEditorState private constructor(
     }
 }
 
+val TriggerEditorStateSaver: Saver<TriggerEditorState, Any> = listSaver(
+    save = { it.savedValues() },
+    restore = { TriggerEditorState.restore(it) },
+)
+
 /** 触发方式、时间 / Cron / 事件与附加条件。 */
 @Composable
 fun TriggerEditor(state: TriggerEditorState, modifier: Modifier = Modifier) {
@@ -185,13 +244,24 @@ fun TriggerEditor(state: TriggerEditorState, modifier: Modifier = Modifier) {
         }
 
         when (state.kind) {
-            ScheduleKind.TIME, ScheduleKind.INTERVAL -> {
+            ScheduleKind.TIME -> {
+                val hourValue = state.hour.toIntOrNull()
+                val minuteValue = state.minute.toIntOrNull()
+                val hourInvalid = state.hour.isNotBlank() && (hourValue == null || hourValue !in 0..23)
+                val minuteInvalid =
+                    state.minute.isNotBlank() && (minuteValue == null || minuteValue !in 0..59)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = state.hour,
                         onValueChange = { state.hour = it.filter(Char::isDigit).take(2) },
                         label = { Text(stringResource(R.string.schedule_hour)) },
                         singleLine = true,
+                        isError = hourInvalid,
+                        supportingText = if (hourInvalid) {
+                            { Text(stringResource(R.string.schedule_hour_invalid)) }
+                        } else {
+                            null
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                     )
@@ -200,20 +270,28 @@ fun TriggerEditor(state: TriggerEditorState, modifier: Modifier = Modifier) {
                         onValueChange = { state.minute = it.filter(Char::isDigit).take(2) },
                         label = { Text(stringResource(R.string.schedule_minute)) },
                         singleLine = true,
+                        isError = minuteInvalid,
+                        supportingText = if (minuteInvalid) {
+                            { Text(stringResource(R.string.schedule_minute_invalid)) }
+                        } else {
+                            null
+                        },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.weight(1f),
                     )
                 }
-                if (state.kind == ScheduleKind.INTERVAL) {
-                    OutlinedTextField(
-                        value = state.interval,
-                        onValueChange = { state.interval = it.filter(Char::isDigit).take(5) },
-                        label = { Text(stringResource(R.string.schedule_interval)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
+            }
+
+            ScheduleKind.INTERVAL -> {
+                OutlinedTextField(
+                    value = state.interval,
+                    onValueChange = { state.interval = it.filter(Char::isDigit).take(5) },
+                    label = { Text(stringResource(R.string.schedule_interval)) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    supportingText = { Text(stringResource(R.string.schedule_interval_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
 
             ScheduleKind.CRON -> {

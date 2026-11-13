@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,7 +84,8 @@ internal fun StorageSettings() {
             checked = logSettings.autoClean,
         ) {
             viewModel.saveLogSettings(logSettings.copy(autoClean = it))
-            trimLogsAndRefresh()
+            // 关闭自动清理时应保留更多日志；只有重新开启时才立即裁剪一次。
+            if (it) trimLogsAndRefresh() else refreshLogSize()
         }
         Spacer(Modifier.height(SectionGap))
 
@@ -133,7 +135,7 @@ internal fun StorageSettings() {
                         viewModel.saveLogSettings(logSettings.copy(retentionDays = days))
                         trimLogsAndRefresh()
                     },
-                    label = { Text(stringResource(R.string.storage_days, days)) },
+                    label = { Text(pluralStringResource(R.plurals.storage_days, days, days)) },
                 )
             }
         }

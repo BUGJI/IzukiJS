@@ -44,6 +44,9 @@ jobs:
       - name: Check version consistency
         run: python3 scripts/check_versions.py
 
+      - name: Check documentation links
+        run: python3 scripts/check_docs.py
+
       - name: Run unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 

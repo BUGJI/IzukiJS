@@ -251,8 +251,15 @@ class ScriptExecutionManager(
             session.startGenerationBefore = virtualScreen.startGeneration()
             var effectiveRunMode = plannedRunMode
             if (effectiveRunMode == RunMode.BACKGROUND) {
+                val hinted = VirtualScreenStartHint.parse(source, virtualSettings.resolution)
+                if (hinted != null) {
+                    logBus.debug(
+                        "按脚本 virtualScreen.start 参数预创建虚拟屏" +
+                            "（${hinted.width}x${hinted.height}@${hinted.dpi}）",
+                    )
+                }
                 val started = virtualScreen.start(
-                    VirtualScreenOptions(virtualSettings.resolution),
+                    VirtualScreenOptions(hinted ?: virtualSettings.resolution),
                 )
                 if (!started) {
                     logBus.warn("后台虚拟屏启动失败，本次回退前台模式")

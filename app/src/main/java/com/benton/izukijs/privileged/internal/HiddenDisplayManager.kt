@@ -33,11 +33,16 @@ internal object HiddenDisplayManager {
             .start()
         val output = process.inputStream.bufferedReader().use { it.readText() }
         process.waitFor()
+        // real 是自然方向尺寸，rotation 是当前方向；逻辑尺寸需要按 rotation 交换。
+        // 旧实现直接把 real 当逻辑尺寸返回，横屏时会被 TouchCoordMapper 再交换一次。
         val size = Regex("""real\s+(\d+)\s+x\s+(\d+)""").find(output) ?: return null
         val rotation = Regex("""rotation\s+(\d+)""").find(output)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-        val width = size.groupValues[1].toInt()
-        val height = size.groupValues[2].toInt()
-        if (width <= 0 || height <= 0) null else ScreenGeometry(width, height, rotation)
+        val naturalWidth = size.groupValues[1].toInt()
+        val naturalHeight = size.groupValues[2].toInt()
+        if (naturalWidth <= 0 || naturalHeight <= 0) return null
+        val width = if (rotation % 2 == 0) naturalWidth else naturalHeight
+        val height = if (rotation % 2 == 0) naturalHeight else naturalWidth
+        ScreenGeometry(width, height, rotation)
     }.onFailure {
         PrivilegedLog.w("dumpsys display failed: ${it.message}")
     }.getOrNull()

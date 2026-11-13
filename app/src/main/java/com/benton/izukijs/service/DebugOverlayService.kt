@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.PixelFormat
@@ -29,6 +30,7 @@ import androidx.core.app.NotificationCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.NodeSnapshot
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrBlock
@@ -93,6 +95,13 @@ class DebugOverlayService : Service() {
         OverlayCoordinator.register(overlayListener)
     }
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // 旋转后窗口尺寸与可拖动范围都会变化，重新贴合当前屏幕，避免面板留在屏幕外。
+        val view = panel
+        if (view != null) view.post { applyOrientationLayout() } else applyOrientationLayout()
+    }
+
     override fun onDestroy() {
         isActive = false
         OverlayCoordinator.unregister(overlayListener)
@@ -101,6 +110,17 @@ class DebugOverlayService : Service() {
         panel?.let { runCatching { windowManager.removeView(it) } }
         panel = null
         super.onDestroy()
+    }
+
+    private fun applyOrientationLayout() {
+        val view = panel ?: return
+        val metrics = resources.displayMetrics
+        params.width = (metrics.widthPixels * 0.86f).toInt()
+        val width = params.width
+        val height = view.height.takeIf { it > 0 } ?: (metrics.heightPixels / 2)
+        params.x = params.x.coerceIn(0, (metrics.widthPixels - width).coerceAtLeast(0))
+        params.y = params.y.coerceIn(0, (metrics.heightPixels - height).coerceAtLeast(0))
+        runCatching { windowManager.updateViewLayout(view, params) }
     }
 
     private fun showPanel() {
@@ -217,8 +237,13 @@ class DebugOverlayService : Service() {
                 }
 
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = startX + (event.rawX - touchX).toInt()
-                    params.y = startY + (event.rawY - touchY).toInt()
+                    val metrics = resources.displayMetrics
+                    val width = container.width.takeIf { it > 0 } ?: params.width
+                    val height = container.height.takeIf { it > 0 } ?: 0
+                    params.x = (startX + (event.rawX - touchX).toInt())
+                        .coerceIn(0, (metrics.widthPixels - width).coerceAtLeast(0))
+                    params.y = (startY + (event.rawY - touchY).toInt())
+                        .coerceIn(0, (metrics.heightPixels - height).coerceAtLeast(0))
                     runCatching { windowManager.updateViewLayout(container, params) }
                     true
                 }
@@ -368,6 +393,13 @@ class DebugOverlayService : Service() {
             .setSmallIcon(R.drawable.ic_stat_script)
             .setContentTitle(getString(R.string.notif_debug_title))
             .setContentText(getString(R.string.notif_debug_text))
+            .setContentIntent(
+                NotificationIntents.contentIntent(
+                    context = this,
+                    route = com.benton.izukijs.ui.navigation.Routes.SETUP,
+                    requestCode = 14,
+                ),
+            )
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()

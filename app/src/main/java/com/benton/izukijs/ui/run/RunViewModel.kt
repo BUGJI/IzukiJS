@@ -2,6 +2,7 @@ package com.benton.izukijs.ui.run
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.benton.izukijs.R
 import com.benton.izukijs.di.AppContainer
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.EnvField
@@ -138,7 +139,7 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
                 if (spec.fields.isEmpty()) {
                     // 没有需要填写的字段时直接运行；历史遗留的 stored 仍会在解析阶段生效。
                     if (!execution.run(script.id, script.name, source)) {
-                        _runError.value = "脚本未能启动（可能已有脚本正在运行）"
+                        _runError.value = container.application.getString(R.string.run_error_already_running)
                     }
                 } else {
                     _envDialog.value = EnvDialogState(
@@ -156,7 +157,7 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
                 }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
-                _runError.value = t.message ?: "读取脚本失败"
+                _runError.value = t.message ?: container.application.getString(R.string.run_error_read_failed)
             }
         }
     }
@@ -166,7 +167,7 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
         // 只把用户实际改过的字段作为本次输入；继承的全局 / 脚本值不应被固化成脚本覆盖。
         val changed = values.filter { (key, value) -> state.initial[key] != value }
         if (!execution.run(state.script.id, state.script.name, state.source, changed)) {
-            _runError.value = "脚本未能启动（可能已有脚本正在运行）"
+            _runError.value = container.application.getString(R.string.run_error_already_running)
             return
         }
         _envDialog.value = null

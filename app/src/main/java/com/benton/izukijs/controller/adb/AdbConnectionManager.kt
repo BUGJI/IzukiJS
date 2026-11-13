@@ -2,6 +2,7 @@ package com.benton.izukijs.controller.adb
 
 import android.content.Context
 import android.os.Build
+import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.permission.LocalNetworkPermission
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
@@ -141,7 +142,7 @@ class AdbConnectionManager(
                     },
                     onFailure = { throwable ->
                         logBus.warn("无线调试配对失败: ${throwable.message}")
-                        _state.value = State.Error(throwable.message ?: "配对失败")
+                        _state.value = State.Error(throwable.message ?: context.getString(R.string.adb_error_pair_failed))
                         false
                     },
                 )
@@ -246,7 +247,7 @@ class AdbConnectionManager(
 
             else -> {
                 if (!quiet) logBus.warn("无线调试连接失败: ${throwable.message}")
-                _state.value = State.Error(throwable.message ?: "连接失败")
+                _state.value = State.Error(throwable.message ?: context.getString(R.string.adb_error_connect_failed))
             }
         }
     }

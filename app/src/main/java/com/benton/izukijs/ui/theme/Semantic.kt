@@ -24,17 +24,19 @@ data class IzukiExtraColors(
 ) {
     companion object {
         fun light() = IzukiExtraColors(
-            success = Color(0xFF2E7D32),
+            // 浅色主题下这些颜色会作为小字号文字直接叠在 surface / container 上，
+            // 统一压深以满足普通文字 4.5:1 的对比度要求。
+            success = Color(0xFF1B5E20),
             successContainer = Color(0xFFC8E6C9),
             onSuccessContainer = Color(0xFF0B3D0C),
-            warning = Color(0xFFB26A00),
+            warning = Color(0xFF7A4A00),
             warningContainer = Color(0xFFFFDDB3),
             onWarningContainer = Color(0xFF3E2A00),
-            logDebug = Color(0xFF6E6E6E),
-            logInfo = Color(0xFF1976D2),
-            logSuccess = Color(0xFF2E7D32),
-            logWarn = Color(0xFFB26A00),
-            logError = Color(0xFFD32F2F),
+            logDebug = Color(0xFF5F6368),
+            logInfo = Color(0xFF0B5AA6),
+            logSuccess = Color(0xFF1B5E20),
+            logWarn = Color(0xFF7A4A00),
+            logError = Color(0xFFB3261E),
         )
 
         fun dark() = IzukiExtraColors(

@@ -85,6 +85,8 @@ class RecordingDeviceController(
         },
     ) { inner.inputText(text, method) }
 
+    override fun hasEditableFocus(): Boolean? = inner.hasEditableFocus()
+
     override fun globalAction(action: Int): Boolean = timed(
         build = { atMs, elapsed, success ->
             GlobalActionEvent(atMs, action, success, source, elapsedMs = elapsed)

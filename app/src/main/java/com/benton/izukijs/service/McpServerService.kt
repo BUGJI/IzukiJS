@@ -13,7 +13,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
-import com.benton.izukijs.MainActivity
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.R
 import com.benton.izukijs.di.appContainer
 import kotlinx.coroutines.CoroutineScope
@@ -129,11 +129,10 @@ class McpServerService : Service() {
             status.addresses.isNotEmpty() -> status.addresses.first()
             else -> getString(R.string.mcp_notif_starting)
         }
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        val contentIntent = NotificationIntents.contentIntent(
+            context = this,
+            route = com.benton.izukijs.ui.navigation.Routes.MCP,
+            requestCode = 10,
         )
         val stopIntent = PendingIntent.getService(
             this,

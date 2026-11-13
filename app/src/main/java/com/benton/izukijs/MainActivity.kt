@@ -1,7 +1,9 @@
 package com.benton.izukijs
 
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +26,7 @@ import com.benton.izukijs.core.permission.LocalNetworkPermission
 import com.benton.izukijs.data.ThemeMode
 import com.benton.izukijs.i18n.LanguagePreferences
 import com.benton.izukijs.mcp.core.McpBindMode
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.ui.navigation.IzukiNavHost
 import com.benton.izukijs.ui.pip.LocalIsInPip
@@ -40,6 +43,7 @@ class MainActivity : ComponentActivity(), PipHost {
     override var pipRequest: PipRequest? = null
 
     private var isInPip by mutableStateOf(false)
+    private var requestedRoute by mutableStateOf<String?>(null)
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(LanguagePreferences.wrap(newBase))
@@ -49,7 +53,24 @@ class MainActivity : ComponentActivity(), PipHost {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         PerfMetrics.bindWindow(window)
+        requestedRoute = NotificationIntents.routeFrom(intent)
         val container = (application as IzukiApp).container
+        // 启动窗口使用系统 DayNight 主题，而应用内可强制深色。先按持久化主题铺底色，
+        // 避免“强制深色 + 系统浅色”时先闪一帧白底再切暗。
+        val appearance = container.appearanceRepository.current()
+        val systemDark = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val forceDark = when (appearance.themeMode) {
+            ThemeMode.SYSTEM -> systemDark
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+        }
+        val splashColor = when {
+            forceDark && appearance.amoledBackground -> 0xFF000000.toInt()
+            forceDark -> 0xFF1A1C1E.toInt()
+            else -> 0xFFFAF9FC.toInt()
+        }
+        window.setBackgroundDrawable(ColorDrawable(splashColor))
         // 应用在前台启动时，若此前已启用 MCP 服务则恢复运行（前台服务需用户可见时启动）。
         // 已在运行时不再重复下发启动 Intent，避免语言切换 / 配置重建导致监听器无谓重启、客户端断连。
         val mcpConfig = container.mcpConfigRepository.current()
@@ -88,7 +109,10 @@ class MainActivity : ComponentActivity(), PipHost {
                             modifier = Modifier.fillMaxSize(),
                             color = MaterialTheme.colorScheme.background,
                         ) {
-                            IzukiNavHost()
+                            IzukiNavHost(
+                                requestedRoute = requestedRoute,
+                                onRequestedRouteHandled = { requestedRoute = null },
+                            )
                         }
                         if (virtualState is VirtualScreenState.Active || isInPip) {
                             VirtualScreenPreviewHost(modifier = Modifier.fillMaxSize())
@@ -97,6 +121,12 @@ class MainActivity : ComponentActivity(), PipHost {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        NotificationIntents.routeFrom(intent)?.let { requestedRoute = it }
     }
 
     override fun onDestroy() {

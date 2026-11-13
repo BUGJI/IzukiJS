@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import com.benton.izukijs.core.notification.NotificationSettings
 import com.benton.izukijs.core.notification.NotificationSettingsCodec
 import com.benton.izukijs.core.notification.NotifyChannel
+import com.benton.izukijs.core.notification.NotifyChannelSpecs
 import com.benton.izukijs.core.prefs.PrefsStateStore
 import com.benton.izukijs.security.SecretCipher
 import kotlinx.coroutines.flow.StateFlow
@@ -43,12 +44,21 @@ class NotificationSettingsRepository(context: Context) : PrefsStateStore<Notific
 
     private fun NotificationSettings.mapSecrets(transform: (String) -> String): NotificationSettings = copy(
         channels = channels.map { channel ->
+            val spec = NotifyChannelSpecs.of(channel.type)
+            val config = if (spec == null) {
+                channel.config
+            } else {
+                channel.config.mapValues { (key, value) ->
+                    if (key in spec.secretKeys) transform(value) else value
+                }
+            }
             channel.copy(
                 url = transform(channel.url),
                 headers = transform(channel.headers),
                 deviceKey = transform(channel.deviceKey),
                 botToken = transform(channel.botToken),
                 token = transform(channel.token),
+                config = config,
             )
         },
     )

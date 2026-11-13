@@ -173,6 +173,11 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
         return focused.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
     }
 
+    override fun hasEditableFocus(): Boolean? {
+        val root = rootInActiveWindow ?: return false
+        return root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.isEditable == true
+    }
+
     override fun rootNode(): AccessibilityNodeInfo? = rootInActiveWindow
 
     fun currentPackage(): String? = rootInActiveWindow?.packageName?.toString()

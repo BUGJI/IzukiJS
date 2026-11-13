@@ -12,8 +12,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -21,6 +25,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.benton.izukijs.R
 import com.benton.izukijs.model.EnvField
+
+private val EnvValuesSaver = listSaver<Map<String, String>, String>(
+    save = { values -> values.flatMap { listOf(it.key, it.value) } },
+    restore = { flat ->
+        flat.chunked(2).mapNotNull { pair ->
+            if (pair.size == 2) pair[0] to pair[1] else null
+        }.toMap()
+    },
+)
 
 /**
  * 运行前写入脚本运行参数。字段来自脚本头部 `// @env` 声明，[initial] 为上次保存值或默认值。
@@ -33,10 +46,13 @@ fun ScriptEnvDialog(
     onDismiss: () -> Unit,
     onConfirm: (Map<String, String>) -> Unit,
 ) {
-    val values = remember(fields) {
-        mutableStateMapOf<String, String>().apply {
-            fields.forEach { put(it.key, initial[it.key] ?: it.default) }
-        }
+    var values by rememberSaveable(
+        fields.joinToString("|") { it.key },
+        stateSaver = EnvValuesSaver,
+    ) {
+        mutableStateOf(
+            fields.associate { it.key to (initial[it.key] ?: it.default) },
+        )
     }
     // 打开时自动聚焦首个字段，减少一次点击（节点未就绪时忽略）。
     val firstFocus = remember(fields) { FocusRequester() }
@@ -53,7 +69,7 @@ fun ScriptEnvDialog(
                 fields.forEachIndexed { index, field ->
                     OutlinedTextField(
                         value = values[field.key].orEmpty(),
-                        onValueChange = { values[field.key] = it },
+                        onValueChange = { values = values + (field.key to it) },
                         singleLine = true,
                         label = { Text(field.label.ifBlank { field.key }) },
                         placeholder = field.default.takeIf { it.isNotBlank() }?.let { { Text(it) } },

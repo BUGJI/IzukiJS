@@ -4,6 +4,29 @@
 Cursor / Cline 等）可以通过标准 MCP 工具读取屏幕并控制设备。工具实现与脚本、AI Agent 完全一致，
 复用同一套能力协商（无障碍 / Shizuku / 无线调试 / Root / 蓝牙 HID）。
 
+[返回文档索引](README.md) · 控制能力见 [CONTROL_MODES.md](CONTROL_MODES.md) ·
+实现说明见 [ARCHITECTURE.md](ARCHITECTURE.md#mcp-服务)
+
+## 目录
+
+- [快速开始](#快速开始)
+- [端点](#端点)
+- [客户端配置](#客户端配置)
+  - [支持 Streamable HTTP 的客户端](#支持-streamable-http-的客户端)
+  - [仅支持 stdio 的客户端（如 Claude Desktop）](#仅支持-stdio-的客户端如-claude-desktop)
+  - [仅本机模式（adb forward）](#仅本机模式adb-forward)
+- [工具](#工具)
+- [脚本增量编辑](#脚本增量编辑)
+- [坐标与截图](#坐标与截图)
+- [批量动作](#批量动作)
+- [超时语义](#超时语义)
+- [后台保活](#后台保活)
+- [安全护栏](#安全护栏)
+- [资源](#资源)
+- [实现说明](#实现说明)
+- [排障](#排障)
+- [用户操作录制](#用户操作录制)
+
 ## 快速开始
 
 1. 设置 → 「MCP 服务」。
@@ -80,10 +103,10 @@ adb forward tcp:8765 tcp:8765
 
 | 工具 | 说明 |
 |---|---|
-| `virtual_screen` | 后台虚拟屏：`action=start\|stop\|status\|capture\|launch`。`start` 可传 `width` / `height` / `dpi`，`capture` 返回虚拟屏图像块（可传 `wait_next_frame` + `after_frame` 等待新帧），`launch` 按 `package` 拉起应用；`status` 含 `lastStopReason` / `lastStopAt`。每次调用自带 target，不改变脚本的全局操作目标 |
+| `virtual_screen` | 后台虚拟屏：`action=start\|stop\|status\|capture\|launch`。`start` 可传 `width` / `height` / `dpi`，`capture` 返回虚拟屏图像块（可传 `wait_next_frame` + `after_frame` 等待新帧，或 `wait_stable` + `stable_ms` 等待过渡帧结束），文本 meta 含当前 `frameSeq`；`launch` 按 `package` 拉起应用；`status` 含 `lastStopReason` / `lastStopAt`。每次调用自带 target，不改变脚本的全局操作目标 |
 | `virtual_screen_input` | 在虚拟屏上输入：`action=tap\|long_press\|swipe\|key`；坐标使用相对虚拟屏的 0~1 归一化值。输入成功后默认等待画面重绘（`wait_frame=true`，`frame_timeout_ms` 默认 600），响应含 `frameSeq` / `frameAdvanced`。`key` 支持 back / recents / enter / esc 或键码；虚拟屏无 launcher，`home` 会返回明确错误 |
 | `screenshot` | 截图，返回图像块及 `{image_size, screen_size}`（带 region 时附 `region`）；可用 `scale` / `quality` / `region=[l,t,r,b]` / `format=jpeg\|webp` 控制体积，`target=auto\|main\|virtual` 选择目标屏（默认 auto） |
-| `ocr` | 识别整屏文字，返回结构化文本块（含中心 x/y、宽高、真实 `left/top/right/bottom`、置信度与 `image` 尺寸）。x/y 是**中心**，越界判断请用四边而非 `x+w`；越界块会被裁剪并标 `suspicious`。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证。`target=virtual` 可识别后台虚拟屏 |
+| `ocr` | 识别整屏文字，返回结构化文本块（含中心 x/y、宽高、真实 `left/top/right/bottom`、置信度与 `image` 尺寸）。x/y 是**中心**，越界判断请用四边而非 `x+w`；越界块会被裁剪并标 `suspicious`。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证。`lines=true` 时按行聚合（同行多块合并，按阅读顺序），可配 `max_gap_y` / `max_gap_x`；`target=virtual` 可识别后台虚拟屏 |
 | `ui_dump` | 控件树（无障碍优先；Shizuku / 无线调试 / Root 下走 `uiautomator dump` 兜底）。返回 JSON（`tree` 字段为缩进文本）；dump 前会用两帧差快速识别持续动画并直接降级，单次预算默认 1.5s。`target=virtual` 会明确返回「虚拟屏不支持控件树」 |
 | `find` | 查找元素并返回匹配项（中心坐标 + 边界）。`text` 会先按 OCR 行聚合（同一行多个块拼接）再匹配，精确失败后按编辑距离容错（`fuzzy` 默认 true，可用 `min_conf` 过滤低置信块），或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证）。`ok` 表示是否命中，并附 `matched`。`target=virtual` 暂不支持，请改用 `ocr(target=virtual)` + 坐标输入 |
 | `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true`；控件树不可用时返回 `hit_checked=false` + `hit_reason`。`by=text` 在无障碍不可用时会用 OCR 行匹配兜底 |
@@ -179,6 +202,8 @@ adb forward tcp:8765 tcp:8765
 
 - 默认 **失败即停**，返回 `{ok, executed, stopped_early, steps:[{index,tool,ok,result}]}`；
   传 `continue_on_error=true` 可继续执行后续动作。
+- MCP 的 `batch` 按工具注册表派发，可以调用 `virtual_screen_input` / `virtual_screen` 等任意已注册工具；
+  图像结果在批内记为 `[image]`，避免大块 base64 回传。
 - 建议只放点击 / 按键 / 等待等轻量动作；`ocr` / `ui_dump` 输出大，单独调用更好。
 - **界面会跳转的连续操作要显式 `settle`**：批内前一步若触发页面切换 / 过渡动画，后一步很可能在界面
   尚未稳定时落空。给相关 `click` 传 `settle=true`（等待控件树稳定后再返回）通常即可；必要时在两步

@@ -29,9 +29,9 @@ object LanguagePreferences {
     /** 按已保存的偏好包装 [context]。 */
     fun wrap(context: Context): Context = wrap(context, AppLanguage.fromTag(readTag(context)))
 
-    /** 按指定语言包装 [context]；[AppLanguage.SYSTEM] 时原样返回。 */
+    /** 按指定语言包装 [context]；[AppLanguage.SYSTEM] 且系统语言受支持时原样返回。 */
     fun wrap(context: Context, language: AppLanguage): Context {
-        val locale = language.locale ?: return context
+        val locale = resolveLocale(context, language) ?: return context
         Locale.setDefault(locale)
         val configuration = Configuration(context.resources.configuration).apply {
             setLocale(locale)
@@ -46,7 +46,7 @@ object LanguagePreferences {
      * （如前台服务的通知文案）也立即使用所选语言。
      */
     fun applyToContext(context: Context, language: AppLanguage) {
-        val locale = language.locale
+        val locale = resolveLocale(context, language)
             ?: Resources.getSystem().configuration.locales[0]
         Locale.setDefault(locale)
         val configuration = Configuration(context.resources.configuration).apply {
@@ -56,5 +56,15 @@ object LanguagePreferences {
         }
         @Suppress("DEPRECATION")
         context.resources.updateConfiguration(configuration, context.resources.displayMetrics)
+    }
+
+    /**
+     * 跟随系统时，只有中文 / 英文走系统资源；其他语言回退英文，
+     * 避免默认资源（中文）让非中英用户看到完全不相符的界面。
+     */
+    private fun resolveLocale(context: Context, language: AppLanguage): Locale? {
+        if (language != AppLanguage.SYSTEM) return language.locale
+        val system = context.resources.configuration.locales[0]
+        return if (system.language == "zh" || system.language == "en") null else Locale.ENGLISH
     }
 }

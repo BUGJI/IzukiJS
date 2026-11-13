@@ -21,6 +21,9 @@ interface AccessibilityServiceHandle {
 
     fun inputText(text: String): Boolean
 
+    /** 当前输入焦点是否为可编辑控件；无法读取时返回 null。 */
+    fun hasEditableFocus(): Boolean?
+
     /** 由 `AccessibilityService` 继承实现。 */
     fun performGlobalAction(action: Int): Boolean
 

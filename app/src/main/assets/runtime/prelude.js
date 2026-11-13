@@ -50,7 +50,36 @@
     virtualScreen.awaitFrame = function (timeoutMs) {
       return virtualScreen.awaitFrameRaw(timeoutMs == null ? 1000 : timeoutMs);
     };
-    virtualScreen.capture = function (path, source) {
+    virtualScreen.frameSeq = function () {
+      return virtualScreen.frameSeqRaw();
+    };
+    virtualScreen.awaitChange = function (afterFrameSeq, timeoutMs) {
+      return virtualScreen.awaitChangeRaw(
+        (afterFrameSeq == null ? -1 : afterFrameSeq),
+        (timeoutMs == null ? 2000 : timeoutMs)
+      );
+    };
+    virtualScreen.awaitStable = function (options) {
+      var raw = virtualScreen.awaitStableRaw(JSON.stringify(options || {}));
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, frameSeq: 0, elapsedMs: 0 }; }
+    };
+    var __virtualCaptureOptions = function (options, source) {
+      if (!options) return;
+      var target = source == null ? 'virtual' : String(source);
+      if (target === 'main') return;
+      if (options.waitNextFrame) {
+        virtualScreen.awaitChange(options.afterFrame, options.timeoutMs);
+      }
+      if (options.waitStable) {
+        virtualScreen.awaitStable({
+          stableMs: options.stableMs,
+          timeoutMs: options.timeoutMs,
+          intervalMs: options.intervalMs
+        });
+      }
+    };
+    virtualScreen.capture = function (path, source, options) {
+      __virtualCaptureOptions(options, source);
       return virtualScreen.captureRaw(
         path == null ? "" : String(path),
         source == null ? "virtual" : String(source)
@@ -60,8 +89,23 @@
   // ---- captureScreen ----
   if (typeof captureScreenSource === 'function') {
     var __izukiCaptureScreen = captureScreen;
-    global.captureScreen = function (path, source) {
+    global.captureScreen = function (path, source, options) {
       var target = (path == null ? "" : String(path));
+      if (options && typeof virtualScreen !== 'undefined' && source !== 'main') {
+        if (typeof virtualScreen.active === 'function' && !virtualScreen.active()) {
+          return source == null ? __izukiCaptureScreen(target) : captureScreenSource(target, String(source));
+        }
+        if (options.waitNextFrame) {
+          virtualScreen.awaitChange(options.afterFrame, options.timeoutMs);
+        }
+        if (options.waitStable) {
+          virtualScreen.awaitStable({
+            stableMs: options.stableMs,
+            timeoutMs: options.timeoutMs,
+            intervalMs: options.intervalMs
+          });
+        }
+      }
       if (source == null) return __izukiCaptureScreen(target);
       return captureScreenSource(target, String(source));
     };
@@ -287,6 +331,16 @@
       catch (e) { return false; }
     };
   }
+  if (typeof inputInfoRaw === 'function') {
+    global.inputInfo = function (text, options) {
+      var raw = inputInfoRaw(
+        text == null ? "" : String(text),
+        (options && options.method) ? String(options.method) : "auto",
+        JSON.stringify(options || {})
+      );
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, delivered: false, error: String(e) }; }
+    };
+  }
   // ---- ocr ----
   if (typeof ocr !== 'undefined') {
     var __ocrFindRaw = ocr.findRaw;
@@ -309,6 +363,31 @@
         : ocr.recognizeBlocksJsonWithOptions(JSON.stringify(options));
       if (!raw) return null;
       try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    ocr.lines = function (options) {
+      var raw = ocr.recognizeLinesJsonWithOptions(JSON.stringify(options || {}));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    ocr.dedupeLines = function (lines, options) {
+      if (!lines || !lines.length) return [];
+      var windowSize = (options && options.window != null) ? options.window : 20;
+      var normalize = function (text) {
+        return String(text == null ? "" : text).replace(/\s+/g, "").toLowerCase();
+      };
+      var out = [];
+      var recent = [];
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        var key = normalize(line && line.text != null ? line.text : line);
+        if (key && recent.indexOf(key) >= 0) continue;
+        out.push(line);
+        if (key) {
+          recent.push(key);
+          if (recent.length > windowSize) recent.shift();
+        }
+      }
+      return out;
     };
   }
   // ---- selector ----

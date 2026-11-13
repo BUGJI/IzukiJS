@@ -31,6 +31,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -45,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +66,7 @@ import com.benton.izukijs.schedule.ScheduleEvent
 import com.benton.izukijs.schedule.ScheduleKind
 import com.benton.izukijs.ui.automation.TriggerEditor
 import com.benton.izukijs.ui.automation.TriggerEditorState
+import com.benton.izukijs.ui.automation.TriggerEditorStateSaver
 
 import com.benton.izukijs.ui.automation.scheduleEventLabel
 import com.benton.izukijs.ui.automation.scheduleKindLabel
@@ -89,8 +92,9 @@ fun ScheduleScreen(onBack: () -> Unit) {
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var schedules by remember { mutableStateOf<List<Schedule>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
-    var showAdd by remember { mutableStateOf(false) }
-    var editTarget by remember { mutableStateOf<Schedule?>(null) }
+    var showAdd by rememberSaveable { mutableStateOf(false) }
+    var editTargetId by rememberSaveable { mutableStateOf<String?>(null) }
+    val editTarget = schedules.firstOrNull { it.id == editTargetId }
     var deleteTarget by remember { mutableStateOf<Schedule?>(null) }
 
     LaunchedEffect(Unit) {
@@ -160,7 +164,7 @@ fun ScheduleScreen(onBack: () -> Unit) {
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { editTarget = schedule },
+                                    .clickable { editTargetId = schedule.id },
                             )
                         }
                     }
@@ -195,9 +199,9 @@ fun ScheduleScreen(onBack: () -> Unit) {
             initial = initial,
             onDismiss = {
                 showAdd = false
-                editTarget = null
+                editTargetId = null
             },
-            onConfirm = { draft ->
+            onConfirm = { draft, done ->
                 val triggerAt = draft.triggerAtMillis
                 val schedule = initial?.copy(
                     scriptId = draft.script.id,
@@ -225,16 +229,17 @@ fun ScheduleScreen(onBack: () -> Unit) {
                     retryDelayMinutes = draft.retryDelay,
                 )
                 scope.launch {
-                    try {
+                    val ok = try {
                         // scheduleAsync 按 id 覆盖并重设 alarm，不再先删除旧任务。
                         container.scheduleManager.scheduleAsync(schedule)
-                        refresh()
-                        showAdd = false
-                        editTarget = null
+                        schedules = container.scheduleRepository.listAsync()
+                        true
                     } catch (t: Throwable) {
                         if (t is kotlinx.coroutines.CancellationException) throw t
                         snackbar.show(context.getString(R.string.editor_save_failed))
+                        false
                     }
+                    done(ok)
                 }
             },
         )
@@ -246,30 +251,33 @@ private fun AddScheduleDialog(
     scripts: List<ScriptInfo>,
     initial: Schedule?,
     onDismiss: () -> Unit,
-    onConfirm: (ScheduleDraft) -> Unit,
+    onConfirm: (ScheduleDraft, (Boolean) -> Unit) -> Unit,
 ) {
-    val trigger = remember(initial) {
-        initial?.let { TriggerEditorState.from(it) } ?: TriggerEditorState.empty()
+    val trigger by rememberSaveable(initial?.id, stateSaver = TriggerEditorStateSaver) {
+        mutableStateOf(initial?.let { TriggerEditorState.from(it) } ?: TriggerEditorState.empty())
     }
-    var selected by remember(initial) {
-        mutableStateOf(scripts.firstOrNull { it.id == initial?.scriptId } ?: scripts.firstOrNull())
+    var selectedId by rememberSaveable(initial?.id) {
+        mutableStateOf(initial?.scriptId ?: scripts.firstOrNull()?.id.orEmpty())
     }
-    var scriptExpanded by remember { mutableStateOf(false) }
-    var retryCount by remember(initial) { mutableStateOf((initial?.retryCount ?: 0).toString()) }
-    var retryDelay by remember(initial) {
+    val selected = scripts.firstOrNull { it.id == selectedId } ?: scripts.firstOrNull()
+    var scriptExpanded by rememberSaveable { mutableStateOf(false) }
+    var retryCount by rememberSaveable(initial?.id) {
+        mutableStateOf((initial?.retryCount ?: 0).toString())
+    }
+    var retryDelay by rememberSaveable(initial?.id) {
         mutableStateOf((initial?.retryDelayMinutes ?: 10L).coerceAtLeast(1L).toString())
     }
     var saving by remember { mutableStateOf(false) }
 
     // 脚本可能异步加载完成，到位后补上默认选中。
     LaunchedEffect(scripts) {
-        if (selected == null) selected = scripts.firstOrNull()
+        if (selectedId.isBlank()) selectedId = scripts.firstOrNull()?.id.orEmpty()
     }
 
     val cronValid = trigger.cronValid
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!saving) onDismiss() },
         title = {
             Text(
                 stringResource(
@@ -296,10 +304,17 @@ private fun AddScheduleDialog(
                         scripts.forEach { script ->
                             DropdownMenuItem(
                                 text = { Text(script.name) },
-                                onClick = { selected = script; scriptExpanded = false },
+                                onClick = { selectedId = script.id; scriptExpanded = false },
                             )
                         }
                     }
+                }
+                if (scripts.isEmpty()) {
+                    Text(
+                        stringResource(R.string.schedule_no_scripts),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
                 }
 
                 TriggerEditor(trigger)
@@ -330,21 +345,23 @@ private fun AddScheduleDialog(
                 onClick = {
                     val script = selected ?: return@TextButton
                     saving = true
-                    onConfirm(
-                        ScheduleDraft(
-                            script = script,
-                            kind = trigger.kind,
-                            triggerAtMillis = trigger.triggerAtMillis(),
-                            hour = trigger.hourInt(),
-                            minute = trigger.minuteInt(),
-                            interval = trigger.intervalLong(),
-                            cron = trigger.cron.trim(),
-                            event = trigger.eventOrNull(),
-                            conditions = trigger.conditions(),
-                            retryCount = retryCount.toIntOrNull()?.coerceIn(0, 10) ?: 0,
-                            retryDelay = retryDelay.toLongOrNull()?.coerceIn(1L, 1440L) ?: 10L,
-                        ),
+                    val draft = ScheduleDraft(
+                        script = script,
+                        kind = trigger.kind,
+                        triggerAtMillis = trigger.triggerAtMillis(),
+                        hour = trigger.hourInt(),
+                        minute = trigger.minuteInt(),
+                        interval = trigger.intervalLong(),
+                        cron = trigger.cron.trim(),
+                        event = trigger.eventOrNull(),
+                        conditions = trigger.conditions(),
+                        retryCount = retryCount.toIntOrNull()?.coerceIn(0, 10) ?: 0,
+                        retryDelay = retryDelay.toLongOrNull()?.coerceIn(1L, 1440L) ?: 10L,
                     )
+                    onConfirm(draft) { ok ->
+                        saving = false
+                        if (ok) onDismiss()
+                    }
                 },
                 enabled = selected != null && !saving && cronValid,
             ) { Text(stringResource(R.string.common_confirm)) }

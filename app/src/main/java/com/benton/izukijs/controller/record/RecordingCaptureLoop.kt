@@ -1,6 +1,7 @@
 package com.benton.izukijs.controller.record
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.service.OverlayCoordinator
 import kotlinx.coroutines.CoroutineScope
@@ -44,8 +45,9 @@ class RecordingCaptureLoop(
     @Volatile
     private var acceptingAfter = true
 
+    /** 连续失败起点；按持续时间而不是次数判断，避免旋转稳定窗口误报截图失败。 */
     @Volatile
-    private var consecutiveFailures = 0
+    private var failureSinceUptime = 0L
 
     @Volatile
     private var failureReported = false
@@ -155,7 +157,7 @@ class RecordingCaptureLoop(
                 source = RecordSource.USER,
             )
             if (path != null) {
-                consecutiveFailures = 0
+                failureSinceUptime = 0L
                 failureReported = false
                 val sample = FrameSample(timestamp, path)
                 synchronized(lock) {
@@ -172,8 +174,11 @@ class RecordingCaptureLoop(
 
     private fun noteCaptureFailure(message: String?) {
         if (message != null) logBus.debug("用户录制截图失败: $message")
-        consecutiveFailures++
-        if (consecutiveFailures >= FAILURE_REPORT_THRESHOLD && !failureReported) {
+        val now = SystemClock.uptimeMillis()
+        if (failureSinceUptime == 0L) failureSinceUptime = now
+        // 旋转稳定窗口内 capture() 会短暂返回空帧（由其它后端兜底），不应按连续次数误报；
+        // 只有持续拿不到画面超过宽限期才提示截图失败。
+        if (!failureReported && now - failureSinceUptime >= FAILURE_REPORT_GRACE_MS) {
             failureReported = true
             onCaptureFailure()
         }
@@ -184,6 +189,6 @@ class RecordingCaptureLoop(
         const val AFTER_DELAY_MS = 220L
         const val MAX_SAMPLES = 12
         const val STOP_GRACE_MS = 350L
-        const val FAILURE_REPORT_THRESHOLD = 3
+        const val FAILURE_REPORT_GRACE_MS = 5_000L
     }
 }

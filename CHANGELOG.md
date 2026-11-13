@@ -5,9 +5,33 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [1.2.1] - 2026-11-13
+## [1.2.1] - 2026-11-14
+### 新增
+
+- 通知渠道新增 6 种 HTTP 推送：钉钉群机器人、企微群机器人、飞书群机器人、Server酱、PushPlus、Gotify，
+  支持各自的签名、@ 成员与模板参数；渠道配置新增通用 `config` 映射，敏感字段仍经 Keystore 加密。
+- `HttpTransport` 支持 URL 内 Basic 认证与 `PATCH` 方法（反射兜底）。
+- Bark 渠道增强：支持加密算法（AES-CBC/ECB/GCM）、角标、通知级别、消息链接、持续提醒与验证码自动复制。
+- Webhook 渠道增强：支持 `PATCH`、HMAC 签名（`{{timestamp}}` / `{{sign}}` 与 `[timestamp]` / `[sign]`）、
+  响应关键字校验，以及 `[title]` / `[content]` / `[from]` 兼容占位符。
+- 新增 `inputInfo(text, {verify})`：返回 `{delivered, ok, focused, method, screenChanged, frameSeq, clipboardRestored}`。
+  无障碍后端可直接判断可编辑焦点，虚拟屏通过输入前后帧比较辅助判断，避免 `input text` 仅凭 exit code
+  就把“没有焦点”报成成功。
+- 新增 `ocr.lines()` 行聚合与 `ocr.dedupeLines()` 跨屏去重；`lines` 按阅读顺序合并同一行的多个块，
+  支持 `maxGapY` / `maxGapX`。MCP `ocr` 同步支持 `lines=true`。
+- 虚拟屏新增 `frameSeq()` / `awaitChange()` / `awaitStable()`；`captureScreen()` 与 `virtualScreen.capture()`
+  支持 `{waitNextFrame, afterFrame, waitStable, stableMs, timeoutMs}`，用于等待点击后的新帧或过渡帧结束。
+- MCP `virtual_screen action=capture` 支持 `wait_stable` / `stable_ms`，返回 meta 含 `frameSeq`。
+- 脚本新增 `device.rotation()`，返回 0 / 1 / 2 / 3，便于在运行中感知横竖屏切换并重算坐标。
+
 ### 修复
 
+- 后台模式预创建虚拟屏时会读取脚本中字面量 `virtualScreen.start({...})` 的宽高 / dpi，避免先按设置
+  建一次、再被脚本重建；动态参数仍回退设置。
+- 虚拟屏分辨率重建日志补充“当前 / 目标”标签。
+- MCP `batch` 改为按工具注册表派发，批内可调用 `virtual_screen_input`、`virtual_screen` 等工具；
+  仍禁止嵌套 batch。
+- 虚拟屏连续 `back()` 后会提示没有 launcher 可能停在空白页；OCR 空结果返回 `empty` / `reason` 并记录警告。
 - 脚本 `console.*` 输出现在会进入 `get_run_log` / `read_logs(run_id=...)`：runId 显式注入
   QuickJS bridge，活跃 run 兜底仅在运行中生效，收尾输出仍可补记。
 - `text` 使用剪贴板输入后会快照并恢复原剪贴板；后台读取受限无法快照时返回
@@ -18,6 +42,22 @@
 - `virtual_screen action=start` 启动失败改为返回工具错误（带 `state` / `lastStopReason` / `retryable`），
   不再以 `state=idle` 伪装成功；MCP 增加请求耗时的调试日志。
 - `click(by=text)` 的 OCR 兜底路径补齐 `hit_checked` / `hit_reason`，与坐标点击语义一致。
+- 持续录屏在横竖屏切换时先等旋转动画稳定，再调整虚拟显示器；稳定窗口内截图自动回退到
+  无障碍 / Shell，修复录制帧只占一角、其余全黑或画面不在中心的问题。
+- 录制帧标注按横纵两轴分别缩放，并在动作方向与帧不一致时跳过标注，避免标记漂出画面。
+- 用户录制在反射读取显示信息失败时改用真实屏幕尺寸与 rotation 回退，横屏触摸不再按竖屏换算。
+- 蓝牙 HID 在旋转后重新下发 `SET_RESOLUTION`，绝对坐标点击不再整体偏移。
+- 调试悬浮窗 / 悬浮控制条在旋转后重新贴合屏幕并限制拖动范围，避免拖到屏幕外找不回来。
+- 设置页「设备」分辨率档位在旋转后重新读取；示例脚本每轮刷新屏幕宽高。
+
+### 文档
+
+- 新增开发者文档：`CONTRIBUTING.md`、`AGENTS.md`、`docs/ARCHITECTURE.md`、
+  `docs/EXTENDING.md`、`docs/TESTING.md`、`docs/RELEASING.md`、`docs/README.md`。
+- 新增 `docs/CONTROL_MODES.md`，集中维护控制模式能力矩阵、授权风险与手势 / 按键限制；
+  README、脚本 API 与工具说明改为链接，减少多处重复漂移。
+- `docs/SCRIPT_API.md`、`docs/TOOLS.md`、`docs/MCP.md` 增加目录导航。
+- 新增 `scripts/check_docs.py` 并在 CI 中检查相对链接与锚点。
 
 ## [1.2.0] - 2026-11-13
 ### 新增

@@ -20,6 +20,7 @@ object RecordingScriptExporter {
         }
         sb.append('\n')
         var lastT = 0L
+        var lastRotation: Int? = null
         reader.events.forEach { event ->
             if (!isTimedAction(event)) {
                 appendComment(sb, event)
@@ -31,7 +32,18 @@ object RecordingScriptExporter {
             }
             lastT = event.timestamp
             when (event) {
-                is UserActionEvent -> appendUserAction(sb, event)
+                is UserActionEvent -> {
+                    val previous = lastRotation
+                    if (previous != null && event.rotation != previous) {
+                        sb.append("// 注意：录制中屏幕方向由 rotation=")
+                            .append(previous)
+                            .append(" 变为 ")
+                            .append(event.rotation)
+                            .append("，以下坐标仅在录制方向下有效\n")
+                    }
+                    lastRotation = event.rotation
+                    appendUserAction(sb, event)
+                }
                 is ClickEvent -> sb.append("click(").append(event.x).append(", ")
                     .append(event.y).append(");\n")
                 is LongClickEvent -> sb.append("longClick(").append(event.x).append(", ")
@@ -159,6 +171,11 @@ object RecordingScriptExporter {
         }
         if (event.packageName.isNotBlank()) {
             sb.append("// package: ").append(oneLine(event.packageName)).append('\n')
+        }
+        if (event.screenWidth > 0 && event.screenHeight > 0) {
+            sb.append("// screen: ").append(event.screenWidth).append('x')
+                .append(event.screenHeight).append(" rotation=").append(event.rotation)
+                .append('\n')
         }
     }
 

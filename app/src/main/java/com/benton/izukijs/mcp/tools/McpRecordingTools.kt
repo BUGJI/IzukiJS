@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import com.benton.izukijs.controller.record.AppEvent
 import com.benton.izukijs.controller.record.ClickEvent
+import com.benton.izukijs.controller.record.annotationScale
 import com.benton.izukijs.controller.record.ContextEvent
 import com.benton.izukijs.controller.record.GestureEvent
 import com.benton.izukijs.controller.record.GlobalActionEvent
@@ -360,15 +361,21 @@ private fun annotateFrame(source: Bitmap, action: RecordEvent): Bitmap {
         style = Paint.Style.STROKE
         strokeWidth = (copy.width / 240f).coerceAtLeast(3f)
     }
-    val screenWidth = when (action) {
-        is UserActionEvent -> action.screenWidth
-        else -> 0
-    }.takeIf { it > 0 } ?: copy.width
-    val scale = copy.width.toFloat() / screenWidth
+    val actionScreenWidth = (action as? UserActionEvent)?.screenWidth ?: 0
+    val actionScreenHeight = (action as? UserActionEvent)?.screenHeight ?: 0
+    // 动作与帧方向不一致 / 分辨率缺失时，坐标属于另一套画布，继续标注只会漂出画面。
+    val scale = annotationScale(
+        frameWidth = copy.width,
+        frameHeight = copy.height,
+        screenWidth = actionScreenWidth,
+        screenHeight = actionScreenHeight,
+    ) ?: return copy
+    val scaleX = scale.x
+    val scaleY = scale.y
     val radius = (copy.width / 22f).coerceAtLeast(24f)
     fun marker(x: Int, y: Int) {
-        val cx = x * scale
-        val cy = y * scale
+        val cx = x * scaleX
+        val cy = y * scaleY
         canvas.drawCircle(cx, cy, radius, paint)
         canvas.drawLine(cx - radius * 1.6f, cy, cx + radius * 1.6f, cy, paint)
         canvas.drawLine(cx, cy - radius * 1.6f, cx, cy + radius * 1.6f, paint)
@@ -386,7 +393,7 @@ private fun annotateFrame(source: Bitmap, action: RecordEvent): Bitmap {
                         val py = point.optInt(1)
                         val last = previous
                         if (last != null) {
-                            canvas.drawLine(last.first * scale, last.second * scale, px * scale, py * scale, paint)
+                            canvas.drawLine(last.first * scaleX, last.second * scaleY, px * scaleX, py * scaleY, paint)
                         }
                         previous = px to py
                     }
@@ -397,10 +404,10 @@ private fun annotateFrame(source: Bitmap, action: RecordEvent): Bitmap {
                 action.kind == UserActionKind.GESTURE ||
                 action.kind == UserActionKind.MULTI_SWIPE
             ) {
-                val startX = action.x * scale
-                val startY = action.y * scale
-                val endX = action.x2 * scale
-                val endY = action.y2 * scale
+                val startX = action.x * scaleX
+                val startY = action.y * scaleY
+                val endX = action.x2 * scaleX
+                val endY = action.y2 * scaleY
                 canvas.drawLine(startX, startY, endX, endY, paint)
                 marker(action.x, action.y)
                 marker(action.x2, action.y2)
@@ -411,10 +418,10 @@ private fun annotateFrame(source: Bitmap, action: RecordEvent): Bitmap {
 
         is SwipeEvent -> {
             canvas.drawLine(
-                action.x1 * scale,
-                action.y1 * scale,
-                action.x2 * scale,
-                action.y2 * scale,
+                action.x1 * scaleX,
+                action.y1 * scaleY,
+                action.x2 * scaleX,
+                action.y2 * scaleY,
                 paint,
             )
             marker(action.x1, action.y1)

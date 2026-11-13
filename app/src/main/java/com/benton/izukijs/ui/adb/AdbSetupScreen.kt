@@ -14,13 +14,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -88,6 +91,8 @@ fun AdbSetupScreen(onBack: () -> Unit) {
     var pairCode by remember { mutableStateOf("") }
     var connectPort by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var manualBusy by remember { mutableStateOf(false) }
     var showForgetDialog by remember { mutableStateOf(false) }
     var advancedExpanded by remember { mutableStateOf(false) }
     var pendingAction by remember { mutableStateOf<AdbPendingAction?>(null) }
@@ -152,13 +157,18 @@ fun AdbSetupScreen(onBack: () -> Unit) {
             }
             AdbPendingAction.MDNS_CONNECT -> scope.launch {
                 if (!manager.hasIdentity()) {
-                    message = resources.getString(R.string.adb_message_no_identity)
+                    actionMessage = resources.getString(R.string.adb_message_no_identity)
                     return@launch
                 }
-                val ok = manager.connect()
-                message = resources.getString(
-                    if (ok) R.string.adb_message_connected else R.string.adb_message_connect_failed,
-                )
+                manualBusy = true
+                try {
+                    val ok = manager.connect()
+                    actionMessage = resources.getString(
+                        if (ok) R.string.adb_message_connected else R.string.adb_message_connect_failed,
+                    )
+                } finally {
+                    manualBusy = false
+                }
             }
             AdbPendingAction.GRANT_LOCAL_NETWORK -> manager.refreshState()
         }
@@ -194,6 +204,9 @@ fun AdbSetupScreen(onBack: () -> Unit) {
 
     val supported = manager.isSupported()
     val connected = state is AdbConnectionManager.State.Connected
+    val busy = manualBusy ||
+        state is AdbConnectionManager.State.Pairing ||
+        state is AdbConnectionManager.State.Connecting
 
     LaunchedEffect(Unit) {
         manager.refreshState()
@@ -231,7 +244,7 @@ fun AdbSetupScreen(onBack: () -> Unit) {
 
     fun resolveHost(): String? =
         host.ifBlank { manager.preferredHost().orEmpty() }.ifBlank {
-            message = resources.getString(R.string.adb_message_no_host)
+            actionMessage = resources.getString(R.string.adb_message_no_host)
             null
         }
 
@@ -248,6 +261,7 @@ fun AdbSetupScreen(onBack: () -> Unit) {
                     .widthIn(max = PageMaxWidth)
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
+                    .imePadding()
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -387,19 +401,30 @@ fun AdbSetupScreen(onBack: () -> Unit) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(
                                     onClick = { requirePermissionsFor(AdbPendingAction.MDNS_CONNECT) },
-                                    enabled = localNetworkGranted || !localNetworkRequired,
+                                    enabled = (localNetworkGranted || !localNetworkRequired) &&
+                                        manager.hasIdentity() && !busy,
                                 ) { Text(stringResource(R.string.adb_mdns_connect)) }
-                                OutlinedButton(onClick = {
-                                    scope.launch {
-                                        manager.disconnect()
-                                        message = resources.getString(R.string.adb_message_disconnected)
-                                    }
-                                }) { Text(stringResource(R.string.adb_disconnect)) }
+                                OutlinedButton(
+                                    enabled = connected && !busy,
+                                    onClick = {
+                                        scope.launch {
+                                            manager.disconnect()
+                                            actionMessage = resources.getString(R.string.adb_message_disconnected)
+                                        }
+                                    },
+                                ) { Text(stringResource(R.string.adb_disconnect)) }
                             }
                             OutlinedButton(
                                 onClick = { showForgetDialog = true },
-                                enabled = manager.hasIdentity(),
+                                enabled = manager.hasIdentity() && !busy,
                             ) { Text(stringResource(R.string.adb_forget)) }
+                            actionMessage?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
 
@@ -474,25 +499,32 @@ fun AdbSetupScreen(onBack: () -> Unit) {
                                 )
                                 Button(
                                     enabled = pairCode.length == 6 &&
-                                        (localNetworkGranted || !localNetworkRequired),
+                                        (localNetworkGranted || !localNetworkRequired) && !busy,
                                     onClick = {
                                         scope.launch {
                                             val resolvedHost = resolveHost() ?: return@launch
                                             val port = pairPort.toIntOrNull() ?: endpoint?.port
                                             if (port == null) {
-                                                message = resources.getString(R.string.adb_message_need_pair_port)
+                                                actionMessage =
+                                                    resources.getString(R.string.adb_message_need_pair_port)
                                                 return@launch
                                             }
                                             if (pairCode.length != 6) {
-                                                message = resources.getString(R.string.adb_message_need_pair_code)
+                                                actionMessage =
+                                                    resources.getString(R.string.adb_message_need_pair_code)
                                                 return@launch
                                             }
-                                            message = resources.getString(R.string.adb_message_pairing)
-                                            val ok = manager.pairAndConnect(resolvedHost, port, pairCode)
-                                            message = resources.getString(
-                                                if (ok) R.string.adb_message_pair_success
-                                                else R.string.adb_message_pair_failed,
-                                            )
+                                            manualBusy = true
+                                            actionMessage = resources.getString(R.string.adb_message_pairing)
+                                            try {
+                                                val ok = manager.pairAndConnect(resolvedHost, port, pairCode)
+                                                actionMessage = resources.getString(
+                                                    if (ok) R.string.adb_message_pair_success
+                                                    else R.string.adb_message_pair_failed,
+                                                )
+                                            } finally {
+                                                manualBusy = false
+                                            }
                                         }
                                     },
                                 ) { Text(stringResource(R.string.adb_pair_connect)) }
@@ -506,23 +538,53 @@ fun AdbSetupScreen(onBack: () -> Unit) {
                                     singleLine = true,
                                 )
                                 OutlinedButton(
-                                    enabled = localNetworkGranted || !localNetworkRequired,
+                                    enabled = (localNetworkGranted || !localNetworkRequired) && !busy,
                                     onClick = {
                                         scope.launch {
                                             val resolvedHost = resolveHost() ?: return@launch
                                             val port = connectPort.toIntOrNull()
                                             if (port == null) {
-                                                message = resources.getString(R.string.adb_message_need_connect_port)
+                                                actionMessage =
+                                                    resources.getString(R.string.adb_message_need_connect_port)
                                                 return@launch
                                             }
-                                            val ok = manager.connectManual(resolvedHost, port)
-                                            message = resources.getString(
-                                                if (ok) R.string.adb_message_connected
-                                                else R.string.adb_message_connect_failed,
-                                            )
+                                            manualBusy = true
+                                            try {
+                                                val ok = manager.connectManual(resolvedHost, port)
+                                                actionMessage = resources.getString(
+                                                    if (ok) R.string.adb_message_connected
+                                                    else R.string.adb_message_connect_failed,
+                                                )
+                                            } finally {
+                                                manualBusy = false
+                                            }
                                         }
                                     },
                                 ) { Text(stringResource(R.string.adb_manual_connect)) }
+
+                                if (busy) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Text(
+                                            stringResource(R.string.adb_action_working),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                actionMessage?.let {
+                                    Text(
+                                        it,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
                             }
                         }
                     }

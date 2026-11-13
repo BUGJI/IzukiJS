@@ -154,20 +154,9 @@ internal fun ControlSettings(onOpenSetup: () -> Unit = {}) {
                         } else {
                             controllerSettings.disabledModes + mode
                         }
-                        // 停用后同时清掉指向该后端的偏好，避免留下永远不生效的选中项。
-                        saveController(
-                            if (enabled) {
-                                controllerSettings.copy(disabledModes = disabled)
-                            } else {
-                                controllerSettings.copy(
-                                    disabledModes = disabled,
-                                    readMode = controllerSettings.readMode.takeUnless { it == mode },
-                                    operateMode = controllerSettings.operateMode.takeUnless { it == mode },
-                                    capabilityPreferences = controllerSettings.capabilityPreferences
-                                        .filterValues { it != mode },
-                                )
-                            },
-                        )
+                        // 只记录停用状态，保留用户已经配置的优先级；
+                        // 后端恢复后原偏好继续生效，不会因一次临时停用被永久清空。
+                        saveController(controllerSettings.copy(disabledModes = disabled))
                     },
                 )
             }

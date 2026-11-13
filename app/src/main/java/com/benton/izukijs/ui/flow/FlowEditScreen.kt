@@ -29,6 +29,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +45,7 @@ import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.schedule.ScheduleKind
 import com.benton.izukijs.ui.automation.TriggerEditor
 import com.benton.izukijs.ui.automation.TriggerEditorState
+import com.benton.izukijs.ui.automation.TriggerEditorStateSaver
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
@@ -57,6 +60,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+private val FlowStepListSaver: Saver<List<FlowStep>, List<String>> = Saver(
+    save = { steps -> steps.flatMap { listOf(it.id, it.scriptId, it.scriptName) } },
+    restore = { flat ->
+        flat.chunked(3).mapNotNull { values ->
+            if (values.size == 3) FlowStep(values[0], values[1], values[2]) else null
+        }
+    },
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FlowEditScreen(
@@ -69,28 +81,30 @@ fun FlowEditScreen(
     val snackbar = LocalSnackbarController.current
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
     var flow by remember { mutableStateOf<ScriptFlow?>(null) }
-    var triggerState by remember { mutableStateOf<TriggerEditorState?>(null) }
-    var name by remember { mutableStateOf("") }
-    var steps by remember { mutableStateOf<List<FlowStep>>(emptyList()) }
-    var order by remember { mutableStateOf(FlowOrder.SEQUENTIAL) }
-    var continueOnError by remember { mutableStateOf(true) }
-    var enabled by remember { mutableStateOf(true) }
-    var loaded by remember { mutableStateOf(false) }
-    var notFound by remember { mutableStateOf(false) }
+    var triggerState by rememberSaveable(flowId, stateSaver = TriggerEditorStateSaver) {
+        mutableStateOf(TriggerEditorState.empty())
+    }
+    var name by rememberSaveable(flowId) { mutableStateOf("") }
+    var steps by rememberSaveable(flowId, stateSaver = FlowStepListSaver) {
+        mutableStateOf<List<FlowStep>>(emptyList())
+    }
+    var order by rememberSaveable(flowId) { mutableStateOf(FlowOrder.SEQUENTIAL) }
+    var continueOnError by rememberSaveable(flowId) { mutableStateOf(true) }
+    var enabled by rememberSaveable(flowId) { mutableStateOf(true) }
+    var loaded by rememberSaveable(flowId) { mutableStateOf(false) }
+    var notFound by rememberSaveable(flowId) { mutableStateOf(false) }
     var showScriptPicker by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
-    var baselineKey by remember { mutableStateOf<String?>(null) }
-    var showDiscard by remember { mutableStateOf(false) }
+    var baselineKey by rememberSaveable(flowId) { mutableStateOf<String?>(null) }
+    var showDiscard by rememberSaveable(flowId) { mutableStateOf(false) }
 
     fun draftKey(): String {
         val trigger = triggerState
-        val triggerKey = trigger?.let {
-            listOf(
-                it.kind, it.hour, it.minute, it.interval, it.cron, it.event,
-                it.conditionCharging, it.conditionWifi, it.conditionUnlocked,
-                it.foregroundPackage,
-            ).joinToString(",", prefix = "[", postfix = "]")
-        }.orEmpty()
+        val triggerKey = listOf(
+            trigger.kind, trigger.hour, trigger.minute, trigger.interval, trigger.cron, trigger.event,
+            trigger.conditionCharging, trigger.conditionWifi, trigger.conditionUnlocked,
+            trigger.foregroundPackage,
+        ).joinToString(",", prefix = "[", postfix = "]")
         return listOf(
             name,
             steps.joinToString(";") { "${it.id}:${it.scriptId}" },
@@ -103,6 +117,12 @@ fun FlowEditScreen(
 
     LaunchedEffect(flowId) {
         scripts = container.scriptRepository.listAsync()
+        if (loaded) {
+            // 草稿已由 rememberSaveable 恢复：只补回保存所需的原始 flow 身份，
+            // 不要把用户当前编辑内容覆盖成磁盘版本。
+            if (flowId != null) flow = container.flowRepository.getAsync(flowId)
+            return@LaunchedEffect
+        }
         if (flowId == null) {
             triggerState = TriggerEditorState.empty()
         } else {
@@ -130,7 +150,7 @@ fun FlowEditScreen(
     }
 
     val trigger = triggerState
-    val canSave = loaded && !notFound && trigger != null &&
+    val canSave = loaded && !notFound &&
         name.isNotBlank() && steps.isNotEmpty() && trigger.cronValid
     val dirty = baselineKey != null && draftKey() != baselineKey
 
@@ -142,7 +162,7 @@ fun FlowEditScreen(
     BackHandler { requestBack() }
 
     fun save() {
-        val trigger = triggerState ?: return
+        val trigger = triggerState
         if (!canSave || saving) return
         saving = true
         scope.launch {
@@ -203,7 +223,7 @@ fun FlowEditScreen(
                 modifier = Modifier.fillMaxSize().padding(padding),
             )
 
-            trigger != null -> PageColumn(
+            else -> PageColumn(
                 modifier = Modifier.padding(padding).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(SectionGap),
             ) {

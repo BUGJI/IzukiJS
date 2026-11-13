@@ -63,6 +63,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
         SecretCipher.decrypt(unlockSettings.pinCipher)
     }
     var showRecordConfirm by remember { mutableStateOf(false) }
+    var showClearConfirm by remember { mutableStateOf(false) }
     var showTestConfirm by remember { mutableStateOf(false) }
     var testRunning by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<UnlockResult?>(null) }
@@ -174,10 +175,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                         }
                         TextButton(
                             enabled = !recordingActive,
-                            onClick = {
-                                viewModel.clearUnlockPattern()
-                                container.unlockGestureRecorder.resetState()
-                            },
+                            onClick = { showClearConfirm = true },
                         ) {
                             Text(stringResource(R.string.unlock_pattern_clear))
                         }
@@ -280,6 +278,22 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                 }
             },
             onDismiss = { showTestConfirm = false },
+        )
+    }
+
+    if (showClearConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.unlock_pattern_clear_title),
+            message = stringResource(R.string.unlock_pattern_clear_message),
+            confirmLabel = stringResource(R.string.unlock_pattern_clear),
+            destructive = true,
+            onConfirm = {
+                showClearConfirm = false
+                viewModel.clearUnlockPattern()
+                container.unlockGestureRecorder.resetState()
+                scope.launch { snackbar.show(context.getString(R.string.unlock_pattern_cleared)) }
+            },
+            onDismiss = { showClearConfirm = false },
         )
     }
 

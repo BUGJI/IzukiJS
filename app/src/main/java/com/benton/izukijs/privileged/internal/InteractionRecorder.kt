@@ -1,7 +1,10 @@
 package com.benton.izukijs.privileged.internal
 
 import android.content.Context
+import android.hardware.display.DisplayManager
 import android.os.SystemClock
+import android.util.DisplayMetrics
+import android.view.Display
 import com.benton.izukijs.model.TouchInputDevice
 import com.benton.izukijs.model.UnlockRecordingParser
 import org.json.JSONArray
@@ -332,8 +335,24 @@ internal class InteractionRecorder(private val context: Context?) {
     }
 
     private fun fallbackScreen(): ScreenGeometry? = runCatching {
-        val metrics = context?.resources?.displayMetrics ?: return null
-        ScreenGeometry(metrics.widthPixels, metrics.heightPixels, 0)
+        val ctx = context ?: return null
+        val metrics = DisplayMetrics()
+        val display = runCatching {
+            ctx.getSystemService(DisplayManager::class.java)
+                ?.getDisplay(Display.DEFAULT_DISPLAY)
+        }.getOrNull()
+        if (display != null) {
+            @Suppress("DEPRECATION")
+            display.getRealMetrics(metrics)
+        } else {
+            metrics.setTo(ctx.resources.displayMetrics)
+        }
+        // 逻辑尺寸必须与 rotation 同时采样，否则横屏下触摸坐标会按未旋转处理。
+        ScreenGeometry(
+            width = metrics.widthPixels.coerceAtLeast(1),
+            height = metrics.heightPixels.coerceAtLeast(1),
+            rotation = runCatching { display?.rotation ?: 0 }.getOrDefault(0),
+        )
     }.getOrNull()
 
     private fun runGetevent(): String? = runCatching {

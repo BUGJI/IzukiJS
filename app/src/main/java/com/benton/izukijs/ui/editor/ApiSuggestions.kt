@@ -70,6 +70,10 @@ object ApiSuggestions {
         } else {
             TOP_LEVEL.filter { it.text.startsWith(token, ignoreCase = true) }
         }
-        return result.take(limit.coerceIn(1, 12))
+        return result
+            // 接受补全后光标停在 `(` 后，token 仍与刚插入的候选相同；过滤掉它，
+            // 否则补全条看起来像“点了没反应”。
+            .filter { it.text != token && it.text != "$token(" }
+            .take(limit.coerceIn(1, 12))
     }
 }

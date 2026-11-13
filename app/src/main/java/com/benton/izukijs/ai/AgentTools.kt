@@ -48,8 +48,7 @@ class AgentTools(
         // 安全策略必须放在 dispatch 层：batch 内嵌动作也经由这里，无法绕过。
         policyViolation(name, args)?.let { return it }
         return when (name) {
-            "ocr" -> ocrApi.recognizeBlocksJson()
-                ?: jsonOf { put("ok", false); put("message", "未识别到文字，或截图权限不可用") }
+            "ocr" -> doOcr(args)
 
             "ui_dump" -> doUiDump()
             "find" -> doFind(args)

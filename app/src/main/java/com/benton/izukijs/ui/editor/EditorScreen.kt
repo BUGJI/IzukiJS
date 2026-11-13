@@ -93,6 +93,7 @@ import com.benton.izukijs.data.ScriptVersion
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.ui.appViewModel
+import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.ScriptEnvDialog
@@ -114,6 +115,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val history by viewModel.history.collectAsStateWithLifecycle()
     val runPrompt by viewModel.runPrompt.collectAsStateWithLifecycle()
     val persistedContent by viewModel.savedContent.collectAsStateWithLifecycle()
+    val saving by viewModel.saving.collectAsStateWithLifecycle()
     val conflict by viewModel.conflict.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
@@ -122,6 +124,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 
     var script by remember(scriptId) { mutableStateOf<ScriptInfo?>(null) }
     var notFound by remember(scriptId) { mutableStateOf(false) }
+    var loadError by remember(scriptId) { mutableStateOf(false) }
+    var reloadToken by remember(scriptId) { mutableStateOf(0) }
     // 编辑内容与查找条件用 rememberSaveable：旋转 / 折叠屏 / 进程回收后不丢失未落盘的改动。
     var editorValue by rememberSaveable(scriptId, stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
@@ -138,6 +142,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var findVisible by rememberSaveable(scriptId) { mutableStateOf(false) }
     var query by rememberSaveable(scriptId) { mutableStateOf("") }
     var replacement by rememberSaveable(scriptId) { mutableStateOf("") }
+    var showReplaceAllConfirm by rememberSaveable(scriptId) { mutableStateOf(false) }
+    var pendingRestore by remember(scriptId) { mutableStateOf<ScriptVersion?>(null) }
     var activeMatch by remember(scriptId) { mutableStateOf(0) }
     var editorFocused by remember(scriptId) { mutableStateOf(false) }
 
@@ -165,28 +171,34 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         )
     }
 
-    LaunchedEffect(scriptId) {
-        val found = container.scriptRepository.findAsync(scriptId)
-        script = found
-        if (found == null) {
-            notFound = true
-            return@LaunchedEffect
-        }
-        notFound = false
-        // 若编辑内容已由 SavedState 恢复（配置变更重建），不要再从磁盘覆盖，以免丢失未保存改动。
-        if (!loaded) {
-            val text = container.scriptRepository.readAsync(found)
-            editorValue = TextFieldValue(text)
-            savedCode = text
-            viewModel.bindDocument(found.id, text)
-            undoStack.clear()
-            redoStack.clear()
-            canUndo = false
-            canRedo = false
-            loaded = true
-        } else {
-            // 进程回收后 ViewModel 是新的，用恢复出来的保存基准重新绑定。
-            viewModel.bindDocument(found.id, savedCode)
+    LaunchedEffect(scriptId, reloadToken) {
+        loadError = false
+        try {
+            val found = container.scriptRepository.findAsync(scriptId)
+            script = found
+            if (found == null) {
+                notFound = true
+                return@LaunchedEffect
+            }
+            notFound = false
+            // 若编辑内容已由 SavedState 恢复（配置变更重建），不要再从磁盘覆盖，以免丢失未保存改动。
+            if (!loaded) {
+                val text = container.scriptRepository.readAsync(found)
+                editorValue = TextFieldValue(text)
+                savedCode = text
+                viewModel.bindDocument(found.id, text)
+                undoStack.clear()
+                redoStack.clear()
+                canUndo = false
+                canRedo = false
+                loaded = true
+            } else {
+                // 进程回收后 ViewModel 是新的，用恢复出来的保存基准重新绑定。
+                viewModel.bindDocument(found.id, savedCode)
+            }
+        } catch (t: Throwable) {
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            loadError = true
         }
     }
 
@@ -216,13 +228,24 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 modifier = Modifier.fillMaxSize().padding(padding).padding(24.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                if (notFound) {
-                    Text(
+                when {
+                    notFound -> Text(
                         stringResource(R.string.editor_not_found, scriptId),
                         color = MaterialTheme.colorScheme.error,
                     )
-                } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+
+                    loadError -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            stringResource(R.string.editor_load_failed),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { reloadToken++ }) {
+                            Text(stringResource(R.string.common_retry))
+                        }
+                    }
+
+                    else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator()
                         Spacer(Modifier.height(12.dp))
                         Text(
@@ -348,6 +371,13 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     fun replaceAllMatches() {
+        if (effectiveQuery.isEmpty()) return
+        val newText = text.replace(effectiveQuery, replacement)
+        if (newText == text) return
+        showReplaceAllConfirm = true
+    }
+
+    fun performReplaceAll() {
         if (effectiveQuery.isEmpty()) return
         val newText = text.replace(effectiveQuery, replacement)
         if (newText == text) return
@@ -510,7 +540,14 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f, fill = false),
                 )
-                if (dirty) {
+                if (saving) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        stringResource(R.string.editor_saving),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else if (dirty) {
                     Spacer(Modifier.width(6.dp))
                     Text(
                         stringResource(R.string.editor_unsaved),
@@ -567,6 +604,19 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                     startRun(codeFromCursor(), R.string.editor_run_from_cursor_hint)
                                 },
                             )
+                            if (!editorValue.selection.collapsed) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.editor_run_selection)) },
+                                    onClick = {
+                                        historyMenuOpen = false
+                                        val selection = editorValue.selection
+                                        startRun(
+                                            runText = editorValue.text.substring(selection.min, selection.max),
+                                            message = R.string.editor_run_selection,
+                                        )
+                                    },
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text(stringResource(R.string.editor_variables)) },
                                 onClick = {
@@ -585,17 +635,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                         }
                     } else {
                         IconButton(onClick = {
-                            val fullText = editorValue.text
-                            val selection = editorValue.selection
-                            val isSelection = !selection.collapsed
-                            startRun(
-                                runText = if (isSelection) {
-                                    fullText.substring(selection.min, selection.max)
-                                } else {
-                                    fullText
-                                },
-                                message = if (isSelection) R.string.editor_run_selection else null,
-                            )
+                            // 主运行按钮始终运行完整脚本；只运行选区必须从溢出菜单显式选择。
+                            startRun(runText = editorValue.text)
                         }) {
                             Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.common_run))
                         }
@@ -767,7 +808,38 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         EditorHistoryDialog(
             history = history,
             onDismiss = { viewModel.closeHistory() },
-            onRestore = { restoreVersion(it) },
+            onRestore = {
+                pendingRestore = it
+                viewModel.closeHistory()
+            },
+        )
+    }
+
+    pendingRestore?.let { version ->
+        ConfirmDialog(
+            title = stringResource(R.string.editor_restore_confirm_title),
+            message = stringResource(R.string.editor_restore_confirm_message),
+            confirmLabel = stringResource(R.string.editor_history_restore),
+            destructive = true,
+            onConfirm = {
+                pendingRestore = null
+                restoreVersion(version)
+            },
+            onDismiss = { pendingRestore = null },
+        )
+    }
+
+    if (showReplaceAllConfirm) {
+        ConfirmDialog(
+            title = stringResource(R.string.editor_replace_all_confirm_title),
+            message = stringResource(R.string.editor_replace_all_confirm_message),
+            confirmLabel = stringResource(R.string.editor_replace_all),
+            destructive = true,
+            onConfirm = {
+                showReplaceAllConfirm = false
+                performReplaceAll()
+            },
+            onDismiss = { showReplaceAllConfirm = false },
         )
     }
 

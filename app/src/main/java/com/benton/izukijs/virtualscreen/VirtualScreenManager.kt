@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.view.Surface
+import com.benton.izukijs.R
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.RunMode
@@ -192,17 +193,17 @@ class VirtualScreenManager(
             }
             logBus.info(
                 "虚拟屏分辨率变化，正在重建" +
-                    "（${current.resolution.width}x${current.resolution.height}" +
-                    " → ${resolution.width}x${resolution.height}）",
+                    "（当前 ${current.resolution.width}x${current.resolution.height}" +
+                    " → 目标 ${resolution.width}x${resolution.height}）",
             )
             cleanupInternal(destroyRemote = true, reason = STOP_RESOLUTION_CHANGED)
         }
         if (!available()) {
-            fail("需要 Shizuku 授权，且系统版本需为 Android 10+")
+            fail(context.getString(R.string.virtual_screen_error_no_backend))
             return@withLock false
         }
         if (!settingsRepository.current().backgroundAllowed) {
-            fail("未在设置中允许后台虚拟屏")
+            fail(context.getString(R.string.virtual_screen_error_background_disabled))
             return@withLock false
         }
         _state.value = VirtualScreenState.Starting
@@ -214,7 +215,7 @@ class VirtualScreenManager(
         } catch (t: Throwable) {
             source.close()
             if (t is CancellationException) throw t
-            fail("虚拟屏帧源创建失败：${t.message}")
+            fail(context.getString(R.string.virtual_screen_error_frame_source, t.message.orEmpty()))
             return@withLock false
         }
         val displayId = try {
@@ -235,7 +236,7 @@ class VirtualScreenManager(
                 }
                 throw t
             }
-            fail("虚拟屏创建失败：${t.message}")
+            fail(context.getString(R.string.virtual_screen_error_create, t.message.orEmpty()))
             return@withLock false
         }
         if (displayId == null || displayId < 0) {
@@ -243,9 +244,9 @@ class VirtualScreenManager(
             val detail = client.lastError()
             fail(
                 if (detail != null) {
-                    "虚拟屏创建失败：$detail"
+                    context.getString(R.string.virtual_screen_error_create, detail)
                 } else {
-                    "虚拟屏创建失败，请检查 Shizuku 权限或 ROM 限制"
+                    context.getString(R.string.virtual_screen_error_create_generic)
                 },
             )
             return@withLock false
@@ -310,6 +311,15 @@ class VirtualScreenManager(
     /** 等待比 [frameSeq] 更新的帧；用于输入后确认画面已重绘。 */
     fun awaitFrameAfter(frameSeq: Long, timeoutMs: Long = 600L): Boolean =
         frameSource?.awaitFrameAfter(frameSeq, timeoutMs) == true
+
+    /** 等待画面稳定 [stableMs]；用于过渡帧 / 截图前等待界面停稳。 */
+    fun awaitStable(
+        stableMs: Long,
+        timeoutMs: Long = 3_000L,
+        intervalMs: Long = DEFAULT_STABLE_INTERVAL_MS,
+    ): StableFrameResult =
+        frameSource?.awaitStable(stableMs, timeoutMs, intervalMs)
+            ?: StableFrameResult(ok = false, frameSeq = 0L, elapsedMs = 0L)
 
     fun frameSeq(): Long = frameSource?.currentSeq() ?: 0L
 
@@ -533,6 +543,7 @@ class VirtualScreenManager(
 
         private const val DISPLAY_NONE = -1
         private const val DEFAULT_FRAME_WAIT_MS = 1_000L
+        private const val DEFAULT_STABLE_INTERVAL_MS = 80L
         private const val MAX_INPUT_DURATION_MS = 60_000L
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
 

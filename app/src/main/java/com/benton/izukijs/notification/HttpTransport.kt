@@ -28,12 +28,18 @@ internal object HttpTransport {
         var connection: HttpURLConnection? = null
         return try {
             connection = (parsed.openConnection() as HttpURLConnection).apply {
-                requestMethod = method.trim().uppercase().ifEmpty { "POST" }
+                applyMethod(this, method)
                 connectTimeout = timeoutMs
                 readTimeout = timeoutMs
                 instanceFollowRedirects = true
                 useCaches = false
                 contentType?.let { setRequestProperty("Content-Type", it) }
+                parsed.userInfo?.takeIf { it.isNotEmpty() }?.let {
+                    setRequestProperty(
+                        "Authorization",
+                        "Basic " + NotifySigning.base64(it.toByteArray(StandardCharsets.UTF_8)),
+                    )
+                }
                 headers.forEach { (name, value) ->
                     if (name.isNotBlank() && value.isNotEmpty()) setRequestProperty(name, value)
                 }
@@ -54,6 +60,29 @@ internal object HttpTransport {
         } finally {
             runCatching { connection?.disconnect() }
         }
+    }
+
+    /** `HttpURLConnection` 不接受 PATCH，用反射绕过其方法白名单。 */
+    private fun applyMethod(connection: HttpURLConnection, method: String) {
+        val normalized = method.trim().uppercase().ifEmpty { "POST" }
+        if (normalized != "PATCH") {
+            connection.requestMethod = normalized
+            return
+        }
+        // 先设一个合法方法，再改写底层实现的 method 字段。
+        connection.requestMethod = "POST"
+        var type: Class<*>? = connection.javaClass
+        while (type != null) {
+            try {
+                val field = type.getDeclaredField("method")
+                field.isAccessible = true
+                field.set(connection, "PATCH")
+                return
+            } catch (_: NoSuchFieldException) {
+                type = type.superclass
+            }
+        }
+        throw NotifySendException("PATCH not supported on this platform")
     }
 
     /** 解析 `Name: Value` 行，忽略空行与 # 注释。 */

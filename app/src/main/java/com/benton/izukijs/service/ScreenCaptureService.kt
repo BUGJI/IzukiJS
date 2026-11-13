@@ -12,7 +12,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.content.IntentCompat
 import com.benton.izukijs.IzukiApp
-import com.benton.izukijs.MainActivity
+import com.benton.izukijs.notification.NotificationIntents
 import com.benton.izukijs.R
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -58,11 +58,10 @@ class ScreenCaptureService : Service() {
     }
 
     private fun startForegroundInternal() {
-        val contentIntent = PendingIntent.getActivity(
-            this,
-            0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        val contentIntent = NotificationIntents.contentIntent(
+            context = this,
+            route = com.benton.izukijs.ui.navigation.Routes.SETUP,
+            requestCode = 11,
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_script)

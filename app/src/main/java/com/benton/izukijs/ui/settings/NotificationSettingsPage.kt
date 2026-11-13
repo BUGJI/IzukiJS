@@ -9,23 +9,14 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -39,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -53,9 +43,7 @@ import com.benton.izukijs.core.notification.NotifyKind
 import com.benton.izukijs.core.notification.NotifyLevel
 import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ChipFlow
-import com.benton.izukijs.ui.common.LabeledField
 import com.benton.izukijs.ui.common.LocalSnackbarController
-import com.benton.izukijs.ui.common.SecretField
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SectionGap
 import com.benton.izukijs.ui.common.SwitchRow
@@ -63,7 +51,9 @@ import kotlinx.coroutines.launch
 
 /** 通知系统设置：全局开关、运行结果策略、渠道管理与测试。 */
 @Composable
-internal fun NotificationSettingsPage() {
+internal fun NotificationSettingsPage(
+    onOpenChannelEditor: (String?) -> Unit = {},
+) {
     val viewModel: SettingsViewModel = appViewModel { SettingsViewModel(it) }
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val settings = ui.notificationSettings
@@ -71,9 +61,6 @@ internal fun NotificationSettingsPage() {
     val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
 
-    var editing by remember { mutableStateOf<NotifyChannel?>(null) }
-    // 保留同一个草稿实例：每次重组都 newChannel() 会生成新 UUID 并重置已输入内容。
-    var creating by remember { mutableStateOf<NotifyChannel?>(null) }
     var deleting by remember { mutableStateOf<NotifyChannel?>(null) }
 
     fun save(next: com.benton.izukijs.core.notification.NotificationSettings) =
@@ -185,7 +172,7 @@ internal fun NotificationSettingsPage() {
         title = stringResource(R.string.notif_section_channels),
         trailing = {
             TextButton(
-                onClick = { creating = NotifyChannel.newChannel(NotifyChannelType.WEBHOOK) },
+                onClick = { onOpenChannelEditor(null) },
                 enabled = settings.enabled,
             ) {
                 Text(stringResource(R.string.notif_channel_add))
@@ -233,38 +220,12 @@ internal fun NotificationSettingsPage() {
                         snackbar.show(message)
                     }
                 },
-                onEdit = { editing = channel },
+                onEdit = { onOpenChannelEditor(channel.id) },
                 onDelete = { deleting = channel },
             )
         }
     }
 
-    creating?.let { draft ->
-        ChannelEditDialog(
-            initial = draft,
-            isNew = true,
-            onDismiss = { creating = null },
-            onConfirm = { channel ->
-                creating = null
-                save(settings.copy(channels = settings.channels + channel))
-            },
-        )
-    }
-    editing?.let { channel ->
-        ChannelEditDialog(
-            initial = channel,
-            isNew = false,
-            onDismiss = { editing = null },
-            onConfirm = { updated ->
-                editing = null
-                save(
-                    settings.copy(
-                        channels = settings.channels.map { if (it.id == updated.id) updated else it },
-                    ),
-                )
-            },
-        )
-    }
     deleting?.let { channel ->
         AlertDialog(
             onDismissRequest = { deleting = null },
@@ -323,299 +284,6 @@ private fun ChannelRow(
 }
 
 @Composable
-private fun ChannelEditDialog(
-    initial: NotifyChannel,
-    isNew: Boolean,
-    onDismiss: () -> Unit,
-    onConfirm: (NotifyChannel) -> Unit,
-) {
-    var draft by remember(initial.id) { mutableStateOf(initial) }
-    var typeExpanded by remember { mutableStateOf(false) }
-    val availableTypes = if (isNew) {
-        NotifyChannelType.entries.filter { it != NotifyChannelType.LOCAL }
-    } else {
-        NotifyChannelType.entries
-    }
-    val canSave = when (draft.type) {
-        NotifyChannelType.LOCAL -> true
-        NotifyChannelType.WEBHOOK -> draft.url.isNotBlank()
-        NotifyChannelType.BARK -> draft.deviceKey.isNotBlank()
-        NotifyChannelType.TELEGRAM -> draft.botToken.isNotBlank() && draft.chatId.isNotBlank()
-        NotifyChannelType.NTFY -> draft.topic.isNotBlank()
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (isNew) R.string.notif_new_title else R.string.notif_edit_title,
-                ),
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .imePadding(),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                LabeledField(
-                    label = stringResource(R.string.notif_channel_name),
-                    value = draft.name,
-                    placeholder = stringResource(R.string.notif_channel_name_hint),
-                    onChange = { draft = draft.copy(name = it) },
-                )
-                if (isNew) {
-                    Spacer(Modifier.height(8.dp))
-                    Box {
-                        OutlinedButton(
-                            onClick = { typeExpanded = true },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                stringResource(R.string.notif_channel_type) +
-                                    ": " + channelTypeLabel(draft.type),
-                            )
-                        }
-                        DropdownMenu(
-                            expanded = typeExpanded,
-                            onDismissRequest = { typeExpanded = false },
-                        ) {
-                            availableTypes.forEach { type ->
-                                DropdownMenuItem(
-                                    text = { Text(channelTypeLabel(type)) },
-                                    onClick = {
-                                        typeExpanded = false
-                                        draft = draft.copy(type = type)
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-                ChannelTypeFields(draft) { draft = it }
-
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.notif_channel_min_level),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                ChipFlow {
-                    NotifyLevel.entries.forEach { level ->
-                        FilterChip(
-                            selected = draft.minLevel == level,
-                            onClick = { draft = draft.copy(minLevel = level) },
-                            label = { Text(levelLabel(level)) },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    stringResource(R.string.notif_channel_kinds),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                ChipFlow {
-                    NotifyKind.entries.forEach { kind ->
-                        FilterChip(
-                            selected = kind in draft.kinds,
-                            onClick = {
-                                val next = if (kind in draft.kinds) {
-                                    draft.kinds - kind
-                                } else {
-                                    draft.kinds + kind
-                                }
-                                if (next.isNotEmpty()) draft = draft.copy(kinds = next)
-                            },
-                            label = { Text(kindLabel(kind)) },
-                        )
-                    }
-                }
-
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NumberFieldRaw(
-                        label = stringResource(R.string.notif_field_timeout),
-                        value = draft.timeoutMs.toString(),
-                        modifier = Modifier.weight(1f),
-                        onChange = { input ->
-                            input.toIntOrNull()?.let {
-                                draft = draft.copy(timeoutMs = it.coerceIn(1_000, 60_000))
-                            }
-                        },
-                    )
-                    NumberFieldRaw(
-                        label = stringResource(R.string.notif_field_retries),
-                        value = draft.retries.toString(),
-                        modifier = Modifier.weight(1f),
-                        onChange = { input ->
-                            input.toIntOrNull()?.let {
-                                draft = draft.copy(retries = it.coerceIn(0, 5))
-                            }
-                        },
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(draft) },
-                enabled = canSave,
-            ) {
-                Text(stringResource(R.string.common_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun ChannelTypeFields(channel: NotifyChannel, onChange: (NotifyChannel) -> Unit) {
-    when (channel.type) {
-        NotifyChannelType.LOCAL -> Text(
-            stringResource(R.string.notif_local_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        NotifyChannelType.WEBHOOK -> {
-            LabeledField(
-                label = stringResource(R.string.notif_field_url),
-                value = channel.url,
-                placeholder = "https://example.com/webhook",
-                onChange = { onChange(channel.copy(url = it)) },
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.notif_field_method),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            ChipFlow {
-                listOf("POST", "PUT", "GET").forEach { method ->
-                    FilterChip(
-                        selected = channel.method.equals(method, ignoreCase = true),
-                        onClick = { onChange(channel.copy(method = method)) },
-                        label = { Text(method) },
-                    )
-                }
-            }
-            MultiLineField(
-                label = stringResource(R.string.notif_field_headers),
-                value = channel.headers,
-                onChange = { onChange(channel.copy(headers = it)) },
-            )
-            MultiLineField(
-                label = stringResource(R.string.notif_field_body),
-                value = channel.bodyTemplate,
-                onChange = { onChange(channel.copy(bodyTemplate = it)) },
-            )
-        }
-
-        NotifyChannelType.BARK -> {
-            LabeledField(
-                label = stringResource(R.string.notif_field_server),
-                value = channel.url,
-                placeholder = "https://api.day.app",
-                onChange = { onChange(channel.copy(url = it)) },
-            )
-            SecretField(
-                label = stringResource(R.string.notif_field_device_key),
-                value = channel.deviceKey,
-                onChange = { onChange(channel.copy(deviceKey = it)) },
-            )
-            LabeledField(
-                label = stringResource(R.string.notif_field_group),
-                value = channel.group,
-                onChange = { onChange(channel.copy(group = it)) },
-            )
-            LabeledField(
-                label = stringResource(R.string.notif_field_icon),
-                value = channel.icon,
-                onChange = { onChange(channel.copy(icon = it)) },
-            )
-            LabeledField(
-                label = stringResource(R.string.notif_field_sound),
-                value = channel.sound,
-                onChange = { onChange(channel.copy(sound = it)) },
-            )
-        }
-
-        NotifyChannelType.TELEGRAM -> {
-            SecretField(
-                label = stringResource(R.string.notif_field_bot_token),
-                value = channel.botToken,
-                onChange = { onChange(channel.copy(botToken = it)) },
-            )
-            LabeledField(
-                label = stringResource(R.string.notif_field_chat_id),
-                value = channel.chatId,
-                onChange = { onChange(channel.copy(chatId = it)) },
-            )
-        }
-
-        NotifyChannelType.NTFY -> {
-            LabeledField(
-                label = stringResource(R.string.notif_field_server),
-                value = channel.url,
-                placeholder = "https://ntfy.sh",
-                onChange = { onChange(channel.copy(url = it)) },
-            )
-            LabeledField(
-                label = stringResource(R.string.notif_field_topic),
-                value = channel.topic,
-                onChange = { onChange(channel.copy(topic = it)) },
-            )
-            LabeledField(
-                label = stringResource(R.string.notif_field_priority),
-                value = channel.priority,
-                placeholder = "3",
-                onChange = { onChange(channel.copy(priority = it)) },
-            )
-            SecretField(
-                label = stringResource(R.string.notif_field_token),
-                value = channel.token,
-                onChange = { onChange(channel.copy(token = it)) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun MultiLineField(label: String, value: String, onChange: (String) -> Unit) {
-    Spacer(Modifier.height(8.dp))
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(96.dp),
-    )
-}
-
-@Composable
-private fun NumberFieldRaw(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    onChange: (String) -> Unit,
-) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { input -> onChange(input.filter(Char::isDigit).take(6)) },
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-            keyboardType = KeyboardType.Number,
-        ),
-        modifier = modifier,
-    )
-}
-
-@Composable
 private fun rememberNotificationPermission(): Pair<Boolean, () -> Unit> {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasPostNotifications(context)) }
@@ -667,22 +335,28 @@ private fun hasPostNotifications(context: android.content.Context): Boolean =
     }
 
 @Composable
-private fun channelDisplayName(channel: NotifyChannel): String =
+internal fun channelDisplayName(channel: NotifyChannel): String =
     channel.name.ifBlank { channelTypeLabel(channel.type) }
 
 @Composable
-private fun channelTypeLabel(type: NotifyChannelType): String = stringResource(
+internal fun channelTypeLabel(type: NotifyChannelType): String = stringResource(
     when (type) {
         NotifyChannelType.LOCAL -> R.string.notif_type_local
         NotifyChannelType.WEBHOOK -> R.string.notif_type_webhook
         NotifyChannelType.BARK -> R.string.notif_type_bark
         NotifyChannelType.TELEGRAM -> R.string.notif_type_telegram
         NotifyChannelType.NTFY -> R.string.notif_type_ntfy
+        NotifyChannelType.DINGTALK_GROUP -> R.string.notif_type_dingtalk_group
+        NotifyChannelType.WEWORK_ROBOT -> R.string.notif_type_wework_robot
+        NotifyChannelType.FEISHU_ROBOT -> R.string.notif_type_feishu_robot
+        NotifyChannelType.SERVERCHAN -> R.string.notif_type_serverchan
+        NotifyChannelType.PUSHPLUS -> R.string.notif_type_pushplus
+        NotifyChannelType.GOTIFY -> R.string.notif_type_gotify
     },
 )
 
 @Composable
-private fun levelLabel(level: NotifyLevel): String = stringResource(
+internal fun levelLabel(level: NotifyLevel): String = stringResource(
     when (level) {
         NotifyLevel.INFO -> R.string.notif_level_info
         NotifyLevel.SUCCESS -> R.string.notif_level_success
@@ -692,7 +366,7 @@ private fun levelLabel(level: NotifyLevel): String = stringResource(
 )
 
 @Composable
-private fun kindLabel(kind: NotifyKind): String = stringResource(
+internal fun kindLabel(kind: NotifyKind): String = stringResource(
     when (kind) {
         NotifyKind.SCRIPT -> R.string.notif_kind_script
         NotifyKind.RUN_MANUAL -> R.string.notif_kind_run_manual

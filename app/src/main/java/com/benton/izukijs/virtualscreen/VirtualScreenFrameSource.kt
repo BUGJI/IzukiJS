@@ -125,6 +125,56 @@ class VirtualScreenFrameSource(
         frameSeq > afterSeq
     }
 
+    /**
+     * 等待画面连续 [stableMs] 保持同一签名；超时返回最后一次观察到的状态。
+     *
+     * 过渡帧（例如应用启动时的双层标题栏）通常会在短时间内继续变化，因此比单纯
+     * `awaitFrameAfter` 更适合“截图前等界面稳定”。
+     */
+    fun awaitStable(
+        stableMs: Long,
+        timeoutMs: Long,
+        intervalMs: Long = DEFAULT_STABLE_INTERVAL_MS,
+    ): StableFrameResult = lock.withLock {
+        val started = SystemClock.elapsedRealtime()
+        val deadline = started + timeoutMs.coerceAtLeast(0L)
+        val interval = intervalMs.coerceAtLeast(MIN_STABLE_INTERVAL_MS)
+        var signature = latest?.let { FrameSampleHash.sample(it) }
+        var stableSince = if (signature != null) started else 0L
+        var nextCheck = started + interval
+        while (true) {
+            val now = SystemClock.elapsedRealtime()
+            if (signature != null && stableSince > 0L && now - stableSince >= stableMs) {
+                return StableFrameResult(
+                    ok = true,
+                    frameSeq = frameSeq,
+                    elapsedMs = now - started,
+                )
+            }
+            if (closed) break
+            val remaining = deadline - now
+            if (remaining <= 0L) break
+            val wait = minOf(remaining, (nextCheck - now).coerceAtLeast(1L))
+            frameAvailable.await(wait, TimeUnit.MILLISECONDS)
+            val checkedAt = SystemClock.elapsedRealtime()
+            if (checkedAt < nextCheck) continue
+            nextCheck = checkedAt + interval
+            val next = latest?.let { FrameSampleHash.sample(it) }
+            if (next == null) continue
+            if (next != signature) {
+                signature = next
+                stableSince = checkedAt
+            } else if (stableSince == 0L) {
+                stableSince = checkedAt
+            }
+        }
+        StableFrameResult(
+            ok = false,
+            frameSeq = frameSeq,
+            elapsedMs = SystemClock.elapsedRealtime() - started,
+        )
+    }
+
     fun currentSeq(): Long = lock.withLock { frameSeq }
 
     fun close() {
@@ -161,5 +211,15 @@ class VirtualScreenFrameSource(
 
         /** 约 25fps；截图/OCR 足够，同时避免每帧都做一次全量 RGBA 拷贝。 */
         const val MIN_FRAME_INTERVAL_MS = 40L
+
+        const val DEFAULT_STABLE_INTERVAL_MS = 80L
+        const val MIN_STABLE_INTERVAL_MS = 40L
     }
 }
+
+/** [VirtualScreenFrameSource.awaitStable] 的观察结果。 */
+data class StableFrameResult(
+    val ok: Boolean,
+    val frameSeq: Long,
+    val elapsedMs: Long,
+)

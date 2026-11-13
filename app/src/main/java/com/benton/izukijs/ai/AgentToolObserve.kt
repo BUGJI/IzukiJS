@@ -6,6 +6,22 @@ import org.json.JSONObject
 
 // ---- 查找 ----
 
+internal fun AgentTools.doOcr(args: JSONObject): String {
+    val options = JSONObject()
+    args.optJSONObject("roi")?.let { options.put("roi", it) }
+    if (args.has("max_gap_y")) options.put("maxGapY", args.optInt("max_gap_y"))
+    if (args.has("max_gap_x")) options.put("maxGapX", args.optInt("max_gap_x"))
+    val lines = args.optBoolean("lines", false)
+    val raw = if (lines) {
+        ocrApi.recognizeLinesJsonWithOptions(options.toString())
+    } else if (options.length() > 0) {
+        ocrApi.recognizeBlocksJsonWithOptions(options.toString())
+    } else {
+        ocrApi.recognizeBlocksJson()
+    }
+    return raw ?: jsonOf { put("ok", false); put("message", "未识别到文字，或截图权限不可用") }
+}
+
 internal fun AgentTools.doFind(args: JSONObject): String {
     val by = args.optString("by").takeIf { it.isNotBlank() }
     val value = args.optString("value").takeIf { it.isNotBlank() }

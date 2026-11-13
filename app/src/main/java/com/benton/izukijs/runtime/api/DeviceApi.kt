@@ -36,6 +36,19 @@ class DeviceApi(
     @JavascriptInterface
     fun screenHeight(): Int = virtualResolution()?.height ?: realMetrics().heightPixels
 
+    /**
+     * 当前屏幕旋转：0 = 0°，1 = 90°，2 = 180°，3 = 270°。
+     *
+     * 脚本在运行中可能遇到横竖屏切换，可据此重新计算坐标或跳过当前轮次。
+     */
+    @JavascriptInterface
+    fun rotation(): Int = runCatching {
+        context.getSystemService(DisplayManager::class.java)
+            ?.getDisplay(Display.DEFAULT_DISPLAY)
+            ?.rotation
+            ?: 0
+    }.getOrDefault(0)
+
     private fun virtualResolution(): VirtualScreenResolution? =
         virtualScreen
             ?.takeIf { it.isActive() && it.resolvedTarget() == ScreenTarget.VIRTUAL }

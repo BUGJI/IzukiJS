@@ -46,7 +46,7 @@ class UpdateChecker(private val logBus: LogBus? = null) {
             if (compareVersions(version, BuildConfig.VERSION_NAME) <= 0) {
                 return UpdateCheckResult.UpToDate
             }
-            val asset = pickAsset(release.optJSONArray("assets"))
+            val asset = pickAsset(release.optJSONArray("assets"), Build.SUPPORTED_ABIS.toList())
             UpdateCheckResult.Available(
                 UpdateInfo(
                     versionName = version,
@@ -64,16 +64,16 @@ class UpdateChecker(private val logBus: LogBus? = null) {
         }
     }
 
-    private fun pickAsset(assets: JSONArray?): JSONObject? {
+    private fun pickAsset(assets: JSONArray?, abis: List<String>): JSONObject? {
         if (assets == null) return null
-        for (abi in Build.SUPPORTED_ABIS) {
-            val target = "app-$abi-release.apk"
-            for (i in 0 until assets.length()) {
-                val asset = assets.optJSONObject(i) ?: continue
-                if (asset.optString("name").equals(target, ignoreCase = true)) return asset
-            }
+        val byName = LinkedHashMap<String, JSONObject>()
+        for (i in 0 until assets.length()) {
+            val asset = assets.optJSONObject(i) ?: continue
+            val name = asset.optString("name")
+            if (name.isNotBlank()) byName[name] = asset
         }
-        return null
+        val selected = selectAssetName(byName.keys.toList(), abis) ?: return null
+        return byName[selected]
     }
 
     private fun httpGet(url: String): String? {
@@ -120,5 +120,21 @@ class UpdateChecker(private val logBus: LogBus? = null) {
         const val REPO = "BUGJI/IzukiJS"
         const val RELEASES_PAGE = "https://github.com/$REPO/releases/latest"
         private const val LATEST_RELEASE_API = "https://api.github.com/repos/$REPO/releases/latest"
+
+        /**
+         * 发布资源名从 `app-<abi>-release.apk` 改成了 `izukijs-<abi>-release.apk`，
+         * 两套命名都要认，否则旧 CD 产物和新 CD 产物只能取到其中一边。
+         * 优先精确 ABI，其次通用包，避免设备没有匹配分包时误判为“无可用安装包”。
+         */
+        internal fun selectAssetName(assetNames: List<String>, abis: List<String>): String? {
+            fun find(vararg candidates: String): String? =
+                candidates.firstNotNullOfOrNull { name ->
+                    assetNames.firstOrNull { it.equals(name, ignoreCase = true) }
+                }
+            for (abi in abis) {
+                find("izukijs-$abi-release.apk", "app-$abi-release.apk")?.let { return it }
+            }
+            return find("izukijs-universal-release.apk", "app-universal-release.apk")
+        }
     }
 }

@@ -41,7 +41,11 @@ internal fun McpToolRegistry.screenshotTool(): McpTool = McpTool(
     encodeCapture(source, args)
 }
 
-internal fun McpToolRegistry.encodeCapture(source: Bitmap, args: JSONObject): McpToolResult {
+internal fun McpToolRegistry.encodeCapture(
+    source: Bitmap,
+    args: JSONObject,
+    extraMeta: JSONObject? = null,
+): McpToolResult {
     val scale = args.optDouble("scale", 1.0).coerceIn(0.1, 1.0)
     val quality = args.optInt("quality", 90).coerceIn(1, 100)
     val region = args.optJSONArray("region")?.let { array ->
@@ -62,6 +66,7 @@ internal fun McpToolRegistry.encodeCapture(source: Bitmap, args: JSONObject): Mc
         put("image_size", sizeOf(encoded.width, encoded.height))
         put("screen_size", sizeOf(encoded.screenWidth, encoded.screenHeight))
         encoded.region?.let { put("region", JSONArray(it)) }
+        extraMeta?.keys()?.forEach { key -> put(key, extraMeta.opt(key)) }
     }
     return McpToolResult(
         listOf(

@@ -2,6 +2,38 @@
 
 脚本语言为 JavaScript（QuickJS）。多字节坐标均使用手机屏幕像素。
 
+[返回文档索引](README.md) · 能力矩阵与限制见 [CONTROL_MODES.md](CONTROL_MODES.md)
+
+## 目录
+
+- [全局函数](#全局函数)
+- [`console`](#console)
+- [输入（全局）](#输入全局)
+- [`device`](#device)
+- [`app`](#app)
+- [`notify`（通知监听 + 脚本进度通知）](#notify通知监听--脚本进度通知)
+- [`push`（发送通知）](#push发送通知)
+- [`fs`（文件读写）](#fs文件读写)
+- [`http`（需启用「脚本网络」）](#http需启用脚本网络)
+- [`clipboard`](#clipboard)
+- [`selector`（需无障碍）](#selector需无障碍)
+- [`shell`（需 Shizuku、无线调试或 Root）](#shell需-shizuku无线调试或-root)
+- [`images`（OpenCV）](#imagesopencv)
+- [`record`（控制操作录制 / 回放）](#record控制操作录制--回放)
+- [`pipeline`（声明式任务流水线）](#pipeline声明式任务流水线需--need-pipeline)
+- [`ocr`（本地 / 在线可切换）](#ocr本地--在线可切换)
+- [`permissions`（权限查询）](#permissions权限查询)
+- [`virtualScreen`（后台虚拟屏）](#virtualscreen后台虚拟屏)
+- [`env`（运行参数）](#env运行参数)
+- [能力声明 `@need`](#能力声明-need)
+- [`state`（运行状态）](#state运行状态)
+- [`modules`](#modules)
+- [模块复用 `require`](#模块复用-require)
+- [`ai`（AI Agent）](#aiai-agent)
+- [截图来源优先级](#截图来源优先级)
+- [`press` 的按键限制](#press-的按键限制)
+- [控制模式与能力组合](#控制模式与能力组合)
+
 ## 全局函数
 
 | 函数 | 说明 |
@@ -12,7 +44,7 @@
 | `waitUntil(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回真值，并返回该值；超时返回 `null` |
 | `waitUntilGone(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回假值，返回是否在超时前消失 |
 | `exit()` | 立即结束脚本 |
-| `captureScreen(path, source?)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`）；`source` 可为 `auto` / `virtual` / `main` |
+| `captureScreen(path, source?, options?)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`）；`source` 可为 `auto` / `virtual` / `main`；`options` 支持 `{waitNextFrame, afterFrame, waitStable, stableMs, timeoutMs}` |
 
 ## `console`
 
@@ -35,9 +67,20 @@
 | `press(keyCode)` | 按键（Android KeyEvent 码，见下方限制） |
 | `input(text)` | 输入文本（自动选方式） |
 | `inputWithMethod(text, method)` | 指定输入方式：`auto` / `input` / `clipboard` / `broadcast` |
+| `inputInfo(text, options?)` | 结构化输入结果：`{delivered, ok, focused, method, screenChanged, frameSeq?, clipboardRestored, message?}`；`options.verify=true` 时尽量校验焦点 / 画面是否变化 |
 | `back()` / `home()` / `recents()` | 返回 / 主页 / 最近任务 |
 
 > 底层由控制模式提供：无障碍 / Shizuku / 无线调试 / Root / 蓝牙 HID。具体能力见「控制模式」。
+>
+> Shell 后端的 `input text` 只要命令下发成功就返回 0，**不代表文字真的进入了输入框**。
+> 需要确认时用 `inputInfo()`；无障碍后端可直接判断可编辑焦点，虚拟屏则通过输入前后画面变化辅助判断。
+> 虚拟屏上建议先点击输入框再输入：
+>
+> ```js
+> click(222, 61);
+> var r = inputInfo("微信团队", { verify: true });
+> if (!r.ok) log("输入可能失败：" + (r.message || "画面未变化"));
+> ```
 
 ### `gesture(strokes)` 复杂轨迹
 
@@ -83,6 +126,7 @@ gesture([
 |---|---|
 | `device.width()` / `device.height()` | 当前操作屏的像素宽高；虚拟屏激活且目标为虚拟屏时返回虚拟屏分辨率 |
 | `device.screenWidth()` / `device.screenHeight()` | 物理屏真实分辨率；虚拟屏激活且目标为虚拟屏时返回虚拟屏分辨率 |
+| `device.rotation()` | 当前屏幕旋转：0 / 1 / 2 / 3 对应 0° / 90° / 180° / 270°；横竖屏切换后可用它重算坐标 |
 | `device.model()` / `device.brand()` | 机型 / 品牌 |
 | `device.androidVersion()` | SDK 版本号 |
 | `device.batteryLevel()` | 电量百分比 |
@@ -177,7 +221,8 @@ notify.reset();
 
 ## `push`（发送通知）
 
-把消息投递到「设置 → 通知」里启用的渠道（本地系统通知、Webhook、Bark、Telegram、ntfy）。
+把消息投递到「设置 → 通知」里启用的渠道（本地系统通知、Webhook、Bark、Telegram、ntfy、
+钉钉群/企业机器人、企微群机器人、飞书群机器人、Server酱、PushPlus、Gotify）。
 只负责发送，**不需要通知使用权**；需 `POST_NOTIFICATIONS` 并开启通知系统。
 使用 `// @need push` 时才会暴露该命名空间。
 
@@ -653,13 +698,18 @@ log(result.ok + " steps=" + result.steps);
 | `ocr.recognizePath(path)` | 识别指定图片 |
 | `ocr.recognizeBlocksJson()` | 识别当前屏幕，返回结构化 JSON 字符串：`{text, image:{w,h}, blocks:[...]}` |
 | `ocr.recognizeBlocks(options?)` | 带 `roi` 的结构化识别，返回对象（不是 JSON 字符串） |
+| `ocr.lines(options?)` | 按行聚合识别，返回 `{text, image, lines:[...]}`；同一行的多个块会按阅读顺序合并 |
+| `ocr.dedupeLines(lines, options?)` | 按归一化文本对行数组做滑动窗口去重，适合跨屏滚动时清理重叠行（`options.window` 默认 20） |
 | `ocr.find(text, options?)` | 查找包含子串的元素，返回 `{x, y, width, height}` 或 `null`（x/y 为中心） |
 
-`ocr.find` 的 `options` 支持 `{roi, threshold, fuzzy}`；`ocr.recognizeBlocks` 的 `options` 支持 `{roi}`。
+`ocr.find` 的 `options` 支持 `{roi, threshold, fuzzy}`；`ocr.recognizeBlocks` 的 `options` 支持 `{roi}`；
+`ocr.lines` 额外支持 `{maxGapY, maxGapX}`——`maxGapY` 控制同一行的最大垂直中心差（微信搜索框
+附近常用 18），`maxGapX` 控制同一行拆段的最大水平间距。空结果会带 `empty:true` 与 `reason`。
 需要正则过滤、替换、颜色过滤等完整能力时，使用 `images.recognize({type:"OCR", ...})`。
 
 `blocks` 每项为 `{text, x, y, w, h, left, top, right, bottom, conf?, suspicious?}`，
-其中 `x/y` 是包围盒中心，`left/top/right/bottom` 是四边坐标。
+其中 `x/y` 是包围盒中心，`left/top/right/bottom` 是四边坐标。`lines` 每项在同样坐标字段外
+额外有 `blockCount`（本行由多少个块合并）。
 
 ```js
 var hit = ocr.find("登录");
@@ -669,6 +719,11 @@ var result = JSON.parse(ocr.recognizeBlocksJson());
 result.blocks.forEach(function (block) {
   log(block.text + " @ " + block.x + "," + block.y);
 });
+
+// 抓取整屏并以阅读顺序逐行处理；跨屏时可累积后去重
+var page = ocr.lines({ maxGapY: 18 });
+page.lines.forEach(function (line) { log(line.text); });
+var merged = ocr.dedupeLines(allLines.concat(page.lines), { window: 30 });
 ```
 
 ## `permissions`（权限查询）
@@ -734,7 +789,10 @@ virtualScreen.stop();
 | `virtualScreen.info()` | 状态、模式、目标、帧序号、分辨率、displayId 与最近停止原因 / 时间 |
 | `virtualScreen.target(value?)` | 查询或切换操作目标：`auto` / `virtual` / `main` |
 | `virtualScreen.awaitFrame(timeoutMs)` | 等待虚拟屏首帧，默认 1000ms |
-| `virtualScreen.capture(path?, source?)` | 直接捕获并保存；`source` 缺省 `virtual` |
+| `virtualScreen.frameSeq()` | 当前帧序号；用于判断点击 / 输入后是否收到新帧 |
+| `virtualScreen.awaitChange(afterFrameSeq?, timeoutMs?)` | 等待比基准更新的帧；省略基准时以当前帧为准 |
+| `virtualScreen.awaitStable({stableMs, timeoutMs, intervalMs})` | 等待画面连续稳定 `stableMs`，返回 `{ok, frameSeq, elapsedMs}` |
+| `virtualScreen.capture(path?, source?, options?)` | 直接捕获并保存；`source` 缺省 `virtual`；`options` 同 `captureScreen` |
 
 显式捕获与目标切换：
 
@@ -744,8 +802,15 @@ virtualScreen.start({ width: 1280, height: 720, dpi: 240 });
 virtualScreen.launch("com.example.app");
 if (!virtualScreen.awaitFrame(2000)) log("虚拟屏还没有画面");
 
-// 直接保存虚拟屏截图
+// 点击后等新帧 + 等画面稳定，再截图 / OCR，避开过渡帧
+var seq = virtualScreen.frameSeq();
+click(589, 43);
+virtualScreen.awaitChange(seq, 3000);
+virtualScreen.awaitStable({ stableMs: 300, timeoutMs: 3000 });
 var shot = virtualScreen.capture("/sdcard/virtual.png");
+
+// 也可以直接让 captureScreen 等待稳定
+captureScreen("/sdcard/main.png", "virtual", { waitStable: true, stableMs: 300 });
 
 // 临时捕获主屏（不改变后续点击目标）
 var mainShot = captureScreen("/sdcard/main.png", "main");
@@ -760,6 +825,8 @@ virtualScreen.target("virtual");
 
 - 后台模式需要 Android 10+、Shizuku 授权，并在「设置 → 悬浮窗与虚拟屏 → 后台虚拟屏」中允许。
 - `@env RUN_MODE=background` 会在脚本启动时自动创建虚拟屏；未允许或不可用时回退前台并记录警告。
+  如果脚本源码里存在字面量 `virtualScreen.start({ width, height, dpi })`，预创建会直接使用该分辨率，
+  避免先按设置建一次、再被脚本重建一次；变量 / 函数返回值等动态参数仍回退设置分辨率。
 - 脚本开始时目标按运行模式重置：后台脚本为 `auto`（跟随虚拟屏），前台脚本为主屏；脚本内仍可用
   `virtualScreen.target("virtual")` 显式切换。未显式指定目标时，脚本自行调用
   `virtualScreen.start()` 后会自动指向虚拟屏。
@@ -966,17 +1033,8 @@ if (ai.available()) {
 
 ## 控制模式与能力组合
 
-| 能力 | 无障碍 | Shizuku | 无线调试 | Root | HID |
-|---|---|---|---|---|---|
-| 手势/绝对坐标 | ✅ | ✅ | ✅ | ✅ | ✅ |
-| 键盘/文本 | 部分 | ✅ | ✅ | ✅ | ✅ |
-| 读控件树 | ✅ | ❌ | ❌ | ❌ | ❌ |
-| 截图 | ✅(30+) | ✅ | ✅ | ✅ | ❌ |
-| Shell | ❌ | ✅ | ✅ | ✅ | ❌ |
+完整的能力矩阵、授权方式、风险、手势与按键限制集中在
+[CONTROL_MODES.md](CONTROL_MODES.md)，本文不重复维护。
 
-> 上表的「读控件树」指脚本侧 `selector.*` 的能力，**只有无障碍后端支持**。
-> 补充：AI Agent 的读屏工具额外支持在 Shizuku / 无线调试 / Root 下通过 `uiautomator dump` 兜底
-> （较慢，约 1~2 秒且偶发失败），但这些都不是脚本 API 的一部分。
-> 无线调试需要 Android 11+；后台虚拟屏与 Shizuku 特权解锁仍依赖 Shizuku。
-
-推荐组合：**无障碍读控件树 + HID/Shizuku/无线调试 注入输入**。在「设置 → 控制后端 → 读取 / 操作优先级」中指定优先后端即可。
+推荐组合：**无障碍读控件树 + HID / Shizuku / 无线调试 注入输入**。在
+「设置 → 控制后端 → 读取 / 操作优先级」中指定优先后端即可。

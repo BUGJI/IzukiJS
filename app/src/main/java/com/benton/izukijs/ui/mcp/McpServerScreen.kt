@@ -84,6 +84,7 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
     val resources = LocalResources.current
     val config by container.mcpConfigRepository.config.collectAsStateWithLifecycle()
     val status by container.mcpServerController.status.collectAsStateWithLifecycle()
+    val unlockSettings by container.unlockSettingsRepository.settings.collectAsStateWithLifecycle()
     val readyModes by container.controllerManager.readyModes.collectAsStateWithLifecycle()
     val shellReady = remember(readyModes) {
         container.controllerManager.controllerFor(Capability.SHELL) != null
@@ -105,9 +106,13 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
     }
 
     var confirmingRegenerate by remember { mutableStateOf(false) }
+    var confirmingAllowUnlock by remember { mutableStateOf(false) }
+    var confirmingDangerousShell by remember { mutableStateOf(false) }
     var blockedText by rememberSaveable(config.blockedPackages) {
         mutableStateOf(config.blockedPackages.joinToString(", "))
     }
+    // SecretField 默认失焦才提交；复制配置需要立即拿到输入框里的最新令牌。
+    var tokenDraft by rememberSaveable(config.token) { mutableStateOf(config.token) }
 
     fun current() = container.mcpConfigRepository.current()
 
@@ -280,10 +285,26 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
                         onClick = { copy("endpoint", endpoint) },
                     ) { Text(stringResource(R.string.mcp_copy_endpoint)) }
                     OutlinedButton(
-                        onClick = { copy("config", buildClientConfig(endpoint, config.token), sensitive = true) },
+                        enabled = endpoint.isNotBlank() && tokenDraft.isNotBlank(),
+                        onClick = {
+                            val token = tokenDraft.trim()
+                            if (token != config.token) apply(config.copy(token = token))
+                            copy(
+                                "config",
+                                buildClientConfig(endpoint, config.port, token),
+                                sensitive = true,
+                            )
+                        },
                     ) {
                         Text(stringResource(R.string.mcp_copy_config))
                     }
+                }
+                if (endpoint.isBlank() || tokenDraft.isBlank()) {
+                    Text(
+                        stringResource(R.string.mcp_copy_config_requires_running),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -299,6 +320,7 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
                     label = stringResource(R.string.mcp_token_label),
                     value = config.token,
                     commitOnBlur = true,
+                    onDraftChange = { tokenDraft = it },
                 ) { apply(config.copy(token = it)) }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = { confirmingRegenerate = true }) {
@@ -408,7 +430,9 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
                     label = stringResource(R.string.mcp_allow_unlock),
                     checked = config.allowUnlock,
                     description = stringResource(R.string.mcp_allow_unlock_desc),
-                ) { apply(config.copy(allowUnlock = it)) }
+                ) { checked ->
+                    if (checked) confirmingAllowUnlock = true else apply(config.copy(allowUnlock = false))
+                }
                 Spacer(Modifier.height(8.dp))
                 SwitchRow(
                     label = stringResource(R.string.mcp_allow_recording),
@@ -416,10 +440,18 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
                     description = stringResource(R.string.mcp_allow_recording_desc),
                 ) { apply(config.copy(allowRecording = it)) }
                 Spacer(Modifier.height(8.dp))
+                val autoUnlockReady = config.allowUnlock && unlockSettings.enabled && unlockSettings.hasCredential
                 SwitchRow(
                     label = stringResource(R.string.mcp_auto_unlock),
                     checked = config.autoUnlock,
-                    description = stringResource(R.string.mcp_auto_unlock_desc),
+                    description = stringResource(
+                        if (autoUnlockReady) {
+                            R.string.mcp_auto_unlock_desc
+                        } else {
+                            R.string.mcp_auto_unlock_needs_unlock
+                        },
+                    ),
+                    enabled = autoUnlockReady || config.autoUnlock,
                 ) { apply(config.copy(autoUnlock = it)) }
             }
 
@@ -434,8 +466,17 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
                 SwitchRow(
                     label = stringResource(R.string.mcp_allow_dangerous_shell),
                     checked = config.allowDangerousShell,
-                    description = stringResource(R.string.mcp_allow_dangerous_shell_desc),
-                ) { apply(config.copy(allowDangerousShell = it)) }
+                    description = stringResource(
+                        if (config.allowShell) {
+                            R.string.mcp_allow_dangerous_shell_desc
+                        } else {
+                            R.string.mcp_allow_dangerous_shell_needs_shell
+                        },
+                    ),
+                    enabled = config.allowShell || config.allowDangerousShell,
+                ) { checked ->
+                    if (checked) confirmingDangerousShell = true else apply(config.copy(allowDangerousShell = false))
+                }
                 Spacer(Modifier.height(8.dp))
                 LabeledField(
                     label = stringResource(R.string.mcp_blocked_packages),
@@ -475,6 +516,34 @@ fun McpServerScreen(onBack: () -> Unit, onOpenSetup: () -> Unit = {}) {
             },
         )
     }
+
+    if (confirmingAllowUnlock) {
+        ConfirmDialog(
+            title = stringResource(R.string.mcp_allow_unlock_confirm_title),
+            message = stringResource(R.string.mcp_allow_unlock_confirm_message),
+            confirmLabel = stringResource(R.string.common_enable),
+            destructive = true,
+            onDismiss = { confirmingAllowUnlock = false },
+            onConfirm = {
+                confirmingAllowUnlock = false
+                apply(config.copy(allowUnlock = true))
+            },
+        )
+    }
+
+    if (confirmingDangerousShell) {
+        ConfirmDialog(
+            title = stringResource(R.string.mcp_allow_dangerous_shell_confirm_title),
+            message = stringResource(R.string.mcp_allow_dangerous_shell_confirm_message),
+            confirmLabel = stringResource(R.string.common_enable),
+            destructive = true,
+            onDismiss = { confirmingDangerousShell = false },
+            onConfirm = {
+                confirmingDangerousShell = false
+                apply(config.copy(allowDangerousShell = true))
+            },
+        )
+    }
 }
 
 /** 只有影响监听行为的字段变化才需要重建监听；工具开关 / 黑名单由实时配置即时生效。 */
@@ -482,8 +551,8 @@ private fun needsRestart(old: McpConfig, new: McpConfig): Boolean =
     old.port != new.port || old.bindMode != new.bindMode || old.token != new.token
 
 /** 生成可直接粘贴到 MCP 客户端的配置 JSON。 */
-private fun buildClientConfig(endpoint: String, token: String): String {
-    val url = endpoint.ifBlank { "http://127.0.0.1:8765/mcp" }
+private fun buildClientConfig(endpoint: String, port: Int, token: String): String {
+    val url = endpoint.ifBlank { "http://127.0.0.1:$port/mcp" }
     return JSONObject().apply {
         put(
             "mcpServers",

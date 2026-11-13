@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -173,12 +174,16 @@ private fun VirtualScreenSettingsSection(
     onOpenSetup: () -> Unit = {},
 ) {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val settings = ui.virtualScreenSettings
     val readyModes = ui.readyModes
     val state = ui.virtualScreenState
     val shizukuReady = ControlMode.SHIZUKU in readyModes && viewModel.virtualScreenAvailable()
     val pipSupported = PipController.isSupported(context)
-    val deviceResolution = remember(context) { DeviceScreenResolution.read(context) }
+    // 设备分辨率档位跟随当前方向；旋转后需要重新读取，否则仍显示进入页面时的宽高。
+    val deviceResolution = remember(context, configuration) {
+        DeviceScreenResolution.read(context)
+    }
     val resolutionPresets = buildList {
         add(deviceResolution)
         VirtualScreenResolution.presets.forEach { if (it != deviceResolution) add(it) }

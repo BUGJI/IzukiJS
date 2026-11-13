@@ -14,6 +14,7 @@ import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.service.OverlayCoordinator
+import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -26,6 +27,7 @@ import org.json.JSONObject
 class InputApi(
     private val controllers: ControllerManager,
     private val logBus: LogBus,
+    private val virtualScreen: VirtualScreenManager? = null,
 ) {
 
     private fun gestureController(): DeviceController? =
@@ -39,8 +41,12 @@ class InputApi(
     private fun <T> withoutOverlayOnMainDisplay(block: () -> T): T =
         if (controllers.targetDisplayId != null) block() else OverlayCoordinator.withoutOverlay(block)
 
+    /** 连续 back 次数；虚拟屏没有 launcher，连续返回后可能停在空白页，用于给出提示。 */
+    private var consecutiveBacks = 0
+
     @JavascriptInterface
     fun click(x: Double, y: Double): Boolean {
+        consecutiveBacks = 0
         val controller = gestureController()
         val ok = controller?.let {
             withoutOverlayOnMainDisplay { it.click(x.toFloat(), y.toFloat()) }
@@ -51,6 +57,7 @@ class InputApi(
 
     @JavascriptInterface
     fun longClick(x: Double, y: Double, durationMillis: Double): Boolean {
+        consecutiveBacks = 0
         val controller = gestureController()
         val ok = controller?.let {
             withoutOverlayOnMainDisplay {
@@ -71,6 +78,7 @@ class InputApi(
         y2: Double,
         durationMillis: Double,
     ): Boolean {
+        consecutiveBacks = 0
         val controller = gestureController()
         val ok = controller?.let {
             withoutOverlayOnMainDisplay {
@@ -269,7 +277,76 @@ class InputApi(
     fun inputWithMethod(text: String, method: String): Boolean =
         input(text, TextInputMethod.from(method))
 
+    /**
+     * 结构化输入结果。`verify=true` 时尽量确认焦点与画面是否真的变化：
+     * - 无障碍后端可直接读取输入焦点；
+     * - 虚拟屏通过输入前后帧比较判断画面是否变化（没有焦点时通常不会变）；
+     * - Shell 主屏读不到控件树时 `focused=null`，不臆测成功或失败。
+     */
+    @JavascriptInterface
+    fun inputInfoRaw(text: String, method: String, optionsJson: String): String {
+        val options = runCatching {
+            if (optionsJson.isBlank()) JSONObject() else JSONObject(optionsJson)
+        }.getOrDefault(JSONObject())
+        val methodValue = TextInputMethod.from(method)
+        val verify = options.optBoolean("verify", false)
+        val timeoutMs = options.optInt("timeoutMs", options.optInt("timeout_ms", DEFAULT_VERIFY_TIMEOUT_MS))
+            .coerceIn(0, MAX_VERIFY_TIMEOUT_MS)
+            .toLong()
+
+        val controller = controllers.controllerFor(Capability.TEXT)
+        val virtual = virtualScreen?.takeIf { it.isActive() }
+        val focused = controller?.hasEditableFocus()
+        val beforeSeq = if (verify && virtual != null) virtual.frameSeq() else null
+        val before = if (verify && virtual != null) virtual.capture(0L) else null
+
+        val delivered = controller?.inputText(text, methodValue) ?: false
+
+        var screenChanged: Boolean? = null
+        var frameSeq: Long? = null
+        if (verify && virtual != null) {
+            if (delivered) virtual.awaitFrameAfter(beforeSeq ?: 0L, timeoutMs)
+            val after = virtual.capture(0L)
+            screenChanged = when {
+                before == null || after == null -> null
+                else -> !before.sameAs(after)
+            }
+            if (before != null && after != null) {
+                after.recycle()
+            }
+            before?.recycle()
+            frameSeq = virtual.frameSeq()
+        }
+
+        val ok = delivered && focused != false && screenChanged != false
+        val clipboardRestored = controller?.lastClipboardRestored()
+        if (focused == false) {
+            logBus.warn("输入文本 \"${text.preview()}\"：当前没有可编辑焦点，请先点击输入框")
+        } else if (screenChanged == false) {
+            logBus.warn("输入文本 \"${text.preview()}\"：输入后画面未变化，可能没有输入焦点")
+        }
+        logBus.debug(
+            "输入文本 \"${text.preview()}\" [${methodValue.name.lowercase()}]" +
+                "${controller.resultTag(delivered)}" +
+                (focused?.let { " 焦点=${if (it) "有" else "无"}" } ?: "") +
+                (screenChanged?.let { " 画面变化=${if (it) "是" else "否"}" } ?: ""),
+        )
+        return JSONObject().apply {
+            put("delivered", delivered)
+            put("ok", ok)
+            put("focused", focused ?: JSONObject.NULL)
+            put("method", methodValue.name.lowercase())
+            put("screenChanged", screenChanged ?: JSONObject.NULL)
+            frameSeq?.let { put("frameSeq", it) }
+            put("clipboardRestored", clipboardRestored ?: JSONObject.NULL)
+            if (!delivered) put("message", "输入命令未成功下发")
+            else if (focused == false) put("message", "没有输入焦点，请先点击输入框")
+            else if (screenChanged == false) put("message", "输入后画面未变化，可能没有输入焦点")
+        }.toString()
+    }
+
     private fun input(text: String, method: TextInputMethod): Boolean {
+        consecutiveBacks = 0
         val controller = controllers.controllerFor(Capability.TEXT)
         val ok = controller?.inputText(text, method) ?: false
         logBus.debug("输入文本 \"${text.preview()}\" [${method.name.lowercase()}]${controller.resultTag(ok)}")
@@ -302,7 +379,16 @@ class InputApi(
     }
 
     @JavascriptInterface
-    fun back(): Boolean = globalAction(GLOBAL_BACK, "返回")
+    fun back(): Boolean {
+        val ok = globalAction(GLOBAL_BACK, "返回")
+        if (ok) {
+            consecutiveBacks++
+            if (controllers.targetDisplayId != null && consecutiveBacks >= 2) {
+                logBus.info("已连续返回 $consecutiveBacks 次：虚拟屏没有 launcher，退到根后会停在空白页")
+            }
+        }
+        return ok
+    }
 
     @JavascriptInterface
     fun home(): Boolean {
@@ -339,6 +425,10 @@ class InputApi(
         const val GLOBAL_BACK = 1 // AccessibilityService.GLOBAL_ACTION_BACK
         const val GLOBAL_HOME = 2 // AccessibilityService.GLOBAL_ACTION_HOME
         const val GLOBAL_RECENTS = 3 // AccessibilityService.GLOBAL_ACTION_RECENTS
+
+        /** 输入后等待画面重绘的默认/最大时长。 */
+        const val DEFAULT_VERIFY_TIMEOUT_MS = 800
+        const val MAX_VERIFY_TIMEOUT_MS = 5_000
     }
 }
 

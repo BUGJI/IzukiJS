@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -54,6 +56,7 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
 
     var entries by remember { mutableStateOf<List<RecordingEntry>>(emptyList()) }
     var totalBytes by remember { mutableStateOf(0L) }
+    var loaded by remember { mutableStateOf(false) }
     var loadFailed by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<RecordingEntry?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -67,14 +70,18 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
 
     fun refresh() {
         scope.launch {
-            runCatching { viewModel.loadRecordings() }
-                .onSuccess { loaded ->
-                    entries = loaded
-                    // 复用每条录制的目录大小缓存，避免再次遍历整个录制目录。
-                    totalBytes = loaded.sumOf { it.sizeBytes }
-                    loadFailed = false
-                }
-                .onFailure { loadFailed = true }
+            try {
+                val loadedEntries = viewModel.loadRecordings()
+                entries = loadedEntries
+                // 复用每条录制的目录大小缓存，避免再次遍历整个录制目录。
+                totalBytes = loadedEntries.sumOf { it.sizeBytes }
+                loadFailed = false
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                loadFailed = true
+            } finally {
+                loaded = true
+            }
         }
     }
 
@@ -297,10 +304,28 @@ internal fun RecordingSettingsPage(onOpenDetail: (String) -> Unit = {}) {
     }
 
     Spacer(Modifier.height(SectionGap))
-    if (entries.isEmpty()) {
-        EmptyState(text = stringResource(R.string.record_page_empty))
-    } else {
-        SectionCard {
+    when {
+        !loaded -> SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    stringResource(R.string.common_loading),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        loadFailed && entries.isEmpty() -> EmptyState(
+            text = stringResource(R.string.record_page_load_failed),
+            actionLabel = stringResource(R.string.common_retry),
+            onAction = { refresh() },
+        )
+
+        entries.isEmpty() -> EmptyState(text = stringResource(R.string.record_page_empty))
+
+        else -> SectionCard {
             entries.forEachIndexed { index, entry ->
                 if (index > 0) Spacer(Modifier.height(12.dp))
                 RecordingRow(

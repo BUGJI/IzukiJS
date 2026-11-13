@@ -40,6 +40,7 @@ class McpContainer(
     val auditLog = McpAuditLog(application)
 
     val serverController = McpServerController(
+        context = application,
         logBus = logBus,
         auditLog = auditLog,
         configProvider = { configRepository.current() },

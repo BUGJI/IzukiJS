@@ -3,6 +3,7 @@ package com.benton.izukijs.notification
 import com.benton.izukijs.core.notification.NotificationSettings
 import com.benton.izukijs.core.notification.NotificationSettingsCodec
 import com.benton.izukijs.core.notification.NotifyChannel
+import com.benton.izukijs.core.notification.NotifyChannelSpecs
 import com.benton.izukijs.core.notification.NotifyChannelType
 import com.benton.izukijs.core.notification.NotifyEvent
 import com.benton.izukijs.core.notification.NotifyFilters
@@ -83,6 +84,53 @@ class NotifyModelsTest {
         val hook = restored.channels.first { it.id == "hook" }
         assertEquals("https://example.com/hook", hook.url)
         assertEquals("Authorization: Bearer x", hook.headers)
+    }
+
+    @Test
+    fun codecRoundTripPreservesConfigMap() {
+        val settings = NotificationSettings(
+            channels = listOf(
+                NotifyChannel.local(),
+                NotifyChannel(
+                    id = "dt",
+                    type = NotifyChannelType.DINGTALK_GROUP,
+                    config = mapOf("token" to "t0k", "msgtype" to "markdown", "atAll" to "true"),
+                ),
+            ),
+        )
+        val restored = NotificationSettingsCodec.decode(NotificationSettingsCodec.encode(settings))
+        val channel = restored.channels.first { it.id == "dt" }
+        assertEquals("t0k", channel.config["token"])
+        assertEquals("markdown", channel.config["msgtype"])
+        assertEquals("true", channel.config["atAll"])
+    }
+
+    @Test
+    fun specsValidateRequiredFields() {
+        val spec = requireNotNull(NotifyChannelSpecs.of(NotifyChannelType.DINGTALK_GROUP))
+        assertFalse(spec.isValid(emptyMap()))
+        assertFalse(spec.isValid(mapOf("msgtype" to "text")))
+        assertTrue(spec.isValid(mapOf("token" to "abc")))
+        assertTrue("token" in spec.secretKeys)
+        assertFalse("msgtype" in spec.secretKeys)
+    }
+
+    @Test
+    fun specsDefaultsPopulateNewChannel() {
+        val channel = NotifyChannel.newChannel(NotifyChannelType.PUSHPLUS)
+        assertEquals("www.pushplus.plus", channel.config["website"])
+        assertEquals("html", channel.config["template"])
+    }
+
+    @Test
+    fun hmacSha256MatchesKnownVector() {
+        assertEquals(
+            "97yD9DBThCSxMpjmqm+xQ+9NWaFJRhdZl0edvC0aPNg=",
+            NotifySigning.hmacSha256Base64(
+                "key",
+                "The quick brown fox jumps over the lazy dog",
+            ),
+        )
     }
 
     @Test

@@ -133,6 +133,7 @@ fun SecretField(
     modifier: Modifier = Modifier,
     commitOnBlur: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
+    onDraftChange: ((String) -> Unit)? = null,
     onChange: (String) -> Unit,
 ) {
     var visible by remember { mutableStateOf(false) }
@@ -153,6 +154,7 @@ fun SecretField(
         value = text,
         onValueChange = { input ->
             text = input
+            onDraftChange?.invoke(input)
             if (!commitOnBlur) onChange(input)
         },
         label = { Text(label) },
@@ -192,10 +194,16 @@ fun NumberField(
 ) {
     var text by remember { mutableStateOf(value.toString()) }
     var editing by remember { mutableStateOf(false) }
+    var invalid by remember { mutableStateOf(false) }
     val latestText by rememberUpdatedState(text)
     val latestValue by rememberUpdatedState(value.toString())
     val latestOnChange by rememberUpdatedState(onChange)
-    LaunchedEffect(value) { if (!editing) text = value.toString() }
+    LaunchedEffect(value) {
+        if (!editing) {
+            text = value.toString()
+            invalid = false
+        }
+    }
     DisposableEffect(commitOnBlur) {
         onDispose {
             if (commitOnBlur && latestText != latestValue) {
@@ -217,11 +225,18 @@ fun NumberField(
                 }
             }
             text = filtered
+            invalid = false
             if (!commitOnBlur) filtered.toIntOrNull()?.takeIf { it in range }?.let(onChange)
         },
         label = { Text(label) },
         placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder) }),
         singleLine = true,
+        isError = invalid,
+        supportingText = if (invalid) {
+            { Text(stringResource(R.string.common_range_hint, range.first, range.last)) }
+        } else {
+            null
+        },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = modifier.fillMaxWidth().onFocusChanged { state ->
             if (editing && !state.isFocused) {
@@ -229,8 +244,11 @@ fun NumberField(
                 if (parsed != null && parsed in range) {
                     onChange(parsed)
                     text = parsed.toString()
+                    invalid = false
                 } else {
+                    // 失焦时保留可见的错误与范围提示，不再静默还原成旧值。
                     text = value.toString()
+                    invalid = true
                 }
             }
             editing = state.isFocused
@@ -325,13 +343,17 @@ fun SwitchRow(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val contentAlpha = if (enabled) 1f else 0.38f
         Column(modifier = Modifier.weight(1f)) {
-            Text(label)
+            Text(
+                label,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
+            )
             if (!description.isNullOrBlank()) {
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
                 )
             }
         }

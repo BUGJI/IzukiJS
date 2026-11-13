@@ -101,6 +101,13 @@ interface TextController {
     /** 按指定方式输入文本；默认忽略 [method]，等价于 [inputText]。 */
     fun inputText(text: String, method: TextInputMethod): Boolean = inputText(text)
 
+    /**
+     * 当前是否有可编辑控件持有输入焦点。
+     *
+     * null 表示该后端无法判断（例如 Shell / HID 读不到控件树），调用方不得据此判定失败。
+     */
+    fun hasEditableFocus(): Boolean? = null
+
     /** 执行无障碍全局动作（返回/主页/最近任务等）。 */
     fun globalAction(action: Int): Boolean = false
 
