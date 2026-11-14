@@ -92,6 +92,11 @@ internal object VirtualScreenStartHint {
         return out.toString()
     }
 
-    private val START_CALL =
-        Regex("""virtualScreen\s*\.\s*start\s*\(\s*\{([^}]*)}""")
+    // 两端花括号都必须转义：Android 使用 ICU 正则实现，裸 `}` 会直接抛
+    // PatternSyntaxException（JVM 的 java.util.regex 更宽松，单测发现不了），
+    // 因此单测直接校验模式串的转义形式。
+    internal const val START_CALL_PATTERN =
+        """virtualScreen\s*\.\s*start\s*\(\s*\{([^}]*)\}"""
+
+    private val START_CALL = Regex(START_CALL_PATTERN)
 }

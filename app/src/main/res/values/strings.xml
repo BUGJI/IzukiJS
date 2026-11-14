@@ -520,9 +520,9 @@
     <string name="developer_default_max_regions">默认最大区域数</string>
     <string name="developer_default_max_regions_desc">findColors 等接口未指定 maxRegions 时的默认值。</string>
     <string name="developer_agent_tree_probe">Agent 控件树预算</string>
-    <string name="developer_agent_tree_probe_desc">AI Agent 读取控件树的超时预算。</string>
+    <string name="developer_agent_tree_probe_desc">AI Agent 首次读取控件树的超时预算；超时后会自动放大重试，并按本机实测耗时自适应。</string>
     <string name="developer_agent_hit_probe">Agent 命中探测预算</string>
-    <string name="developer_agent_hit_probe_desc">AI Agent 探测点击目标时的超时预算。</string>
+    <string name="developer_agent_hit_probe_desc">AI Agent 首次探测点击目标的超时预算；超时后会自动放大重试，并按本机实测耗时自适应。</string>
     <string name="developer_agent_max_dump_chars">Agent 控件树字符上限</string>
     <string name="developer_agent_max_dump_chars_desc">单次控件树转文本时保留的最大字符数。</string>
     <string name="developer_agent_default_wait_timeout">Agent 默认等待超时</string>

@@ -100,22 +100,6 @@ class UpdateChecker(private val logBus: LogBus? = null) {
         }
     }
 
-    private fun compareVersions(a: String, b: String): Int {
-        val left = normalize(a)
-        val right = normalize(b)
-        val size = maxOf(left.size, right.size)
-        for (i in 0 until size) {
-            val x = left.getOrNull(i) ?: 0
-            val y = right.getOrNull(i) ?: 0
-            if (x != y) return x.compareTo(y)
-        }
-        return 0
-    }
-
-    private fun normalize(version: String): List<Int> =
-        version.substringBefore('-').substringBefore('+').split('.')
-            .map { it.trim().toIntOrNull() ?: 0 }
-
     companion object {
         const val REPO = "BUGJI/IzukiJS"
         const val RELEASES_PAGE = "https://github.com/$REPO/releases/latest"
@@ -126,6 +110,24 @@ class UpdateChecker(private val logBus: LogBus? = null) {
          * 两套命名都要认，否则旧 CD 产物和新 CD 产物只能取到其中一边。
          * 优先精确 ABI，其次通用包，避免设备没有匹配分包时误判为“无可用安装包”。
          */
+        /** 语义化版本比较：忽略 `v` 前缀、预发布 / 构建后缀，缺失段按 0 处理。 */
+        internal fun compareVersions(a: String, b: String): Int {
+            val left = normalizeVersion(a)
+            val right = normalizeVersion(b)
+            val size = maxOf(left.size, right.size)
+            for (i in 0 until size) {
+                val x = left.getOrNull(i) ?: 0
+                val y = right.getOrNull(i) ?: 0
+                if (x != y) return x.compareTo(y)
+            }
+            return 0
+        }
+
+        internal fun normalizeVersion(version: String): List<Int> =
+            version.trim().removePrefix("v").removePrefix("V")
+                .substringBefore('-').substringBefore('+').split('.')
+                .map { it.trim().toIntOrNull() ?: 0 }
+
         internal fun selectAssetName(assetNames: List<String>, abis: List<String>): String? {
             fun find(vararg candidates: String): String? =
                 candidates.firstNotNullOfOrNull { name ->

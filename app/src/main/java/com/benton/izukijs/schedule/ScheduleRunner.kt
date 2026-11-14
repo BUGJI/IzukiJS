@@ -1,12 +1,11 @@
 package com.benton.izukijs.schedule
 
-import android.content.Context
-import com.benton.izukijs.data.ScriptRepository
-import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.runtime.RunTrigger
-import com.benton.izukijs.runtime.ScriptExecutionManager
-import com.benton.izukijs.service.ScreenUnlockController
+import com.benton.izukijs.core.log.RunLogSink
+import com.benton.izukijs.data.ScriptSource
 import com.benton.izukijs.model.UnlockResult
+import com.benton.izukijs.runtime.RunTrigger
+import com.benton.izukijs.runtime.RunUnlocker
+import com.benton.izukijs.runtime.ScriptRunner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -15,24 +14,22 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 /**
- * 定时任务执行器：检查条件、读取脚本、交给 [ScriptExecutionManager] 执行，
- * 并在结束后由 [ScheduleManager] 安排下一次 / 重试。
+ * 定时任务执行器：检查条件、读取脚本、交给 [ScriptRunner] 执行，
+ * 并在结束后由 [ScheduleLifecycle] 安排下一次 / 重试。
  */
 class ScheduleRunner(
-    context: Context,
-    private val repository: ScheduleRepository,
-    private val scriptRepository: ScriptRepository,
-    private val scheduleManager: ScheduleManager,
-    private val executionManager: ScriptExecutionManager,
-    private val screenUnlock: ScreenUnlockController,
-    private val foregroundProvider: () -> String?,
-    private val logBus: LogBus,
+    private val repository: ScheduleStore,
+    private val scriptRepository: ScriptSource,
+    private val scheduleManager: ScheduleLifecycle,
+    private val executionManager: ScriptRunner,
+    private val screenUnlock: RunUnlocker,
+    private val triggerConditions: RunConditions,
+    private val logBus: RunLogSink,
+    private val now: () -> Long = System::currentTimeMillis,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) {
 
-    private val appContext = context.applicationContext
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val eventMutex = Mutex()
-    private val triggerConditions = TriggerConditions(appContext, foregroundProvider)
 
     fun run(schedule: Schedule) {
         scope.launch { runInternal(schedule) }
@@ -41,12 +38,12 @@ class ScheduleRunner(
     fun onEvent(event: ScheduleEvent) {
         scope.launch {
             eventMutex.withLock {
-                val now = System.currentTimeMillis()
+                val current = now()
                 repository.list()
                     .filter { it.kind == ScheduleKind.EVENT && it.event == event }
-                    .filter { now - it.lastTriggeredAtMillis >= EVENT_DEBOUNCE_MS }
+                    .filter { current - it.lastTriggeredAtMillis >= EVENT_DEBOUNCE_MS }
                     .forEach { schedule ->
-                        val updated = schedule.copy(lastTriggeredAtMillis = now)
+                        val updated = schedule.copy(lastTriggeredAtMillis = current)
                         repository.upsert(updated)
                         logBus.info("⚡ 事件触发: ${schedule.scriptName} (${event.name.lowercase()})")
                         runInternal(updated)
@@ -81,16 +78,15 @@ class ScheduleRunner(
             scheduleManager.cancel(schedule.id)
             return
         }
-        val now = System.currentTimeMillis()
-        val updated = schedule.copy(lastTriggeredAtMillis = now)
+        val updated = schedule.copy(lastTriggeredAtMillis = now())
         repository.upsert(updated)
         logBus.info("⏰ 定时触发: ${script.name}")
-        val started = executionManager.run(
+        val started = executionManager.runScheduled(
             scriptId = script.id,
             scriptName = script.name,
             source = scriptRepository.read(script),
-            onFinished = { success -> scheduleManager.onFinished(updated, success) },
             trigger = RunTrigger.SCHEDULE,
+            onFinished = { success -> scheduleManager.onFinished(updated, success) },
         )
         if (!started) {
             logBus.warn("定时任务未能启动（已有脚本运行）: ${schedule.scriptName}")

@@ -5,6 +5,38 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.2] - 2026-11-14
+### 修复
+
+- 修复 1.2.1 上所有脚本启动即失败的问题：`VirtualScreenStartHint` 的正则未转义 `}`
+  在 Android 的 ICU 实现下抛 `PatternSyntaxException`，导致类初始化失败、每次运行直接报错。
+- 脚本运行失败时日志会附带根因（`cause` 链），`ExceptionInInitializerError` 等 message 为空的
+  异常不再只显示 `运行出错: null`。
+- 修复慢机型上 `ui_dump` / `find(source=ui)` / `click(hit=true)` / `wait(for=idle)` 默认持续失败：
+  `uiautomator dump` 首次超时后自动放大到 ×2.5 重试一次，成功后按本机实测耗时（`×1.6`）
+  自适应后续预算；超时提示不再一律归因于「界面持续动画」，并会指出可调整的开发者选项。
+  `find` 在控件树失败时会返回 `tree_error` 说明原因。
+
+### 测试
+
+- 新增控制后端能力协商、运行互斥 / 停止竞态、运行状态归类与失败根因文案的单元测试；
+  控件树预算放大重试逻辑抽成可测的 `TreeProbe` 并补齐超时、deadline 与预算边界用例。
+- 补齐 HID 协议编解码、触摸流解析（协议 A/B / 单点）、解锁轨迹归一化、通知签名、
+  `@env` 解析、JS 结果构造、时间格式化、正则缓存与密钥降级的纯函数测试。
+- 新增 MCP 协议链路测试：JSON-RPC 解析 / 批量 / 通知、版本协商、同步工具绕队列、
+  超时转异步句柄、资源读取、参数脱敏与审计落盘；协议层改为依赖
+  `McpToolCatalog` / `McpResourceProvider` / `McpAuditSink` / `McpLogSink` 接口。
+- 新增编排 / 定时链路测试：步骤顺序、失败继续、缺失脚本、无效 / 停止 / 忙状态、
+  手动执行不改调度、条件跳过、事件去抖、停止活动编排、结果通知失败降级。
+  执行器改为依赖 `ScriptRunner` / `RunConditions` / `RunUnlocker` / `RunLogSink`
+  与轻量仓储接口，并抽出 `RunPreparation` 合并运行参数。
+- 新增配置备份 / 重置回滚、脚本名 URL 推断、版本比较、日志总线（容量 / 级别 / 节流 /
+  清理）与性能指标环形缓冲 / 分位数的纯函数测试；`LogBus` 抽出可注入时钟、logcat 输出、
+  emit 作用域与合并窗口，`PerfMetrics` 的指标累计抽成 `MetricAccumulator`。
+- 测试依赖新增 `kotlinx-coroutines-test`，并加入 `FakeDeviceController` / `FakeClock` /
+  `FakeMcpCatalog` / `FakeMcpResources` / `FakeAuditSink` / `FakeMcpLogSink` /
+  `FakeScriptRunner` / `FakeFlowStore` / `FakeScheduleStore` 共享替身。
+
 ## [1.2.1] - 2026-11-14
 ### 新增
 
@@ -519,7 +551,9 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.2.0...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/BUGJI/IzukiJS/compare/v1.2.1...v1.2.2
+[1.2.1]: https://github.com/BUGJI/IzukiJS/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/BUGJI/IzukiJS/compare/v1.1.12...v1.2.0
 [1.1.12]: https://github.com/BUGJI/IzukiJS/compare/v1.1.11...v1.1.12
 [1.1.11]: https://github.com/BUGJI/IzukiJS/compare/v1.1.10...v1.1.11

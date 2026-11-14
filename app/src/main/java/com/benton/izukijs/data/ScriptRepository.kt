@@ -33,7 +33,7 @@ class ScriptStaleException(
 class ScriptRepository(
     private val context: Context,
     val history: ScriptHistoryRepository = ScriptHistoryRepository(context),
-) {
+) : ScriptSource {
 
     private val _revision = MutableStateFlow(0)
 
@@ -56,7 +56,7 @@ class ScriptRepository(
         .sortedByDescending { it.lastModified() }
         .map { it.toScriptInfo() }
 
-    fun find(id: String): ScriptInfo? = list().firstOrNull { it.id == id }
+    override fun find(id: String): ScriptInfo? = list().firstOrNull { it.id == id }
 
     /**
      * 首次运行时把打包在 assets/scripts 下的内置脚本释放到脚本目录，供其他脚本 `require`。
@@ -88,7 +88,7 @@ class ScriptRepository(
         return file.toScriptInfo()
     }
 
-    fun read(script: ScriptInfo): String = synchronized(fileLock) {
+    override fun read(script: ScriptInfo): String = synchronized(fileLock) {
         if (script.file.exists()) script.file.readText() else ""
     }
 

@@ -46,13 +46,24 @@ Instrumentation 测试需要连接设备：
 
 ## 现有覆盖范围
 
-`app/src/test/java/` 下约 78 个测试文件，主要覆盖：
+`app/src/test/java/` 下约 104 个测试文件（不含 `testing/` 下的共享替身），主要覆盖：
 
 | 模块 | 示例 |
 |---|---|
 | pipeline | `PipelineParserTest`、`PipelineValidatorTest`、`PipelineRunnerTest`、`PipelineDumperTest`、`ReplayPipelineActionsTest` |
 | 录制 | `RecordingStoreTest`、`RecordingReplayTest`、`RecordingScriptExporterTest`、`RecordingSuppressionTest`、`RecordingUserActionTest`、`RecordTypesTest` |
-| 控制协议 | `HidProtocolGestureTest`、`AdbShellProtocolTest`、`NodeCriteriaMatchTest`、`ScreenAnimationProbeTest`、`ImeStateProbeTest` |
+| 控制协议 / 能力协商 | `ControllerManagerTest`、`HidProtocolTest`、`HidProtocolGestureTest`、`AdbShellProtocolTest`、`NodeCriteriaMatchTest`、`ScreenAnimationProbeTest`、`ImeStateProbeTest` |
+| 触摸 / 解锁轨迹 | `TouchStreamParserTest`、`UnlockGestureCodecTest`、`TouchCoordMapperTest`、`MultiTouchParserTest` |
+| 运行状态机 | `RunGateTest`、`RunStatusResolverTest`、`RunFailureTextTest`、`UiautomatorDumpBudgetTest` |
+| MCP 协议链路 | `McpProtocolHandlerTest`、`McpArgumentSummarizerTest`、`McpAuditLogTest`、`McpAuditSanitizerTest`、`OperationRegistryTest` |
+| 编排 / 定时链路 | `FlowRunnerTest`、`FlowPlannerTest`、`ScheduleRunnerTest`、`TriggerConditionsTest`、`CronExpressionTest` |
+| 运行准备 | `RunPreparationTest`、`RunModeResolverTest`、`ScriptEnvSpecTest`、`EnvTextTest` |
+| 日志 / 性能 / 备份 | `LogBusTest`、`MetricAccumulatorTest`、`PerfReportFormatterTest`、`ConfigBackupManagerTest` |
+| 导入 / 更新 | `ScriptImporterTest`、`UpdateCheckerTest` |
+| AI 探针 | `TreeProbeTest` |
+| 文本 / 参数 / 时间 | `ScriptEnvSpecTest`、`EnvTextTest`、`JsJsonTest`、`TimeFormatTest` |
+| 通知 / 安全 | `NotifySigningTest`、`NotifyCryptoTest`、`SecretCipherTest` |
+| 视觉缓存 | `RegexCacheTest`、`RoiResolverTest`、`VisionSpecParserTest` |
 | 运行时 / API | `ColorRegionAccumulatorTest`、`GestureFallbackTest`、`HttpAllowlistTest` |
 | OCR | `OcrGeometryTest`、`OcrLineSynthesisTest` |
 | MCP | `McpConfigTest`、`HttpServerTest`、`OperationRegistryTest`、`ScriptEditEngineTest`、`ScriptTextDiffTest` |
@@ -66,7 +77,7 @@ Instrumentation 测试需要连接设备：
 
 ### 依赖
 
-只有 JUnit 4 与 `org.json` 可用于 JVM 测试：
+JVM 测试可用 JUnit 4、`org.json` 与 `kotlinx-coroutines-test`：
 
 ```kotlin
 import org.junit.Assert.assertEquals
@@ -75,7 +86,21 @@ import org.junit.Test
 ```
 
 没有 Robolectric、MockK、Truth。需要 Android 类时，优先把逻辑抽成不依赖 Android 的
-纯函数，或用接口 / lambda 注入。
+纯函数，或用接口 / lambda 注入。`kotlinx-coroutines-test` 只用于需要确定性调度 /
+虚拟时间的异步状态机测试，不要用它替代纯函数拆分。
+
+共享替身放在 `app/src/test/java/com/benton/izukijs/testing/`：
+`FakeDeviceController`（控制后端能力协商）、`FakeClock`（可推进时钟）、
+`FakeMcpCatalog` / `FakeMcpResources` / `FakeAuditSink`（MCP 协议链路）、
+`FakeScriptRunner` / `FakeScriptSource` / `FakeFlowStore` / `FakeScheduleStore`
+（编排与定时链路）。新增链路测试优先复用这些替身，避免每个用例重复手写。
+
+编排 / 定时执行器通过 `ScriptRunner`、`RunConditions`、`RunUnlocker`、`RunLogSink`
+等接口注入依赖；测试用 `CoroutineScope(Dispatchers.Unconfined)` 让串行步骤同步完成，
+需要验证停止 / 并发时用 `CompletableDeferred` 门控，不依赖真实 sleep。
+
+`LogBus` 的时钟、logcat 输出、emit 协程作用域与合并窗口均可注入；测试把窗口设为 0
+并使用 `Dispatchers.Unconfined`，即可同步断言缓冲区与节流行为。
 
 ### 用 Fake 替代设备
 

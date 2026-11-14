@@ -32,7 +32,8 @@ internal fun AgentTools.doFind(args: JSONObject): String {
     val source = args.optString("source").ifBlank { SOURCE_AUTO }
     val fuzzy = args.optBoolean("fuzzy", true)
     val minConf = args.optDouble("min_conf", 0.0).coerceIn(0.0, 1.0)
-    val matches = search(by, value, text, source, fuzzy, minConf)
+    val outcome = search(by, value, text, source, fuzzy, minConf)
+    val matches = outcome.matches
     return jsonOf {
         put("ok", matches.length() > 0)
         put("matched", matches.length() > 0)
@@ -40,11 +41,12 @@ internal fun AgentTools.doFind(args: JSONObject): String {
         put("source", source)
         put("count", matches.length())
         put("matches", matches)
+        outcome.treeFailure?.let { put("tree_error", it.message) }
     }
 }
 
 internal fun AgentTools.doUiDump(): String {
-    val result = nodeTreeProvider(TREE_PROBE_BUDGET_MS)
+    val result = probeTree(TREE_PROBE_BUDGET_MS)
     return when (result) {
         is NodeTreeResult.Success -> {
             val out = StringBuilder()

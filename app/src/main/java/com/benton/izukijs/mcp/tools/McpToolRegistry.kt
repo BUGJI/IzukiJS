@@ -7,6 +7,7 @@ import com.benton.izukijs.controller.record.RecordingSession
 import com.benton.izukijs.controller.record.UserRecordingOptions
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.core.McpConfig
+import com.benton.izukijs.mcp.protocol.McpToolCatalog
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
@@ -30,7 +31,7 @@ class McpToolRegistry(
     internal val userRecordingStarter: ((UserRecordingOptions) -> Boolean)? = null,
     /** 与 [userRecordingStarter] 配对，确保 MCP 停止录制时前台服务一并退出。 */
     internal val userRecordingStopper: (() -> Unit)? = null,
-) {
+) : McpToolCatalog {
 
     @Volatile
     private var cachedConfig: McpConfig? = null
@@ -38,7 +39,7 @@ class McpToolRegistry(
     @Volatile
     private var cachedTools: List<McpTool> = emptyList()
 
-    fun tools(): List<McpTool> {
+    override fun tools(): List<McpTool> {
         val config = configProvider()
         if (config != cachedConfig) {
             synchronized(this) {
@@ -51,7 +52,7 @@ class McpToolRegistry(
         return cachedTools
     }
 
-    fun find(name: String): McpTool? = tools().firstOrNull { it.name == name }
+    override fun find(name: String): McpTool? = tools().firstOrNull { it.name == name }
 
     /** 服务启动后在后台预热工具目录，避免首个 tools/list 或 tools/call 承担构建开销。 */
     fun prewarm() {

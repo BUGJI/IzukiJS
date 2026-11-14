@@ -1,6 +1,7 @@
 package com.benton.izukijs.controller
 
 import android.os.Process
+import android.os.SystemClock
 import android.util.Xml
 import com.benton.izukijs.controller.record.RecordingSuppression
 import com.benton.izukijs.model.Capability
@@ -73,22 +74,30 @@ object UiautomatorDumper {
 
         // 每次 dump 使用唯一临时文件，避免多实例 / 多用户 / 并发 dump 相互覆盖。
         val path = "/data/local/tmp/izuki_ui_dump_${Process.myPid()}_${SEQ.incrementAndGet()}.xml"
+        val startedAt = SystemClock.elapsedRealtime()
         val dumped = runDump(shell, "uiautomator dump $path", dumpTimeoutMs)
+        val elapsedMs = SystemClock.elapsedRealtime() - startedAt
         if (dumped == null) {
             // 界面持续动画时 uiautomator 会一直等 idle，直到其内部超时（实测可达 11s+）。
-            // 这里主动放弃并终止该进程，避免把设备队列堵在无意义的空转上。
-            logBus.warn("uiautomator dump 超过 ${dumpTimeoutMs}ms 未返回，已主动放弃（界面可能持续动画）")
+            // 这里主动放弃并终止该进程，避免把设备队列堵在无意义的空转上；上层可能放大预算重试一次。
+            logBus.warn(
+                if (animating) {
+                    "检测到界面持续动画，uiautomator dump 超过 ${dumpTimeoutMs}ms 未返回"
+                } else {
+                    "uiautomator dump 超过 ${dumpTimeoutMs}ms 未返回，已主动放弃"
+                },
+            )
             runCatching {
                 internalShell(shell, "pkill -9 uiautomator 2>/dev/null || killall -9 uiautomator 2>/dev/null")
             }
             runCatching { internalShell(shell, "rm -f $path") }
-            return NodeTreeResult.Failure(
-                if (animating) {
-                    "界面持续动画，控件树读取超时（已尝试 dump）"
-                } else {
-                    "uiautomator dump 超时（界面持续动画）"
-                },
-            )
+            val message = if (animating) {
+                "界面持续动画，uiautomator dump 在 ${dumpTimeoutMs}ms 内未返回"
+            } else {
+                "uiautomator dump 超过 ${dumpTimeoutMs}ms 未返回" +
+                    "（本机 dump 可能偏慢，可调大开发者选项 agent_tree_probe_budget_ms / agent_hit_probe_budget_ms）"
+            }
+            return NodeTreeResult.Failure(message, timedOut = true, budgetMs = dumpTimeoutMs)
         }
         // uiautomator dump 的退出码不可靠（不同 ROM 文案不同），以能否读到文件为准。
         val xml = internalShell(shell, "cat $path; rm -f $path")?.stdout
@@ -101,6 +110,9 @@ object UiautomatorDumper {
             logBus.debug("uiautomator dump 失败：$message")
             return NodeTreeResult.Failure(message)
         }
+        // 只有真正拿到可解析的控件树才计入本机基线，避免把失败前的等待时间当成典型耗时。
+        UiautomatorDumpBudget.recordMeasured(elapsedMs)
+        logBus.debug("uiautomator dump 完成：${elapsedMs}ms（后续建议预算 ${UiautomatorDumpBudget.effectiveBaselineMs()}ms）")
         val root = runCatching { parse(xml) }
             .onFailure { logBus.warn("uiautomator dump 解析失败：${it.message}") }
             .getOrNull()
@@ -109,7 +121,7 @@ object UiautomatorDumper {
     }
 
     /**
-     * 在后台线程执行 dump 命令，最多等待 [DUMP_TIMEOUT_MS]；超时返回 null 并终止 uiautomator。
+     * 在后台线程执行 dump 命令，最多等待 [timeoutMs]；超时返回 null 并终止 uiautomator。
      *
      * 用后台线程而非直接在设备队列线程上调用，是为了让「超时放弃」成为可能——ShellRunner 本身
      * 是阻塞式的，一旦 uiautomator 卡在等 idle，调用线程只能被动陪等。超时后杀掉 uiautomator，
@@ -220,8 +232,10 @@ object UiautomatorDumper {
     private const val MAX_DEPTH = 24
 
     /**
-     * dump 默认等待上限。静态界面实测 2.7~3.5s，但持续动画界面原本要空转 11s+；
-     * 快速失败（1.5s）+ 上层降级比长时间白等体验更好。调用方可传入更小预算。
+     * 调用方未指定预算时的首次尝试上限。
+     *
+     * 1.5s 只覆盖快设备；慢设备由上层读取 [UiautomatorDumpBudget] 的建议预算，
+     * 或在首次超时后按 [UiautomatorDumpBudget.retryBudgetMs] 放大重试一次。
      */
     private const val DUMP_TIMEOUT_MS = 1_500L
 
@@ -231,8 +245,8 @@ object UiautomatorDumper {
     private const val ANIMATION_PROBE_MIN_BUDGET_MS = 1_200L
 
     /**
-     * 探测到动画后仍尝试 dump 的预算。默认 1.5s 对含小动效的界面偏短，
-     * 放宽到 2.5s；仍失败才快速返回，避免回到过去 11s+ 的空转。
+     * 探测到动画后首次尝试的预算。默认 1.5s 对含小动效的界面偏短，放宽到 2.5s；
+     * 仍超时则由上层决定是否放大重试，避免回到过去 11s+ 的空转。
      */
     private const val ANIMATED_DUMP_TIMEOUT_MS = 2_500L
 

@@ -31,6 +31,7 @@ import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.flow.FlowManager
 import com.benton.izukijs.flow.FlowRepository
 import com.benton.izukijs.flow.FlowRunner
+import com.benton.izukijs.flow.NotificationFlowNotifier
 import com.benton.izukijs.i18n.LanguageRepository
 import com.benton.izukijs.ocr.OcrConfigRepository
 import com.benton.izukijs.ocr.OcrProcessor
@@ -38,6 +39,7 @@ import com.benton.izukijs.notification.NotificationDispatcher
 import com.benton.izukijs.notification.NotificationSettingsRepository
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.log.LogBusRunLogSink
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.runtime.RunControl
 import com.benton.izukijs.runtime.CacheImageStore
@@ -50,6 +52,7 @@ import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.schedule.ScheduleManager
 import com.benton.izukijs.schedule.ScheduleRepository
 import com.benton.izukijs.schedule.ScheduleRunner
+import com.benton.izukijs.schedule.TriggerConditions
 import com.benton.izukijs.privileged.PrivilegedUnlockClient
 import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.McpServerService
@@ -337,27 +340,35 @@ class AppContainer(val application: Application) {
         logBus,
     )
 
+    private val runLogSink = LogBusRunLogSink(logBus)
+    private val runConditions = TriggerConditions(
+        application,
+        foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
+    )
+
     val scheduleRunner = ScheduleRunner(
-        context = application,
         repository = scheduleRepository,
         scriptRepository = scriptRepository,
         scheduleManager = scheduleManager,
         executionManager = scriptExecutionManager,
         screenUnlock = screenUnlockController,
-        foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
-        logBus = logBus,
+        triggerConditions = runConditions,
+        logBus = runLogSink,
     )
 
     val flowRunner = FlowRunner(
-        context = application,
         repository = flowRepository,
         scriptRepository = scriptRepository,
         flowManager = flowManager,
         executionManager = scriptExecutionManager,
         screenUnlock = screenUnlockController,
-        foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
-        logBus = logBus,
-        notificationDispatcher = notificationDispatcher,
+        triggerConditions = runConditions,
+        logBus = runLogSink,
+        notificationDispatcher = NotificationFlowNotifier(
+            application,
+            notificationDispatcher,
+            runLogSink,
+        ),
     )
 
     /** 初始化控制后端。会注册 Shizuku 监听并异步探测 Root。 */

@@ -3,6 +3,7 @@ package com.benton.izukijs.mcp.resources
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.core.McpAuditLog
+import com.benton.izukijs.mcp.protocol.McpResourceProvider
 import com.benton.izukijs.mcp.tools.ScreenshotEncoder
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
@@ -28,7 +29,7 @@ class McpResources(
     private val executionManager: ScriptExecutionManager,
     private val logFileStore: LogFileStore,
     private val auditLog: McpAuditLog,
-) {
+) : McpResourceProvider {
 
     private data class Definition(
         val uri: String,
@@ -54,7 +55,7 @@ class McpResources(
             .put("mimeType", "text/plain"),
     )
 
-    fun listJson(): JSONArray = JSONArray().apply {
+    override fun listJson(): JSONArray = JSONArray().apply {
         definitions.forEach { def ->
             put(
                 JSONObject().apply {
@@ -67,10 +68,10 @@ class McpResources(
         }
     }
 
-    fun templatesJson(): JSONArray = JSONArray().apply { templates.forEach { put(it) } }
+    override fun templatesJson(): JSONArray = JSONArray().apply { templates.forEach { put(it) } }
 
     /** 读取资源；未知 URI 返回 null。 */
-    fun read(uri: String): ResourceContent? = when {
+    override fun read(uri: String): ResourceContent? = when {
         uri == "izuki://device" -> ResourceContent(uri, JSON, deviceInfo().toString())
         uri == "izuki://status" -> ResourceContent(uri, JSON, status().toString())
         uri == "izuki://scripts" -> ResourceContent(uri, JSON, scriptList().toString())

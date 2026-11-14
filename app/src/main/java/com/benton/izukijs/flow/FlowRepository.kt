@@ -17,7 +17,7 @@ import java.io.File
 /**
  * 脚本编排持久化（JSON 文件）。
  */
-class FlowRepository(context: Context) {
+class FlowRepository(context: Context) : FlowStore {
 
     private val file = File(context.filesDir, "flows.json")
     private val lock = Any()
@@ -27,7 +27,7 @@ class FlowRepository(context: Context) {
     /** 编排集合的变更信号，供列表页在新增 / 编辑 / 删除后刷新。 */
     val revision: StateFlow<Int> = _revision.asStateFlow()
 
-    fun list(): List<ScriptFlow> = synchronized(lock) {
+    override fun list(): List<ScriptFlow> = synchronized(lock) {
         if (!file.exists()) return emptyList()
         runCatching {
             val array = JSONArray(file.readText())
@@ -37,7 +37,7 @@ class FlowRepository(context: Context) {
 
     fun get(id: String): ScriptFlow? = list().firstOrNull { it.id == id }
 
-    fun upsert(flow: ScriptFlow) = synchronized(lock) {
+    override fun upsert(flow: ScriptFlow) = synchronized(lock) {
         write(list().filterNot { it.id == flow.id } + flow)
     }
 

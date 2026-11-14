@@ -1,12 +1,8 @@
 package com.benton.izukijs.mcp.protocol
 
-import com.benton.izukijs.mcp.core.McpAuditLog
-import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpContent
 import com.benton.izukijs.mcp.tools.McpToolResult
-import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.mcp.tools.OperationRegistry
-import com.benton.izukijs.core.log.LogBus
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -22,13 +18,15 @@ import java.util.concurrent.TimeoutException
  * 设备操作串行，不会互相打断。
  */
 class McpProtocolHandler(
-    private val registry: McpToolRegistry,
-    private val resources: McpResources,
+    private val registry: McpToolCatalog,
+    private val resources: McpResourceProvider,
     private val operations: OperationRegistry,
-    private val auditLog: McpAuditLog,
-    private val logBus: LogBus,
+    private val auditLog: McpAuditSink,
+    private val logBus: McpLogSink,
     private val toolDispatcher: ExecutorService,
     private val serverVersion: String,
+    /** 同步等待窗口；超时后返回 request_id 转异步。测试可传入更短的值。 */
+    private val syncWaitMs: Long = DEFAULT_SYNC_WAIT_MS,
 ) {
 
     /**
@@ -152,7 +150,7 @@ class McpProtocolHandler(
         }
 
         val callStarted = System.currentTimeMillis()
-        logBus.debug("🔌 MCP 开始 $name(${summarize(arguments)})")
+        logBus.debug("🔌 MCP 开始 $name(${McpArgumentSummarizer.summarize(arguments)})")
         val requestId = operations.create(name)
         val executor = toolDispatcher
         val future = try {
@@ -178,7 +176,7 @@ class McpProtocolHandler(
         }
 
         return try {
-            val result = future.get(SYNC_WAIT_SEC, TimeUnit.SECONDS)
+            val result = future.get(syncWaitMs, TimeUnit.MILLISECONDS)
             val elapsed = System.currentTimeMillis() - callStarted
             logTool(name, arguments, elapsed, result.content.firstOrNull()?.text)
             success(id, withElapsed(result, elapsed).toJson())
@@ -186,13 +184,14 @@ class McpProtocolHandler(
             // 操作已提交到设备队列，是否已真正执行未知——返回句柄而非报错。
             val elapsed = System.currentTimeMillis() - callStarted
             logBus.warn(
-                "🔌 MCP $name(${summarize(arguments)}) ${elapsed}ms → 转异步（request_id=$requestId）",
+                "🔌 MCP $name(${McpArgumentSummarizer.summarize(arguments)}) ${elapsed}ms → 转异步（request_id=$requestId）",
             )
             success(id, runningResult(name, requestId))
         } catch (t: Throwable) {
             val cause = t.cause ?: t
             logBus.warn(
-                "🔌 MCP $name(${summarize(arguments)}) 异常：${cause.message ?: cause.javaClass.simpleName}",
+                "🔌 MCP $name(${McpArgumentSummarizer.summarize(arguments)}) 异常：" +
+                    "${cause.message ?: cause.javaClass.simpleName}",
             )
             failure(id, INTERNAL_ERROR, "工具执行异常：${cause.message ?: cause.javaClass.simpleName}")
         }
@@ -204,36 +203,13 @@ class McpProtocolHandler(
             text.trim().startsWith("{") &&
                 runCatching { !JSONObject(text).optBoolean("ok", true) }.getOrDefault(false)
         } ?: false
-        val line = "🔌 MCP $name(${summarize(arguments)}) ${elapsedMs}ms"
+        val line = "🔌 MCP $name(${McpArgumentSummarizer.summarize(arguments)}) ${elapsedMs}ms"
         if (failed) {
             logBus.warn(line)
         } else if (elapsedMs > SLOW_CALL_MS) {
             logBus.warn(line)
         } else {
             logBus.info(line)
-        }
-    }
-
-    private fun summarize(arguments: JSONObject): String {
-        if (arguments.length() == 0) return ""
-        val out = JSONObject()
-        arguments.keys().forEach { key ->
-            val value = arguments.opt(key)
-            val lower = key.lowercase()
-            out.put(
-                key,
-                when {
-                    SENSITIVE.any { lower.contains(it) } -> "***"
-                    key == "content" && value is String -> "<${value.length} chars>"
-                    value is String -> value.take(ARG_MAX_CHARS)
-                    value is JSONObject -> "{…}"
-                    value is JSONArray -> "[${value.length()}]"
-                    else -> value
-                },
-            )
-        }
-        return out.toString().let {
-            if (it.length <= LOG_ARGS_MAX_CHARS) it else it.take(LOG_ARGS_MAX_CHARS) + "…"
         }
     }
 
@@ -317,21 +293,10 @@ class McpProtocolHandler(
         const val INTERNAL_ERROR = -32603
 
         /** 同步等待窗口：超过则返回 request_id 转异步，避免客户端读超时。 */
-        private const val SYNC_WAIT_SEC = 20L
+        private const val DEFAULT_SYNC_WAIT_MS = 20_000L
 
         private const val SLOW_CALL_MS = 1_000L
-        private const val ARG_MAX_CHARS = 80
-        private const val LOG_ARGS_MAX_CHARS = 240
 
-        private val SENSITIVE = listOf(
-            "token",
-            "password",
-            "passwd",
-            "secret",
-            "apikey",
-            "api_key",
-            "authorization",
-        )
 
         private val SUPPORTED_VERSIONS = setOf("2025-06-18", "2025-03-26", "2024-11-05")
 

@@ -13,9 +13,7 @@ import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptEnvSession
 import com.benton.izukijs.model.Capability
-import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.RunMode
-import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.service.FloatingWindowService
 import com.benton.izukijs.service.ScriptForegroundService
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
@@ -59,14 +57,14 @@ class RunPreparer(
         onStarted: (scriptName: String, scriptId: String, runId: String) -> Unit,
     ): PreparedRun {
         // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
-        val spec = ScriptEnvSpec.parse(source)
         val useGlobal = scriptEnvRepository.useGlobalEnv(scriptId)
-        val resolved = EnvText.resolve(
-            defaults = spec.defaults(),
+        val resolved = RunPreparation.resolveEnv(
+            source = source,
+            useGlobal = useGlobal,
             global = globalEnvRepository.current(),
             script = scriptEnvRepository.env(scriptId),
-            runtime = scriptEnvRepository.values(scriptId) + values,
-            useGlobal = useGlobal,
+            savedValues = scriptEnvRepository.values(scriptId),
+            values = values,
         )
         if (values.isNotEmpty()) {
             // 只持久化用户实际改动 / 已有脚本参数；脚本默认值与全局变量在运行时解析。

@@ -27,13 +27,21 @@ data class LogEntry(
 /**
  * 全局日志总线。脚本的控制台输出、引擎日志都汇聚到这里，UI 订阅 [entries]。
  */
-class LogBus(private val capacity: Int = 500) {
+class LogBus(
+    private val capacity: Int = 500,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val elapsed: () -> Long = SystemClock::elapsedRealtime,
+    private val logcat: (LogLevel, String) -> Unit = { level, message ->
+        Log.println(level.toLogcatPriority(), "IzukiJS", message)
+    },
+    private val emitIntervalMs: Long = DEFAULT_EMIT_INTERVAL_MS,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+) {
 
     private val counter = AtomicLong(0)
     private val lock = Any()
     private val buffer = ArrayDeque<LogEntry>(capacity)
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val emitScheduled = AtomicBoolean(false)
 
     /** 高频 DEBUG 日志的采样时间戳；key 必须是稳定的类别名，避免无限增长。 */
@@ -61,12 +69,12 @@ class LogBus(private val capacity: Int = 500) {
         }
         PerfMetrics.count("log.append")
         PerfMetrics.measure("log.append") {
-            val entry = LogEntry(counter.incrementAndGet(), System.currentTimeMillis(), level, message)
+            val entry = LogEntry(counter.incrementAndGet(), clock(), level, message)
             synchronized(lock) {
                 buffer.addLast(entry)
                 while (buffer.size > capacity) buffer.removeFirst()
             }
-            Log.println(level.toLogcatPriority(), "IzukiJS", message)
+            logcat(level, message)
             RunLogRegistry.record(entry, runId)
             sink?.invoke(entry)
             scheduleEmit()
@@ -80,7 +88,7 @@ class LogBus(private val capacity: Int = 500) {
     private fun scheduleEmit() {
         if (!emitScheduled.compareAndSet(false, true)) return
         scope.launch {
-            delay(EMIT_INTERVAL_MS)
+            delay(emitIntervalMs)
             emitScheduled.set(false)
             PerfMetrics.measure("log.emit") {
                 // 快照与发布必须在同一把锁内，否则 clear() 可能插在中间把旧日志写回来。
@@ -110,7 +118,7 @@ class LogBus(private val capacity: Int = 500) {
             PerfMetrics.count("log.dropped")
             return
         }
-        val now = SystemClock.elapsedRealtime()
+        val now = elapsed()
         val last = throttleTimestamps[key]
         if (last != null && now - last < intervalMs) {
             PerfMetrics.count("log.throttled")
@@ -136,19 +144,18 @@ class LogBus(private val capacity: Int = 500) {
         throttleTimestamps.clear()
     }
 
-    private fun LogLevel.toLogcatPriority(): Int = when (this) {
-        LogLevel.DEBUG -> Log.DEBUG
-        LogLevel.INFO -> Log.INFO
-        LogLevel.SUCCESS -> Log.INFO
-        LogLevel.WARN -> Log.WARN
-        LogLevel.ERROR -> Log.ERROR
-    }
-
-    private companion object {
-        /**
-         * 合并窗口。50ms 对日志观感几乎无差别，但把高频脚本输出时的列表重建 / 重组次数
-         * 从最多 60 次/秒压到 20 次/秒，明显降低主线程压力。
-         */
-        const val EMIT_INTERVAL_MS = 50L
-    }
 }
+
+private fun LogLevel.toLogcatPriority(): Int = when (this) {
+    LogLevel.DEBUG -> Log.DEBUG
+    LogLevel.INFO -> Log.INFO
+    LogLevel.SUCCESS -> Log.INFO
+    LogLevel.WARN -> Log.WARN
+    LogLevel.ERROR -> Log.ERROR
+}
+
+/**
+ * 合并窗口。50ms 对日志观感几乎无差别，但把高频脚本输出时的列表重建 / 重组次数
+ * 从最多 60 次/秒压到 20 次/秒，明显降低主线程压力。
+ */
+private const val DEFAULT_EMIT_INTERVAL_MS = 50L

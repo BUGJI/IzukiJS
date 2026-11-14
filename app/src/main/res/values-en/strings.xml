@@ -522,9 +522,9 @@
     <string name="developer_default_max_regions">Default max regions</string>
     <string name="developer_default_max_regions_desc">Default for findColors and similar APIs when maxRegions is omitted.</string>
     <string name="developer_agent_tree_probe">Agent node-tree budget</string>
-    <string name="developer_agent_tree_probe_desc">Timeout budget for the AI Agent to read the node tree.</string>
+    <string name="developer_agent_tree_probe_desc">First-attempt budget for the AI Agent to read the node tree; timeouts retry with a larger budget and later reads adapt to this device\'s measured latency.</string>
     <string name="developer_agent_hit_probe">Agent hit-probe budget</string>
-    <string name="developer_agent_hit_probe_desc">Timeout budget for the AI Agent to probe a tap target.</string>
+    <string name="developer_agent_hit_probe_desc">First-attempt budget for the AI Agent to probe a tap target; timeouts retry with a larger budget and later probes adapt to this device\'s measured latency.</string>
     <string name="developer_agent_max_dump_chars">Agent node-tree char limit</string>
     <string name="developer_agent_max_dump_chars_desc">Maximum characters retained when converting the node tree to text.</string>
     <string name="developer_agent_default_wait_timeout">Agent default wait timeout</string>

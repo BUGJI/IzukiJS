@@ -12,21 +12,22 @@ import android.os.BatteryManager
 class TriggerConditions(
     context: Context,
     private val foregroundProvider: () -> String?,
-) {
+) : RunConditions {
 
     private val appContext = context.applicationContext
 
-    fun met(conditions: ScheduleConditions): Boolean {
-        if (conditions.charging && !isCharging()) return false
-        if (conditions.wifi && !isOnWifi()) return false
-        if (conditions.unlocked && isLocked()) return false
-        if (conditions.foregroundPackage.isNotBlank() &&
-            foregroundProvider() != conditions.foregroundPackage
-        ) {
-            return false
-        }
-        return true
-    }
+    override fun met(conditions: ScheduleConditions): Boolean =
+        conditions.matches(
+            object : ConditionProbe {
+                override fun isCharging(): Boolean = this@TriggerConditions.isCharging()
+
+                override fun isOnWifi(): Boolean = this@TriggerConditions.isOnWifi()
+
+                override fun isLocked(): Boolean = this@TriggerConditions.isLocked()
+
+                override fun foregroundPackage(): String? = foregroundProvider()
+            },
+        )
 
     private fun isCharging(): Boolean = runCatching {
         val status = appContext.registerReceiver(
@@ -47,4 +48,23 @@ class TriggerConditions(
         val manager = appContext.getSystemService(KeyguardManager::class.java) ?: return true
         manager.isKeyguardLocked
     }.getOrDefault(true)
+}
+
+/** 条件求值所需的系统状态；只在对应条件启用时才会被调用（保持短路语义）。 */
+internal interface ConditionProbe {
+    fun isCharging(): Boolean
+
+    fun isOnWifi(): Boolean
+
+    fun isLocked(): Boolean
+
+    fun foregroundPackage(): String?
+}
+
+internal fun ScheduleConditions.matches(probe: ConditionProbe): Boolean {
+    if (charging && !probe.isCharging()) return false
+    if (wifi && !probe.isOnWifi()) return false
+    if (unlocked && probe.isLocked()) return false
+    if (foregroundPackage.isNotBlank() && probe.foregroundPackage() != foregroundPackage) return false
+    return true
 }

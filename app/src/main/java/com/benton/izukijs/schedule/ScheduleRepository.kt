@@ -11,12 +11,12 @@ import java.io.File
 /**
  * 定时任务持久化（JSON 文件）。
  */
-class ScheduleRepository(context: Context) {
+class ScheduleRepository(context: Context) : ScheduleStore {
 
     private val file = File(context.filesDir, "schedules.json")
     private val lock = Any()
 
-    fun list(): List<Schedule> = synchronized(lock) {
+    override fun list(): List<Schedule> = synchronized(lock) {
         if (!file.exists()) return emptyList()
         runCatching {
             val array = JSONArray(file.readText())
@@ -26,7 +26,7 @@ class ScheduleRepository(context: Context) {
 
     fun get(id: String): Schedule? = list().firstOrNull { it.id == id }
 
-    fun upsert(schedule: Schedule) = synchronized(lock) {
+    override fun upsert(schedule: Schedule) = synchronized(lock) {
         write(list().filterNot { it.id == schedule.id } + schedule)
     }
 

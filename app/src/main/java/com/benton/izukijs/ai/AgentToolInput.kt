@@ -24,7 +24,7 @@ internal fun AgentTools.doClick(args: JSONObject): String {
                 source = if (by == "text") SOURCE_AUTO else SOURCE_UI,
                 fuzzy = fuzzy,
                 minConfidence = minConf,
-            )
+            ).matches
             return jsonOf {
                 put("ok", matches.length() > 0)
                 put("matched", matches.length() > 0)

@@ -107,7 +107,7 @@ adb forward tcp:8765 tcp:8765
 | `virtual_screen_input` | 在虚拟屏上输入：`action=tap\|long_press\|swipe\|key`；坐标使用相对虚拟屏的 0~1 归一化值。输入成功后默认等待画面重绘（`wait_frame=true`，`frame_timeout_ms` 默认 600），响应含 `frameSeq` / `frameAdvanced`。`key` 支持 back / recents / enter / esc 或键码；虚拟屏无 launcher，`home` 会返回明确错误 |
 | `screenshot` | 截图，返回图像块及 `{image_size, screen_size}`（带 region 时附 `region`）；可用 `scale` / `quality` / `region=[l,t,r,b]` / `format=jpeg\|webp` 控制体积，`target=auto\|main\|virtual` 选择目标屏（默认 auto） |
 | `ocr` | 识别整屏文字，返回结构化文本块（含中心 x/y、宽高、真实 `left/top/right/bottom`、置信度与 `image` 尺寸）。x/y 是**中心**，越界判断请用四边而非 `x+w`；越界块会被裁剪并标 `suspicious`。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证。`lines=true` 时按行聚合（同行多块合并，按阅读顺序），可配 `max_gap_y` / `max_gap_x`；`target=virtual` 可识别后台虚拟屏 |
-| `ui_dump` | 控件树（无障碍优先；Shizuku / 无线调试 / Root 下走 `uiautomator dump` 兜底）。返回 JSON（`tree` 字段为缩进文本）；dump 前会用两帧差快速识别持续动画并直接降级，单次预算默认 1.5s。`target=virtual` 会明确返回「虚拟屏不支持控件树」 |
+| `ui_dump` | 控件树（无障碍优先；Shizuku / 无线调试 / Root 下走 `uiautomator dump` 兜底）。返回 JSON（`tree` 字段为缩进文本）；dump 前会用两帧差快速识别持续动画并调整预算，首次预算默认 1.5s，超时自动放大重试一次并按本机实测耗时自适应。`target=virtual` 会明确返回「虚拟屏不支持控件树」 |
 | `find` | 查找元素并返回匹配项（中心坐标 + 边界）。`text` 会先按 OCR 行聚合（同一行多个块拼接）再匹配，精确失败后按编辑距离容错（`fuzzy` 默认 true，可用 `min_conf` 过滤低置信块），或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证）。`ok` 表示是否命中，并附 `matched`。`target=virtual` 暂不支持，请改用 `ocr(target=virtual)` + 坐标输入 |
 | `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true`；控件树不可用时返回 `hit_checked=false` + `hit_reason`。`by=text` 在无障碍不可用时会用 OCR 行匹配兜底 |
 | `swipe` | 滑动（支持 `normalized`） |
@@ -265,8 +265,11 @@ adb forward tcp:8765 tcp:8765
   不再复用「保存截图」的压缩设置，避免图像被缩放而坐标未缩放。
 - 控件树读取：无障碍优先；当无障碍未开启但 Shizuku / 无线调试 / Root 就绪时，回退到 Shell 执行
   `uiautomator dump` 并解析控件树。`uiautomator dump` 依赖界面 idle，持续动画时永远等不到；
-  因此 dump 前会先用两帧差识别动画并直接降级，单次预算默认 1.5s，超时即终止进程并返回失败
-  （此时 `find` 的 `source=auto` 会自动走 OCR 快路径），避免把设备队列堵在无意义的空转上。
+  因此 dump 前会先用两帧差识别动画并调整预算。首次预算默认 1.5s，超时后终止进程并按 ×2.5
+  放大重试一次（最多 10s）；成功后会记录本机实际耗时，后续按 `实测 × 1.6` 自适应，避免慢机型
+  每次都在默认预算上失败。仍未成功时返回的 `message` 会区分「界面持续动画」与普通超时，并指出
+  可调整的开发者选项 `agent_tree_probe_budget_ms` / `agent_hit_probe_budget_ms`。
+  `find` 的 `source=auto` 在控件树失败时会自动走 OCR 快路径。
 - 文本输入：无障碍优先（`ACTION_SET_TEXT`）。Shizuku / 无线调试 / Root 下的 `text.method`：
   - `auto`（默认）：ASCII 走 `input text`，非 ASCII 优先「剪贴板 + 粘贴」（无需额外 App），
     失败再退回 ADBKeyboard 广播；

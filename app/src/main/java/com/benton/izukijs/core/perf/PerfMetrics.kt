@@ -39,7 +39,7 @@ object PerfMetrics {
     var enabled: Boolean = false
         private set
 
-    private val metrics = ConcurrentHashMap<String, Metric>()
+    private val metrics = ConcurrentHashMap<String, MetricAccumulator>()
     private val counters = ConcurrentHashMap<String, AtomicLong>()
     private val gauges = ConcurrentHashMap<String, AtomicLong>()
 
@@ -161,7 +161,7 @@ object PerfMetrics {
     /** 记录一个耗时样本（纳秒）。 */
     fun record(name: String, nanos: Long) {
         if (!enabled || emitting) return
-        metrics.computeIfAbsent(name) { Metric() }.add(nanos.coerceAtLeast(0L))
+        metrics.computeIfAbsent(name) { MetricAccumulator(SAMPLE_CAPACITY) }.add(nanos)
     }
 
     /** 累加计数器，用于统计调用次数 / 命中次数。 */
@@ -308,7 +308,7 @@ object PerfMetrics {
     private fun readGcStat(name: String): Long =
         runCatching { Debug.getRuntimeStat(name)?.toLongOrNull() ?: 0L }.getOrDefault(0L)
 
-    private fun metricLine(name: String, metric: Metric): String? {
+    private fun metricLine(name: String, metric: MetricAccumulator): String? {
         val samples = metric.snapshot()
         if (samples.isEmpty()) return null
         val sorted = samples.sortedArray()
@@ -325,11 +325,8 @@ object PerfMetrics {
         )
     }
 
-    private fun percentile(sorted: LongArray, fraction: Double): Long {
-        if (sorted.isEmpty()) return 0L
-        val index = ((sorted.size - 1) * fraction).toInt().coerceIn(0, sorted.lastIndex)
-        return sorted[index]
-    }
+    private fun percentile(sorted: LongArray, fraction: Double): Long =
+        PerfStats.percentile(sorted, fraction)
 
     private fun attachFrameListenerLocked() {
         val window = windowRef?.get() ?: return
@@ -368,33 +365,4 @@ object PerfMetrics {
 
     private data class Report(val summary: String, val detailLines: List<String>)
 
-    private class Metric {
-        private val count = AtomicLong(0)
-        private val totalNanos = AtomicLong(0)
-        private val maxNanos = AtomicLong(0)
-        private val samples = LongArray(SAMPLE_CAPACITY)
-        private var sampleCount = 0
-        private var nextSample = 0
-
-        fun add(value: Long) {
-            count.incrementAndGet()
-            totalNanos.addAndGet(value)
-            maxNanos.updateAndGet { current -> if (value > current) value else current }
-            synchronized(samples) {
-                samples[nextSample] = value
-                nextSample = (nextSample + 1) % SAMPLE_CAPACITY
-                if (sampleCount < SAMPLE_CAPACITY) sampleCount++
-            }
-        }
-
-        fun count(): Long = count.get()
-
-        fun totalNanos(): Long = totalNanos.get()
-
-        fun maxNanos(): Long = maxNanos.get()
-
-        fun snapshot(): LongArray = synchronized(samples) {
-            LongArray(sampleCount) { samples[it] }
-        }
-    }
 }

@@ -1,5 +1,6 @@
 package com.benton.izukijs.ai
 
+import com.benton.izukijs.controller.UiautomatorDumpBudget
 import com.benton.izukijs.developer.DeveloperTuning
 
 internal val MAX_DUMP_CHARS: Int get() = DeveloperTuning.current.agentMaxDumpChars
@@ -14,9 +15,15 @@ internal val SETTLE_DEFAULT_MS: Long get() = DeveloperTuning.current.agentSettle
 internal val SETTLE_POLL_MS: Long get() = DeveloperTuning.current.agentSettlePollMs.toLong()
 internal val SETTLE_MAX_MS: Long get() = DeveloperTuning.current.agentSettleMaxMs.toLong()
 internal val TREE_PROBE_BUDGET_MS: Long
-    get() = DeveloperTuning.current.agentTreeProbeBudgetMs.toLong()
+    get() = maxOf(
+        DeveloperTuning.current.agentTreeProbeBudgetMs.toLong(),
+        UiautomatorDumpBudget.effectiveBaselineMs(),
+    )
 internal val HIT_PROBE_BUDGET_MS: Long
-    get() = DeveloperTuning.current.agentHitProbeBudgetMs.toLong()
+    get() = maxOf(
+        DeveloperTuning.current.agentHitProbeBudgetMs.toLong(),
+        UiautomatorDumpBudget.effectiveBaselineMs(),
+    )
 internal const val MIN_PROBE_MS = 120L
 internal const val DEFAULT_NOTIFICATION_LIMIT = 20
 internal const val MAX_NOTIFICATION_LIMIT = 200

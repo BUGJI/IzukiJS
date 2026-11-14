@@ -26,6 +26,7 @@ import com.benton.izukijs.model.UnlockMethod
 import com.benton.izukijs.model.UnlockPattern
 import com.benton.izukijs.model.UnlockRecordingParser
 import com.benton.izukijs.model.UnlockResult
+import com.benton.izukijs.runtime.RunUnlocker
 import com.benton.izukijs.model.UnlockStroke
 import com.benton.izukijs.privileged.PrivilegedUnlockClient
 import com.benton.izukijs.core.log.LogBus
@@ -49,11 +50,11 @@ class ScreenUnlockController(
     private val wakeLock: WakeLockController,
     private val privileged: PrivilegedUnlockClient,
     private val logBus: LogBus,
-) {
+) : RunUnlocker {
 
-    fun isEnabled(): Boolean = settingsRepository.current().enabled
+    override fun isEnabled(): Boolean = settingsRepository.current().enabled
 
-    suspend fun ensureUnlocked(): UnlockResult {
+    override suspend fun ensureUnlocked(): UnlockResult {
         val settings = settingsRepository.current()
         if (!settings.enabled) return UnlockResult.DISABLED
 

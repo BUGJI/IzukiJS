@@ -66,7 +66,7 @@ class ScriptExecutionManager(
     private val moduleSourceProvider: (String) -> String?,
     private val notificationDispatcher: NotificationDispatcher,
     private val recordingSession: RecordingSession,
-) : RunControl {
+) : RunControl, ScriptRunner {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -87,18 +87,12 @@ class ScriptExecutionManager(
 
     fun lastRunId(): String? = lastStartedRunId
 
-    @Volatile
-    private var engine: JsEngine? = null
-
-    @Volatile
-    private var activeSession: RunSession? = null
-
     /**
-     * 保护 [engine] / [activeSession] / [_running] 之间的状态转换。
-     * 启动、停止与结束清理都可能来自不同线程，必须在同一把锁下完成「判断 + 更新」，
-     * 否则会出现停止请求丢失或旧 run 清空新 run 状态的 ABA 问题。
+     * 运行互斥与停止请求状态机。启动、停止与结束清理都可能来自不同线程，
+     * 由 [RunGate] 在同一把锁内完成「判断 + 更新」，否则会出现停止请求丢失
+     * 或旧 run 清空新 run 状态的 ABA 问题。
      */
-    private val runLock = Any()
+    private val gate = RunGate<JsEngine>()
 
     fun run(
         scriptId: String,
@@ -119,21 +113,19 @@ class ScriptExecutionManager(
         }
         val runId = RunLogRegistry.newRunId()
         val session = RunSession(runId)
-        synchronized(runLock) {
-            if (!_running.compareAndSet(expect = false, update = true)) {
-                logBus.warn("已有脚本正在运行，请先停止")
-                return false
-            }
-            lastStartedRunId = runId
-            RunLogRegistry.begin(runId, scriptId, scriptName)
-            activeSession = session
-            // 同步发布运行身份：前台服务清理按 runId 判断归属，准备阶段也不能出现空窗。
-            _runningScript.value = scriptName
-            _runningScriptId.value = scriptId
-            _runningRunId.value = runId
-            PerfMetrics.count("script.run")
-            PerfMetrics.setGauge("script.running", 1L)
+        if (!gate.tryStart(runId)) {
+            logBus.warn("已有脚本正在运行，请先停止")
+            return false
         }
+        lastStartedRunId = runId
+        RunLogRegistry.begin(runId, scriptId, scriptName)
+        // 同步发布运行身份：前台服务清理按 runId 判断归属，准备阶段也不能出现空窗。
+        _running.value = true
+        _runningScript.value = scriptName
+        _runningScriptId.value = scriptId
+        _runningRunId.value = runId
+        PerfMetrics.count("script.run")
+        PerfMetrics.setGauge("script.running", 1L)
 
         // 参数解析、运行历史落盘、通知 / 悬浮窗启动等放到后台，避免从界面点运行时阻塞主线程。
         // 预启动阶段的任何异常都必须回滚，否则 _running 会永久卡在 true。
@@ -177,6 +169,33 @@ class ScriptExecutionManager(
         }
         return true
     }
+
+    override fun runScheduled(
+        scriptId: String,
+        scriptName: String,
+        source: String,
+        trigger: RunTrigger,
+        onFinished: (Boolean) -> Unit,
+    ): Boolean = run(
+        scriptId = scriptId,
+        scriptName = scriptName,
+        source = source,
+        onFinished = onFinished,
+        trigger = trigger,
+    )
+
+    override suspend fun runToCompletion(
+        scriptId: String,
+        scriptName: String,
+        source: String,
+        trigger: RunTrigger,
+    ): ScriptRunOutcome = runToCompletion(
+        scriptId = scriptId,
+        scriptName = scriptName,
+        source = source,
+        values = emptyMap(),
+        trigger = trigger,
+    )
 
     /**
      * 启动脚本并等待其真正结束。供脚本编排等需要「完成一步再执行下一步」的调用方使用。
@@ -304,11 +323,8 @@ class ScriptExecutionManager(
             )
             // 发布引擎与检查停止请求必须在同一把锁下完成：否则 requestStop 可能看到
             // engine 仍为 null 只置了 stopRequested，而这里已经检查过该标志，导致停止丢失。
-            val stopAlreadyRequested = synchronized(runLock) {
-                session.engine = jsEngine
-                engine = jsEngine
-                session.stopRequested
-            }
+            session.engine = jsEngine
+            val stopAlreadyRequested = gate.attachEngine(session.runId, jsEngine)
             if (stopAlreadyRequested) {
                 logBus.info("… 收到停止请求，正在终止脚本")
                 jsEngine.requestExit()
@@ -326,7 +342,7 @@ class ScriptExecutionManager(
                 val timedOut = session.engine?.timedOut == true
                 // 用户停止与脚本主动 exit() 都会置 exitRequested，必须用 stopRequested 区分：
                 // 用户停止不能再被当作成功，否则脚本编排会继续执行下一步。
-                val userStopped = session.stopRequested
+                val userStopped = gate.isStopRequested()
                 val exited = !userStopped &&
                     (session.engine?.exitRequested == true || isExitThrowable(failure))
                 clearEngine(session)
@@ -345,15 +361,16 @@ class ScriptExecutionManager(
 
                     userStopped -> logBus.warn("■ 脚本已停止")
                     exited -> logBus.success("■ 脚本已退出")
-                    failure != null -> logBus.error("✘ 运行出错: ${failure.message}")
+                    failure != null -> logBus.error("✘ 运行出错: ${failure.describeForLog()}")
                     else -> logBus.success("✔ 脚本执行完成")
                 }
-                val status = when {
-                    timedOut -> RunStatus.TIMEOUT
-                    userStopped || exited -> RunStatus.STOPPED
-                    failure != null -> RunStatus.FAILED
-                    else -> RunStatus.SUCCEEDED
-                }
+                val resolved = RunStatusResolver.resolve(
+                    timedOut = timedOut,
+                    userStopped = userStopped,
+                    exited = exited,
+                    failed = failure != null,
+                )
+                val status = resolved.status
                 val error = failure?.let {
                     it.stackTraceToString().take(DeveloperTuning.current.maxRunErrorChars)
                 }
@@ -373,7 +390,7 @@ class ScriptExecutionManager(
                     RunStatus.STOPPED -> PerfMetrics.count("script.stopped")
                     RunStatus.RUNNING -> Unit
                 }
-                val success = !timedOut && !userStopped && (failure == null || exited)
+                val success = resolved.success
                 val completion = RunCompletion(success = success, stopped = userStopped, status = status)
                 runCatching { onFinished?.invoke(success) }.onFailure {
                     logBus.warn("运行结束回调失败：${it.message}")
@@ -486,12 +503,10 @@ class ScriptExecutionManager(
      * 避免旧 run 的收尾把新 run 的引擎置空（ABA）。
      */
     private fun clearEngine(session: RunSession) {
-        val toClose = synchronized(runLock) {
-            val current = session.engine
-            session.engine = null
-            if (engine === current) engine = null
-            current
-        }
+        val toClose = session.engine
+        session.engine = null
+        // 只有仍是活动 run 时才清空共享引擎；旧 run 的收尾不会碰新 run 的引擎。
+        gate.detachEngine(session.runId)
         toClose?.let { runCatching { it.close() } }
     }
 
@@ -500,48 +515,26 @@ class ScriptExecutionManager(
      * 防止旧 run 结束早于新 run 启动的竞态。
      */
     private fun resetRunningState(session: RunSession) {
-        synchronized(runLock) {
-            if (activeSession !== session) return
-            _running.value = false
-            _runningScript.value = null
-            _runningScriptId.value = null
-            _runningRunId.value = null
-            activeSession = null
-            PerfMetrics.setGauge("script.running", 0L)
-        }
-    }
-
-    private sealed interface StopAction {
-        data class StopEngine(val engine: JsEngine) : StopAction
-        data object WaitStart : StopAction
-        data object None : StopAction
-    }
-
-    /** 在锁内解析出本次停止动作，避免锁外做判断导致请求丢失。 */
-    private fun resolveStopAction(): StopAction = synchronized(runLock) {
-        val current = engine
-        if (current != null) return@synchronized StopAction.StopEngine(current)
-        val session = activeSession
-        if (session != null && _running.value) {
-            // 引擎尚未创建（仍在校验 / 解锁 / 启动虚拟屏），先记下请求，创建后立即中断。
-            session.stopRequested = true
-            StopAction.WaitStart
-        } else {
-            StopAction.None
-        }
+        // 仅当该 run 仍是活动 run 时才清空共享字段，防止旧 run 结束早于新 run 启动的竞态。
+        if (!gate.reset(session.runId)) return
+        _running.value = false
+        _runningScript.value = null
+        _runningScriptId.value = null
+        _runningRunId.value = null
+        PerfMetrics.setGauge("script.running", 0L)
     }
 
     /** 请求停止当前脚本；通过 QuickJS 中断回调，纯计算死循环也能被打断。 */
     override fun requestStop() {
-        when (val action = resolveStopAction()) {
-            is StopAction.StopEngine -> {
+        when (val action = gate.resolveStop()) {
+            is RunGate.StopAction.StopEngine -> {
                 logBus.info("… 正在停止脚本")
                 action.engine.requestExit()
             }
 
-            StopAction.WaitStart -> logBus.info("… 正在停止脚本（等待启动完成）")
+            RunGate.StopAction.WaitStart -> logBus.info("… 正在停止脚本（等待启动完成）")
 
-            StopAction.None -> logBus.warn("当前没有正在运行的脚本")
+            RunGate.StopAction.None -> logBus.warn("当前没有正在运行的脚本")
         }
     }
 
@@ -559,9 +552,6 @@ class ScriptExecutionManager(
 
     /** 一次运行的资源与状态句柄；所有释放操作都幂等，供异常路径复用。 */
     private inner class RunSession(val runId: String) {
-
-        @Volatile
-        var stopRequested: Boolean = false
 
         @Volatile
         var engine: JsEngine? = null
@@ -593,3 +583,4 @@ class ScriptExecutionManager(
         const val KEYCODE_WAKEUP = 224
     }
 }
+

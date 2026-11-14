@@ -21,7 +21,7 @@ class FlowManager(
     context: Context,
     private val repository: FlowRepository,
     private val logBus: LogBus,
-) {
+) : FlowScheduler {
 
     private val appContext = context.applicationContext
 
@@ -103,7 +103,7 @@ class FlowManager(
     }
 
     /** 编排执行完成后的调度：成功与否都安排下一次；一次性编排直接移除。 */
-    fun onFinished(flow: ScriptFlow, success: Boolean) {
+    override fun onFinished(flow: ScriptFlow, success: Boolean) {
         val current = repository.get(flow.id) ?: return
         if (!current.enabled) {
             cancelAlarm(current.id)
@@ -116,7 +116,7 @@ class FlowManager(
     }
 
     /** 条件不满足或已有脚本运行导致跳过时，仍安排下一次。 */
-    fun onSkipped(flow: ScriptFlow) {
+    override fun onSkipped(flow: ScriptFlow) {
         val current = repository.get(flow.id) ?: return
         if (!current.enabled) {
             cancelAlarm(current.id)

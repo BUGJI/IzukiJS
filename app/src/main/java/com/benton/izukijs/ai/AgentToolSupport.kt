@@ -24,12 +24,18 @@ internal fun AgentTools.resultIsFailure(result: String): Boolean {
     return runCatching { !JSONObject(trimmed).optBoolean("ok", true) }.getOrDefault(false)
 }
 
+/**
+ * 一次性读取控件树；首次因预算不足超时时放大预算重试一次。
+ *
+ * 慢设备第一次读取时还没有本机基线，固定 1.5s 必然超时；重试成功后
+ * [UiautomatorDumpBudget] 会记录真实耗时，后续读取直接使用更大的预算。
+ */
+internal fun AgentTools.probeTree(initialBudgetMs: Long): NodeTreeResult =
+    TreeProbe.probe(initialBudgetMs, provider = nodeTreeProvider)
+
 /** 在 [deadline] 内取一次控件树；预算不足时返回 null（调用方应直接放弃本轮）。 */
-internal fun AgentTools.treeProbe(deadline: Long): NodeTreeResult? {
-    val remaining = deadline - System.currentTimeMillis()
-    if (remaining < MIN_PROBE_MS) return null
-    return nodeTreeProvider(minOf(remaining, TREE_PROBE_BUDGET_MS))
-}
+internal fun AgentTools.treeProbe(deadline: Long): NodeTreeResult? =
+    TreeProbe.treeProbe(deadline, provider = nodeTreeProvider)
 
 internal fun AgentTools.failureMessage(result: NodeTreeResult?): String = when (result) {
     null -> "等待超时"
@@ -67,6 +73,12 @@ internal fun AgentTools.waitIdle(settleMs: Long) {
     }
 }
 
+internal data class SearchOutcome(
+    val matches: JSONArray,
+    /** 本次查找尝试过控件树但读取失败时的原因，供调用方在 0 命中时给出提示。 */
+    val treeFailure: NodeTreeResult.Failure? = null,
+)
+
 /**
  * 统一的元素查找：by=id/desc 精确匹配控件，否则按 text 模糊匹配控件与 OCR。
  *
@@ -81,21 +93,27 @@ internal fun AgentTools.search(
     source: String = SOURCE_BOTH,
     fuzzy: Boolean = true,
     minConfidence: Double = 0.0,
-): JSONArray {
+): SearchOutcome {
     val matches = JSONArray()
+    var treeFailure: NodeTreeResult.Failure? = null
+    fun addUiMatches(predicate: (NodeSnapshot) -> Boolean) {
+        val collected = collectNodesResult(predicate)
+        treeFailure = collected.failure
+        collected.nodes.forEach { matches.put(nodeLabel(it)) }
+    }
     if (by == "id" && value != null) {
-        collectNodes { it.viewId == value }.forEach { matches.put(nodeLabel(it)) }
-        return matches
+        addUiMatches { it.viewId == value }
+        return SearchOutcome(matches, treeFailure)
     }
     if (by == "desc" && value != null) {
-        collectNodes { it.contentDescription?.contains(value) == true }.forEach { matches.put(nodeLabel(it)) }
-        return matches
+        addUiMatches { it.contentDescription?.contains(value) == true }
+        return SearchOutcome(matches, treeFailure)
     }
-    val query = text ?: value ?: return matches
+    val query = text ?: value ?: return SearchOutcome(matches)
     fun uiMatches() {
-        collectNodes {
+        addUiMatches {
             it.text?.contains(query) == true || it.contentDescription?.contains(query) == true
-        }.forEach { matches.put(nodeLabel(it)) }
+        }
     }
     when (source) {
         SOURCE_UI -> uiMatches()
@@ -109,7 +127,7 @@ internal fun AgentTools.search(
             ocrBlocks(query, fuzzy, minConfidence).forEach { matches.put(it) }
         }
     }
-    return matches
+    return SearchOutcome(matches, treeFailure)
 }
 
 /** 解析 OCR 结构化结果并按行聚合匹配，返回统一格式的匹配项。 */
@@ -176,7 +194,7 @@ internal data class HitProbe(
 
 /** 返回屏幕坐标 (x,y) 下最深的控件快照标签，并区分「没有控件树」与「有树但无命中」。 */
 internal fun AgentTools.hitProbe(x: Double, y: Double): HitProbe {
-    val result = nodeTreeProvider(HIT_PROBE_BUDGET_MS)
+    val result = probeTree(HIT_PROBE_BUDGET_MS)
     val root = result.rootOrNull()
         ?: return HitProbe(checked = false, reason = failureMessage(result))
     val node = deepestAt(root, x.toInt(), y.toInt()) ?: return HitProbe(checked = true)
@@ -192,16 +210,25 @@ private fun AgentTools.deepestAt(node: NodeSnapshot, x: Int, y: Int): NodeSnapsh
     return best
 }
 
-internal fun AgentTools.collectNodes(predicate: (NodeSnapshot) -> Boolean): List<NodeSnapshot> {
-    val root = nodeTreeProvider(TREE_PROBE_BUDGET_MS).rootOrNull() ?: return emptyList()
+internal data class CollectedNodes(
+    val nodes: List<NodeSnapshot>,
+    val failure: NodeTreeResult.Failure? = null,
+)
+
+internal fun AgentTools.collectNodesResult(predicate: (NodeSnapshot) -> Boolean): CollectedNodes {
+    val result = probeTree(TREE_PROBE_BUDGET_MS)
+    val root = result.rootOrNull() ?: return CollectedNodes(emptyList(), result as? NodeTreeResult.Failure)
     val out = ArrayList<NodeSnapshot>()
     fun walk(node: NodeSnapshot) {
         if (predicate(node)) out.add(node)
         node.children.forEach(::walk)
     }
     walk(root)
-    return out
+    return CollectedNodes(out)
 }
+
+internal fun AgentTools.collectNodes(predicate: (NodeSnapshot) -> Boolean): List<NodeSnapshot> =
+    collectNodesResult(predicate).nodes
 
 private fun AgentTools.nodeLabel(node: NodeSnapshot): JSONObject = JSONObject().apply {
     put("source", "ui")

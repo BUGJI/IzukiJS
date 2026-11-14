@@ -31,6 +31,7 @@ data class OperationState(
 class OperationRegistry(
     private val maxEntries: Int = MAX_ENTRIES,
     private val ttlMs: Long = TTL_MS,
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
 
     private val ops = ConcurrentHashMap<String, OperationState>()
@@ -40,7 +41,7 @@ class OperationRegistry(
         ops[id] = OperationState(
             id = id,
             tool = tool,
-            startedAt = System.currentTimeMillis(),
+            startedAt = now(),
             status = OperationStatus.RUNNING,
         )
         prune()
@@ -49,13 +50,13 @@ class OperationRegistry(
 
     fun succeed(id: String, result: McpToolResult) {
         ops.computeIfPresent(id) { _, state ->
-            state.copy(status = OperationStatus.DONE, result = result, finishedAt = System.currentTimeMillis())
+            state.copy(status = OperationStatus.DONE, result = result, finishedAt = now())
         }
     }
 
     fun fail(id: String, message: String) {
         ops.computeIfPresent(id) { _, state ->
-            state.copy(status = OperationStatus.FAILED, error = message, finishedAt = System.currentTimeMillis())
+            state.copy(status = OperationStatus.FAILED, error = message, finishedAt = now())
         }
     }
 
@@ -66,7 +67,7 @@ class OperationRegistry(
     fun clear() = ops.clear()
 
     private fun prune() {
-        val cutoff = System.currentTimeMillis() - ttlMs
+        val cutoff = now() - ttlMs
         ops.entries.removeIf { it.value.finishedAt?.let { f -> f < cutoff } == true }
         var excess = ops.size - maxEntries
         if (excess <= 0) return

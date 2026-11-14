@@ -45,8 +45,17 @@ sealed interface NodeTreeResult {
     /** 没有任何可用后端（无障碍未开启，且无 Shizuku / 无线调试 / Root）。 */
     data object NoBackend : NodeTreeResult
 
-    /** 后端存在但读取失败，[message] 为底层原始错误。 */
-    data class Failure(val message: String) : NodeTreeResult
+    /**
+     * 后端存在但读取失败，[message] 为面向用户的错误提示。
+     *
+     * [timedOut] 标记「本次 dump 在 [budgetMs] 内未返回」，供上层决定是否放大预算重试；
+     * 普通失败（解析失败、文件为空等）不应重试。
+     */
+    data class Failure(
+        val message: String,
+        val timedOut: Boolean = false,
+        val budgetMs: Long = 0L,
+    ) : NodeTreeResult
 }
 
 /** 控件树节点快照。 */

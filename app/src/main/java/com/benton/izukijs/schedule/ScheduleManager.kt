@@ -24,7 +24,7 @@ class ScheduleManager(
     context: Context,
     private val repository: ScheduleRepository,
     private val logBus: LogBus,
-) {
+) : ScheduleLifecycle {
 
     private val appContext = context.applicationContext
 
@@ -115,7 +115,7 @@ class ScheduleManager(
         }
     }
 
-    fun cancel(id: String) {
+    override fun cancel(id: String) {
         cancelAlarm(id)
         repository.delete(id)
     }
@@ -159,7 +159,7 @@ class ScheduleManager(
     }
 
     /** 脚本执行完成后的调度：成功则安排下一次，失败则重试或跳过。 */
-    fun onFinished(schedule: Schedule, success: Boolean) {
+    override fun onFinished(schedule: Schedule, success: Boolean) {
         val now = System.currentTimeMillis()
         if (success) {
             val reset = schedule.copy(retryAttempt = 0)
@@ -190,7 +190,7 @@ class ScheduleManager(
     }
 
     /** 条件不满足时跳过本次，但仍安排下一次（不消耗重试次数）。 */
-    fun onSkipped(schedule: Schedule) {
+    override fun onSkipped(schedule: Schedule) {
         val now = System.currentTimeMillis()
         val reset = schedule.copy(retryAttempt = 0)
         repository.upsert(reset)

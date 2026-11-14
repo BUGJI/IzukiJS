@@ -99,10 +99,12 @@ class ScriptImporter(
         }
     }
 
-    /** 从链接末尾推断脚本名，去掉扩展名；无法解析时退回 imported。 */
-    private fun nameFromUrl(url: String): String {
-        val path = runCatching { URL(url).path }.getOrDefault("")
-        val fileName = path.substringAfterLast('/')
-        return fileName.substringBeforeLast('.').ifBlank { fileName }.ifBlank { "imported" }
+    companion object {
+        /** 从链接末尾推断脚本名，去掉扩展名；无法解析时退回 imported。 */
+        internal fun nameFromUrl(url: String): String {
+            val path = runCatching { URL(url).path }.getOrDefault("")
+            val fileName = path.substringAfterLast('/')
+            return fileName.substringBeforeLast('.').ifBlank { fileName }.ifBlank { "imported" }
+        }
     }
 }
