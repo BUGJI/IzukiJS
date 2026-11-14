@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("16").toInt()
-val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.2.1")
+val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("18").toInt()
+val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.2.3")
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
@@ -16,6 +16,15 @@ val keystoreProperties = Properties().apply {
         FileInputStream(keystorePropertiesFile).use { load(it) }
     }
 }
+
+// 仅显式开启时才让 debug 复用正式证书；同时要求证书文件真实存在，
+// 避免只有 keystore.properties 而 storeFile 失效时把 debug 构建直接卡死。
+val debugSharedSignature =
+    providers.gradleProperty("izuki.debugSharedSignature").orNull?.toBoolean() == true
+val releaseStoreFile = keystoreProperties.getProperty("storeFile")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { file(it) }
+val releaseSigningAvailable = keystorePropertiesFile.exists() && releaseStoreFile?.exists() == true
 
 android {
     namespace = "com.benton.izukijs"
@@ -58,8 +67,8 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
+            if (releaseSigningAvailable) {
+                storeFile = releaseStoreFile
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
@@ -68,6 +77,18 @@ android {
     }
 
     buildTypes {
+        debug {
+            // 默认保持 AGP 的 debug 签名；只有 izuki.debugSharedSignature=true 且
+            // 正式证书可用时才复用 release 签名，便于本地 debug/release 覆盖安装。
+            if (debugSharedSignature && releaseSigningAvailable) {
+                signingConfig = signingConfigs.getByName("release")
+            } else if (debugSharedSignature) {
+                logger.warn(
+                    "[Izuki] izuki.debugSharedSignature=true 但正式签名不可用，" +
+                        "debug 继续使用 debug 签名。",
+                )
+            }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -75,13 +96,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = if (keystorePropertiesFile.exists()) {
+            signingConfig = if (releaseSigningAvailable) {
                 signingConfigs.getByName("release")
             } else {
-                // 未配置正式签名时回退到 debug 签名，便于本地出包验证。
+                // 未配置正式签名或 storeFile 失效时回退到 debug 签名，便于本地出包验证。
                 // 明确告警，避免把 debug 签名的产物误当正式包分发。
                 logger.warn(
-                    "[Izuki] keystore.properties 缺失，release 将使用 debug 签名，仅用于本地验证。",
+                    "[Izuki] 正式签名不可用，release 将使用 debug 签名，仅用于本地验证。",
                 )
                 signingConfigs.getByName("debug")
             }

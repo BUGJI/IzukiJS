@@ -168,6 +168,7 @@
     <string name="scripts_delete_title">删除脚本</string>
     <string name="scripts_delete_message">确定删除「%1$s」吗？删除后可在底部提示条中撤销。</string>
     <string name="scripts_deleted">已删除「%1$s」</string>
+    <string name="scripts_delete_failed">删除「%1$s」失败，文件仍保留在原位置</string>
     <string name="scripts_exported">已导出 %1$s</string>
     <string name="scripts_export_failed">导出失败</string>
     <string name="scripts_imported">已导入 %1$s</string>
@@ -181,6 +182,19 @@
     <string name="scripts_subscription_badge">订阅 · 每 %1$s 同步</string>
     <string name="scripts_subscription_badge_disabled">订阅 · 已禁用</string>
     <string name="scripts_subscription_failed">%1$s · 同步失败</string>
+    <string name="scripts_selected_count">已选 %1$d 项</string>
+    <string name="scripts_select_all">全选</string>
+    <string name="scripts_unselect_all">取消全选</string>
+    <string name="scripts_tags_add">添加</string>
+    <string name="scripts_tags_remove">移除</string>
+    <string name="scripts_batch_add_tags">批量添加标签</string>
+    <string name="scripts_batch_remove_tags">批量移除标签</string>
+    <string name="scripts_batch_delete_message">确定删除选中的 %1$d 个脚本吗？删除后可在底部提示条中撤销。</string>
+    <string name="scripts_batch_deleted">已删除 %1$d 个脚本</string>
+    <string name="scripts_batch_deleted_partial">已删除 %1$d 个脚本，%2$d 个失败并保留在原位置</string>
+    <string name="scripts_batch_delete_failed">删除失败，%1$d 个脚本仍保留在原位置</string>
+    <string name="scripts_batch_exported">已导出 %1$d 个脚本</string>
+    <string name="scripts_export_zip_name">scripts-%1$s.zip</string>
 
     <!-- 脚本编辑 -->
     <string name="script_edit_title">编辑「%1$s」</string>
@@ -597,6 +611,14 @@
     <string name="virtual_screen_error_background_disabled">未在设置中允许后台虚拟屏</string>
     <string name="virtual_screen_error_frame_source">虚拟屏帧源创建失败：%1$s</string>
     <string name="virtual_screen_error_create">虚拟屏创建失败：%1$s</string>
+    <string name="virtual_screen_error_identity">Shizuku 以 Root 运行时需要切换到 shell 身份创建虚拟屏，但未能通过系统校验：%1$s。可改用「无线调试」启动 Shizuku 后重试</string>
+    <string name="virtual_screen_error_identity_looper">主线程 Looper 不可用</string>
+    <string name="virtual_screen_error_identity_post">无法把降权任务投递到主线程</string>
+    <string name="virtual_screen_error_identity_timeout">主线程降权超时</string>
+    <string name="virtual_screen_error_identity_setuid">切换调用身份失败（setuid）</string>
+    <string name="virtual_screen_error_identity_uid">setuid 后 uid 未变为 shell</string>
+    <string name="virtual_screen_error_identity_generic">身份切换失败（%1$s）</string>
+    <string name="virtual_screen_error_package_mismatch">系统拒绝了虚拟屏包名校验（packageName must match the calling uid），请检查 Shizuku 的启动身份或 ROM 限制</string>
     <string name="virtual_screen_error_create_generic">虚拟屏创建失败，请检查 Shizuku 权限或 ROM 限制</string>
     <string name="virtual_screen_run_hint">后台虚拟屏运行中 · 停在运行页按 Home 可进入画中画预览</string>
     <string name="virtual_screen_page_title">虚拟屏</string>
@@ -735,6 +757,7 @@
     <string name="record_detail_status_interrupted">未正常结束</string>
     <string name="record_detail_status_truncated">帧已截断</string>
     <string name="record_detail_stale_frame">该帧复用了上一帧画面（画面未变化或达到帧上限）</string>
+    <string name="record_detail_frame_truncated">该动作发生在帧数上限之后，未记录对应画面</string>
     <string name="record_detail_rename">重命名</string>
     <string name="record_detail_rename_title">重命名录制</string>
     <string name="record_detail_renamed">已重命名</string>

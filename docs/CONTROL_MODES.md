@@ -97,6 +97,9 @@ pipeline 的 `LongPressKey` / `KeyDown` / `KeyUp` 因底层只提供离散按键
 - `virtualScreen.target("main")` 可临时切回主屏；
 - 虚拟屏上不支持 `selector.*` / 无障碍控件树，请改用截图 / OCR / 坐标输入。
 
+Shizuku 以 Root 运行时，虚拟屏特权服务会在建屏前把调用身份从 root 降到 shell
+（uid 2000）再创建 `VirtualDisplay`；切换失败时返回明确提示并回退前台，不阻断脚本。
+
 ## 选择建议
 
 | 场景 | 建议 |

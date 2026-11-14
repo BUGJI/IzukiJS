@@ -308,10 +308,16 @@ MCP 的 `recording` 工具用于让 AI 分析这些操作并辅助写脚本：
 {"tool":"recording","arguments":{"action":"export_script","id":"<id>"}}
 ```
 
-`timeline` 每行包含：录制内时间 `t`、来源 `source`（user / script / mcp）、动作类型、
-像素与归一化坐标、前台包名 `package`、命中控件 `target`（text / id / desc / bounds）、
-多指手势的 `pointerCount` 以及动作前截图 `frame`。`frame` 默认在图上画出最近动作的位置，
-便于模型对照界面理解点击目标。命中控件通过异步 `context` 事件补全，不阻塞触摸采集。
+`timeline` 默认只返回动作与页面切换（`app`），不会让每 700ms 一条的周期截图淹没长录制；
+动作行包含录制内时间 `t`、来源 `source`（user / script / mcp）、动作类型、像素与归一化坐标、
+前台包名 `package`、命中控件 `target`（text / id / desc / bounds）、多指手势的
+`pointerCount`，以及动作前 / 后截图 `before_frame` / `after_frame`（`frame` 保持为动作前帧）。
+需要周期截图时传 `include_frames=true`，或用 `types` 显式包含 `screenshot`（兼容名）/
+`screencap`。响应带 `has_more` 与 `next_offset`，长录制应继续翻页；`events` 同样分页。
+
+`frame` 默认在图上画出最近动作的位置，便于模型对照界面理解点击目标。命中控件通过异步
+`context` 事件补全，不阻塞触摸采集；Shizuku 采集按批返回，积压时客户端会连续拉取，
+停止录制前会 drain 剩余动作，避免丢尾部步骤。
 
 隐私提示：录制会保存屏幕内容与控件文本，可能包含密码或聊天内容；录制文件仅保存在本机，
 可在「录制管理」中逐条删除或清空。

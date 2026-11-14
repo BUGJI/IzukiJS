@@ -382,6 +382,7 @@ internal fun RecordingDetailPage(id: String, onBack: () -> Unit) {
                 event = event,
                 screenshot = screenshotBefore(event, screenshots, framesByPath),
                 screenshotAfter = screenshotAfter(event, framesByPath),
+                framesTruncated = current.meta.truncated,
             )
         }
         val remaining = actions.size - visibleCount
@@ -431,6 +432,7 @@ private fun RecordingEventRow(
     event: RecordEvent,
     screenshot: ScreenshotEvent?,
     screenshotAfter: ScreenshotEvent?,
+    framesTruncated: Boolean,
 ) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         if (screenshot != null || screenshotAfter != null) {
@@ -479,6 +481,13 @@ private fun RecordingEventRow(
             if (screenshot?.stale == true) {
                 Text(
                     stringResource(R.string.record_detail_stale_frame),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            } else if (framesTruncated && screenshot == null && screenshotAfter == null) {
+                // 帧数上限之后不再保存画面；显式说明，避免被误认为“这个页面本来就没内容”。
+                Text(
+                    stringResource(R.string.record_detail_frame_truncated),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )

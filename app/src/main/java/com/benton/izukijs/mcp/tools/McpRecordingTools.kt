@@ -5,23 +5,16 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
-import com.benton.izukijs.controller.record.AppEvent
-import com.benton.izukijs.controller.record.ClickEvent
 import com.benton.izukijs.controller.record.annotationScale
-import com.benton.izukijs.controller.record.ContextEvent
-import com.benton.izukijs.controller.record.GestureEvent
-import com.benton.izukijs.controller.record.GlobalActionEvent
-import com.benton.izukijs.controller.record.InputTextEvent
+import com.benton.izukijs.controller.record.ClickEvent
 import com.benton.izukijs.controller.record.LongClickEvent
-import com.benton.izukijs.controller.record.PressKeyEvent
 import com.benton.izukijs.controller.record.RecordEvent
 import com.benton.izukijs.controller.record.RecordingReader
 import com.benton.izukijs.controller.record.RecordingScriptExporter
 import com.benton.izukijs.controller.record.RecordingSession
+import com.benton.izukijs.controller.record.RecordingTimeline
 import com.benton.izukijs.controller.record.RecordingValidator
 import com.benton.izukijs.controller.record.ScreenshotEvent
-import com.benton.izukijs.controller.record.SessionStartEvent
-import com.benton.izukijs.controller.record.ShellEvent
 import com.benton.izukijs.controller.record.SwipeEvent
 import com.benton.izukijs.controller.record.UserActionEvent
 import com.benton.izukijs.controller.record.UserActionKind
@@ -35,7 +28,8 @@ import org.json.JSONObject
 internal fun McpToolRegistry.recordingTool(session: RecordingSession): McpTool = McpTool(
     name = "recording",
     description = "读取用户操作录制（真实点击 / 滑动 / 截图 / 命中控件），供 AI 分析并辅助编写脚本。" +
-        "`action=list` 列出录制；`info` 查看详情；`timeline` 返回紧凑动作时间线（推荐先调用）；" +
+        "`action=list` 列出录制；`info` 查看详情；`timeline` 返回紧凑动作时间线（推荐先调用，" +
+        "默认不含周期截图，动作行带 before_frame / after_frame）；" +
         "`events` 返回完整事件；`frame` 返回指定帧图像块（可用 annotate 标出点击位置）；" +
         "`validate` 校验录制结构；`export_script` 生成 JS 脚本骨架。" +
         "start / stop / delete 需在 MCP 设置中开启「允许录制控制」。",
@@ -54,8 +48,11 @@ internal fun McpToolRegistry.recordingTool(session: RecordingSession): McpTool =
             "offset" to McpSchemas.integer("分页偏移，默认 0"),
             "limit" to McpSchemas.integer("返回条数，默认 200，最大 1000"),
             "types" to McpSchemas.stringArray(
-                "只看这些事件类型：tap / long_click / swipe / gesture / click / long_click / " +
-                    "swipe / text / app / key / shell / screenshot",
+                "只看这些事件类型：tap / long_click / swipe / gesture / multi_swipe / key / " +
+                    "click / text / global_action / shell / app；传 screenshot 可加入周期截图行",
+            ),
+            "include_frames" to McpSchemas.boolean(
+                "timeline 是否包含周期截图行，默认 false（动作行仍带前后帧）",
             ),
             "since_ms" to McpSchemas.integer("只看时间戳 >= 该值的事件"),
             "annotate" to McpSchemas.boolean("在返回的帧上标出最近动作的坐标，默认 true"),
@@ -112,34 +109,38 @@ private fun infoRecording(session: RecordingSession, args: JSONObject): McpToolR
 
 private fun timelineRecording(session: RecordingSession, args: JSONObject): McpToolResult {
     val reader = loadReader(session, args) ?: return McpToolResult.error("录制不存在或缺少 id")
-    val types = args.optJSONArray("types")?.let { array ->
+    val explicitTypes = args.optJSONArray("types")?.let { array ->
         buildSet {
             for (index in 0 until array.length()) {
-                array.optString(index).takeIf { it.isNotBlank() }?.let { add(it) }
+                val raw = array.optString(index).takeIf { it.isNotBlank() } ?: continue
+                // 兼容旧参数名：screenshot 映射到内部 screencap。
+                add(if (raw == "screenshot") RecordingTimeline.TYPE_SCREENCAP else raw)
             }
         }
     }
-    val since = args.optLong("since_ms", 0L)
-    val offset = args.optInt("offset", 0).coerceAtLeast(0)
-    val limit = args.optInt("limit", 200).coerceIn(1, 1000)
-    val rows = ArrayList<JSONObject>()
-    reader.events.forEach { event ->
-        if (event.timestamp < since) return@forEach
-        val row = timelineRow(event) ?: return@forEach
-        val type = row.optString("type")
-        if (types != null && type !in types) return@forEach
-        rows.add(row)
+    val includeFrames = args.optBoolean("include_frames", false)
+    val types = explicitTypes ?: buildSet {
+        addAll(RecordingTimeline.DEFAULT_TYPES)
+        if (includeFrames) add(RecordingTimeline.TYPE_SCREENCAP)
     }
-    val page = rows.drop(offset).take(limit)
+    val page = RecordingTimeline.page(
+        events = reader.events,
+        sinceMs = args.optLong("since_ms", 0L),
+        types = types,
+        offset = args.optInt("offset", 0),
+        limit = args.optInt("limit", 200).coerceIn(1, 1000),
+    )
     val array = JSONArray()
-    page.forEach { array.put(it) }
+    page.items.forEach { array.put(it) }
     return McpToolResult.text(
         JSONObject()
             .put("ok", true)
             .put("id", reader.meta.id)
             .put("name", reader.meta.name)
-            .put("total", rows.size)
-            .put("offset", offset)
+            .put("total", page.total)
+            .put("offset", page.offset)
+            .put("has_more", page.hasMore)
+            .apply { page.nextOffset?.let { put("next_offset", it) } }
             .put("items", array)
             .toString(),
     )
@@ -149,14 +150,19 @@ private fun eventsRecording(session: RecordingSession, args: JSONObject): McpToo
     val reader = loadReader(session, args) ?: return McpToolResult.error("录制不存在或缺少 id")
     val offset = args.optInt("offset", 0).coerceAtLeast(0)
     val limit = args.optInt("limit", 200).coerceIn(1, 1000)
+    val page = reader.events.drop(offset).take(limit)
     val array = JSONArray()
-    reader.events.drop(offset).take(limit).forEach { array.put(it.toJson()) }
+    page.forEach { array.put(it.toJson()) }
+    val consumed = offset + page.size
+    val hasMore = consumed < reader.events.size
     return McpToolResult.text(
         JSONObject()
             .put("ok", true)
             .put("id", reader.meta.id)
             .put("total", reader.events.size)
             .put("offset", offset)
+            .put("has_more", hasMore)
+            .apply { if (hasMore) put("next_offset", consumed) }
             .put("items", array)
             .toString(),
     )
@@ -189,7 +195,7 @@ private fun frameRecording(session: RecordingSession, args: JSONObject): McpTool
             .put("timestamp", screenshot.timestamp)
             .put("image_size", JSONObject().put("w", encoded.width).put("h", encoded.height))
             .put("screen_size", JSONObject().put("w", encoded.screenWidth).put("h", encoded.screenHeight))
-        action?.let { meta.put("action", timelineRow(it)) }
+        action?.let { meta.put("action", RecordingTimeline.row(it)) }
         return McpToolResult(
             listOf(
                 McpContent.image(encoded.base64, encoded.mimeType),
@@ -291,60 +297,6 @@ private fun McpToolRegistry.allowRecordingControl(): Boolean =
 private fun loadReader(session: RecordingSession, args: JSONObject): RecordingReader? {
     val id = args.optString("id").ifBlank { return null }
     return session.store.load(id)
-}
-
-private fun timelineRow(event: RecordEvent): JSONObject? = when (event) {
-    is UserActionEvent -> JSONObject().apply {
-        put("t", event.timestamp)
-        put("source", "user")
-        put("type", event.kind.jsonValue)
-        if (event.kind == UserActionKind.TAP || event.kind == UserActionKind.LONG_CLICK) {
-            put("x", event.x)
-            put("y", event.y)
-            put("nx", event.nx)
-            put("ny", event.ny)
-        } else {
-            put("x1", event.x)
-            put("y1", event.y)
-            put("x2", event.x2)
-            put("y2", event.y2)
-            put("nx1", event.nx)
-            put("ny1", event.ny)
-            put("nx2", event.nx2)
-            put("ny2", event.ny2)
-        }
-        put("durationMs", event.durationMs)
-        if (event.pointerCount > 1) put("pointerCount", event.pointerCount)
-        if (event.packageName.isNotBlank()) put("package", event.packageName)
-        event.targets.firstOrNull()?.let { put("target", it.toJson()) }
-        event.beforeFrame?.let { put("frame", it) }
-    }
-
-    is ClickEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "click").put("x", event.x).put("y", event.y)
-    is LongClickEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "long_click").put("x", event.x).put("y", event.y)
-    is SwipeEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "swipe").put("x1", event.x1).put("y1", event.y1)
-        .put("x2", event.x2).put("y2", event.y2)
-    is GestureEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "gesture")
-    is PressKeyEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "key").put("keyCode", event.keyCode)
-    is InputTextEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "text").put("text", event.text)
-    is GlobalActionEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "global_action").put("action", event.action)
-    is AppEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "app").put("package", event.packageName).put("action", event.action)
-    is ShellEvent -> JSONObject().put("t", event.timestamp).put("source", event.source)
-        .put("type", "shell").put("cmd", event.cmd)
-    is ScreenshotEvent -> JSONObject().put("t", event.timestamp)
-        .put("type", "screencap").put("frame", event.frame)
-        .put("w", event.width).put("h", event.height)
-        .apply { if (event.stale) put("stale", true) }
-    // context 已合并回动作；session_start 不是时间线动作。
-    is SessionStartEvent, is ContextEvent -> null
 }
 
 private fun nearestAction(reader: RecordingReader, timestamp: Long): RecordEvent? =

@@ -46,9 +46,9 @@ class DeveloperSettingsTest {
         assertEquals(10_000, settings.pipelineDefaultMaxSteps)
         assertEquals(0, settings.pipelineDefaultTimeoutSec)
         assertEquals(8, settings.pipelineMaxRecognitionDepth)
-        assertEquals(800, settings.recordingMaxUniqueFrames)
-        assertEquals(88, settings.recordingFrameQuality)
-        assertEquals(0, settings.recordingFrameMaxDimension)
+        assertEquals(1_600, settings.recordingMaxUniqueFrames)
+        assertEquals(82, settings.recordingFrameQuality)
+        assertEquals(960, settings.recordingFrameMaxDimension)
     }
 
     @Test

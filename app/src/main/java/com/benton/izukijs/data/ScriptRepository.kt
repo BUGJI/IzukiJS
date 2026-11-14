@@ -156,19 +156,37 @@ class ScriptRepository(
         )
     }
 
-    fun delete(script: ScriptInfo) {
-        script.file.delete()
-        history.deleteFor(script.id)
-        bumpRevision()
+    fun delete(script: ScriptInfo): Boolean = deleteAll(listOf(script)).isNotEmpty()
+
+    /**
+     * 批量删除：逐个清理文件与历史，但只发一次 revision。
+     * 列表页以 revision 作为刷新信号，逐条删除会触发 N 次重扫导致闪烁。
+     *
+     * @return 实际删除成功（文件已不存在同样视为成功）的脚本 id。
+     */
+    fun deleteAll(scripts: List<ScriptInfo>): Set<String> {
+        if (scripts.isEmpty()) return emptySet()
+        return synchronized(fileLock) {
+            val deleted = LinkedHashSet<String>()
+            scripts.forEach { script ->
+                // 文件已不存在也视为成功，避免重复删除时留下无主的标签 / 运行参数。
+                if (script.file.delete() || !script.file.exists()) {
+                    deleted += script.id
+                    history.deleteFor(script.id)
+                }
+            }
+            if (deleted.isNotEmpty()) bumpRevision()
+            deleted
+        }
     }
 
-    fun rename(script: ScriptInfo, newName: String): ScriptInfo {
+    fun rename(script: ScriptInfo, newName: String): ScriptInfo = synchronized(fileLock) {
         val id = uniqueId(sanitize(newName))
         val target = File(scriptsDir, id + EXTENSION)
         script.file.renameTo(target)
         history.move(script.id, id)
         bumpRevision()
-        return target.toScriptInfo()
+        target.toScriptInfo()
     }
 
     /** 后台线程版本，避免磁盘 IO 阻塞主线程 / 组合。 */
@@ -188,7 +206,11 @@ class ScriptRepository(
         expectedSha256: String? = null,
     ) = withContext(Dispatchers.IO) { write(script, content, forceHistory, expectedSha256) }
 
-    suspend fun deleteAsync(script: ScriptInfo) = withContext(Dispatchers.IO) { delete(script) }
+    suspend fun deleteAsync(script: ScriptInfo): Boolean =
+        withContext(Dispatchers.IO) { delete(script) }
+
+    suspend fun deleteAllAsync(scripts: List<ScriptInfo>): Set<String> =
+        withContext(Dispatchers.IO) { deleteAll(scripts) }
 
     suspend fun renameAsync(script: ScriptInfo, newName: String): ScriptInfo =
         withContext(Dispatchers.IO) { rename(script, newName) }

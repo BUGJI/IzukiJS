@@ -238,7 +238,7 @@ class AppContainer(val application: Application) {
         logBus = logBus,
         hooks = recordingHooks,
         privileged = privilegedUnlockClient,
-        captureProvider = { deviceApiBundle.screenshotProvider() },
+        captureProvider = { fresh -> deviceApiBundle.recordingCaptureProvider(fresh) },
         nodeTreeProvider = { timeoutMs -> nodeTreeProvider(timeoutMs) },
         foregroundProvider = { deviceApiBundle.appApi.foreground() },
     )

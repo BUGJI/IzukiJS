@@ -5,6 +5,44 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.3] - 2026-11-14
+
+### 升级须知
+
+- 1.2.3 起发布签名证书轮换，旧版本无法覆盖安装：请先在旧版导出配置与脚本，
+  卸载后再安装新版本，并重新授予 Shizuku / 无障碍 / 通知等权限。
+
+### 新增
+
+- 脚本中心支持长按进入多选：可批量置顶 / 取消置顶、批量添加或移除标签、导出为单个
+  zip、批量删除；删除后一次撤销即恢复全部脚本及其标签、置顶、运行参数、订阅、定时任务
+  与编排引用。批量删除只触发一次列表刷新，撤销时脚本以新 id 重建。
+
+### 修复
+
+- 修复 Shizuku 以 Root 运行时后台虚拟屏创建失败
+  （`SecurityException: packageName must match the calling uid`）：虚拟屏特权服务在建屏前把
+  调用身份从 root 降级到 shell（uid 2000），并按 uid 校验 `packageName`；切换失败时返回
+  可操作提示并回退前台，不再直接暴露底层异常。`IVirtualScreenService` 服务版本号 +1，
+  Shizuku 会重建仍在运行的旧服务进程。
+- 身份切换失败提示改为稳定错误码 + 本地化文案，英文界面不再混入中文原因；非 Root 的
+  包名校验失败也不再误报为 Root 身份问题。
+- 删除脚本时若文件删除失败，会保留原有标签 / 置顶 / 运行参数并提示失败，撤销时也不会
+  生成同名副本；批量删除支持部分成功提示。
+- 修复批量删除可能误删无关空编排的问题；批量导出的待导出列表在页面重建后仍可恢复。
+- 修复长录制后段页面内容丢失：默认帧上限 800 → 1600，并默认把最长边限制到 960px、
+  JPEG 质量降到 82（长录制占用反而下降）；达到上限后继续写 `stale` 截图事件，但不再把
+  上限前的旧帧挂到新动作的 `beforeFrame`。页面切换后清空采样索引并强制写新帧，避免
+  “新页面显示成上一页”。
+- 修复 MCP `recording timeline` 在长录制中只看到前 200 条、且被周期截图淹没的问题：
+  默认只返回动作与页面切换，动作行新增 `before_frame` / `after_frame`，并返回
+  `has_more` / `next_offset`；`events` 同样补充分页。需要截图行时传 `include_frames=true`。
+- 修复停止用户录制时丢失最后几步动作：停止前 drain 特权侧尚未 poll 的触摸，Shizuku
+  采集改为单批最多 200 条并返回 `remaining` / `dropped`，积压时连续拉取；控件上下文
+  队列改为等待落盘后再关闭。用户录制停止后再导出脚本不再缺步骤。
+- 用户录制在页面切换 / 自动跳转时会主动补一张新画面，并等待截图后端产出新帧，
+  减少把缓存旧页写进录制。
+
 ## [1.2.2] - 2026-11-14
 ### 修复
 
@@ -551,7 +589,8 @@
 - 恢复界面动效并优化设置页布局。
 - 交互体验优化与 Android 16 兼容性修复。
 
-[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.2.2...HEAD
+[未发布]: https://github.com/BUGJI/IzukiJS/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/BUGJI/IzukiJS/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/BUGJI/IzukiJS/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/BUGJI/IzukiJS/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/BUGJI/IzukiJS/compare/v1.1.12...v1.2.0

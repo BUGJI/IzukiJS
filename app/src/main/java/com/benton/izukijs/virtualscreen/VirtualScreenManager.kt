@@ -11,6 +11,7 @@ import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.privileged.VirtualScreenServiceClient
+import com.benton.izukijs.privileged.VirtualScreenProtocol
 import com.benton.izukijs.core.log.LogBus
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
@@ -241,12 +242,14 @@ class VirtualScreenManager(
         }
         if (displayId == null || displayId < 0) {
             source.close()
-            val detail = client.lastError()
+            val failure = formatCreateFailure(client.lastError())
             fail(
-                if (detail != null) {
-                    context.getString(R.string.virtual_screen_error_create, detail)
-                } else {
-                    context.getString(R.string.virtual_screen_error_create_generic)
+                when {
+                    failure == null ->
+                        context.getString(R.string.virtual_screen_error_create_generic)
+                    failure.wrapInCreateError ->
+                        context.getString(R.string.virtual_screen_error_create, failure.message)
+                    else -> failure.message
                 },
             )
             return@withLock false
@@ -535,6 +538,50 @@ class VirtualScreenManager(
         logBus.warn("后台虚拟屏不可用：$message")
         _state.value = VirtualScreenState.Failed(message)
         return false
+    }
+
+    /** 已格式化好的建屏失败信息；[wrapInCreateError] 为 false 时文案可直接展示。 */
+    private data class CreateFailure(val message: String, val wrapInCreateError: Boolean)
+
+    /** 把特权服务的身份错误换成可操作的本地化提示。 */
+    private fun formatCreateFailure(detail: String?): CreateFailure? {
+        val raw = detail?.takeIf { it.isNotBlank() } ?: return null
+        if (raw.startsWith(VirtualScreenProtocol.ERROR_IDENTITY_PREFIX)) {
+            val payload = raw.removePrefix(VirtualScreenProtocol.ERROR_IDENTITY_PREFIX)
+            val code = payload.substringBefore('|')
+            val extra = payload.substringAfter('|', "").takeIf { it.isNotBlank() }
+            return CreateFailure(
+                message = context.getString(
+                    R.string.virtual_screen_error_identity,
+                    identityReason(code, extra),
+                ),
+                wrapInCreateError = false,
+            )
+        }
+        if (raw.contains(VirtualScreenProtocol.PACKAGE_UID_MISMATCH, ignoreCase = true)) {
+            return CreateFailure(
+                message = context.getString(R.string.virtual_screen_error_package_mismatch),
+                wrapInCreateError = false,
+            )
+        }
+        return CreateFailure(raw, wrapInCreateError = true)
+    }
+
+    private fun identityReason(code: String, detail: String?): String = when (code) {
+        VirtualScreenProtocol.IdentityError.MAIN_LOOPER_UNAVAILABLE ->
+            context.getString(R.string.virtual_screen_error_identity_looper)
+        VirtualScreenProtocol.IdentityError.POST_FAILED ->
+            context.getString(R.string.virtual_screen_error_identity_post)
+        VirtualScreenProtocol.IdentityError.MAIN_DROP_TIMEOUT ->
+            context.getString(R.string.virtual_screen_error_identity_timeout)
+        VirtualScreenProtocol.IdentityError.SETUID_FAILED ->
+            context.getString(R.string.virtual_screen_error_identity_setuid)
+        VirtualScreenProtocol.IdentityError.UID_UNCHANGED ->
+            context.getString(R.string.virtual_screen_error_identity_uid)
+        else -> context.getString(
+            R.string.virtual_screen_error_identity_generic,
+            detail ?: code,
+        )
     }
 
     companion object {

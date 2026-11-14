@@ -43,6 +43,7 @@ internal class InteractionRecorder(private val context: Context?) {
 
     private var rawEvents = 0L
     private var strokeCount = 0L
+    private var droppedEvents = 0L
     private var startedAtUptime: Long = SystemClock.uptimeMillis()
     private var generation = 0L
 
@@ -62,6 +63,7 @@ internal class InteractionRecorder(private val context: Context?) {
             pending.clear()
             rawEvents = 0L
             strokeCount = 0L
+            droppedEvents = 0L
             startedAtUptime = SystemClock.uptimeMillis()
             val budget = if (timeoutMs > 0) timeoutMs.toLong() else Long.MAX_VALUE
             val deadline = if (budget == Long.MAX_VALUE) Long.MAX_VALUE
@@ -84,15 +86,20 @@ internal class InteractionRecorder(private val context: Context?) {
     }
 
     fun poll(): String = synchronized(lock) {
+        // 单次 Binder 返回有大小上限：只取一批，剩余数量由客户端继续 poll。
+        // 若一次性返回全部积压动作，过大的字符串会让事务失败并丢掉整批事件。
+        val count = minOf(pending.size, MAX_POLL_EVENTS)
         val events = JSONArray()
-        pending.forEach { events.put(it) }
-        pending.clear()
+        for (index in 0 until count) events.put(pending[index])
+        if (count > 0) pending.subList(0, count).clear()
         val snapshot = JSONObject()
             .put("status", status)
             .put("events", events)
             .put("rawEvents", rawEvents)
             .put("strokes", strokeCount)
             .put("startUptime", startedAtUptime)
+            .put("remaining", pending.size)
+            .put("dropped", droppedEvents)
         error?.let { snapshot.put("error", it) }
         if (status == STATUS_STOPPED || status == STATUS_FAILED) {
             status = STATUS_IDLE
@@ -274,7 +281,10 @@ internal class InteractionRecorder(private val context: Context?) {
             )
         }
         synchronized(lock) {
-            if (pending.size >= MAX_PENDING) pending.removeAt(0)
+            if (pending.size >= MAX_PENDING) {
+                pending.removeAt(0)
+                droppedEvents++
+            }
             pending.add(json)
             strokeCount++
         }
@@ -376,6 +386,7 @@ internal class InteractionRecorder(private val context: Context?) {
         private const val LONG_PRESS_MS = 500
         private const val SCREEN_REFRESH_MS = 1_000L
         private const val MAX_PENDING = 2_000
+        private const val MAX_POLL_EVENTS = 200
         private const val LINEAR_SLACK = 1.35
         private const val LINEAR_MIN_SLACK = 8.0
         private const val COMPLEX_RATIO = 1.8

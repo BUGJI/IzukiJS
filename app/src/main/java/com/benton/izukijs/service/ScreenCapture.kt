@@ -151,7 +151,16 @@ class ScreenCapture(private val logBus: LogBus) {
     }
 
     /** 抓取最近一帧屏幕位图（调用方负责 recycle）。 */
-    fun capture(): Bitmap? = PerfMetrics.measure("capture.screen") {
+    fun capture(): Bitmap? = capture(waitForNewFrame = false, waitTimeoutMs = 0L)
+
+    /**
+     * 抓取屏幕位图。
+     *
+     * [waitForNewFrame] 为 true 时在 [waitTimeoutMs] 内等待 ImageReader 产出一帧新画面，
+     * 避免页面刚切换时直接返回上一页的缓存帧；超时后仍回退到缓存帧。
+     */
+    fun capture(waitForNewFrame: Boolean, waitTimeoutMs: Long): Bitmap? =
+        PerfMetrics.measure("capture.screen") {
         // 兜底检测旋转（显示回调偶尔会读到旧尺寸或漏发）。
         detectGeometryChange(force = false)
         // 旋转动画期间不返回 MediaProjection 帧：SurfaceFlinger 仍会把旧方向的图层按
@@ -172,7 +181,7 @@ class ScreenCapture(private val logBus: LogBus) {
         val waitForFirstFrame = synchronized(captureLock) { lastFrame == null }
         // 等待新帧的 retry-sleep 与位图转换都不在锁内，避免阻塞主线程的 stop()/resize()。
         val retries = if (waitForFirstFrame) DeveloperTuning.current.firstCaptureRetry else 1
-        val image = acquireLatest(reader, retries)
+        val image = acquireLatest(reader, retries, waitForNewFrame, waitTimeoutMs)
         if (image == null) {
             PerfMetrics.count("capture.screen.cached")
             return@measure cachedCopy()
@@ -406,17 +415,32 @@ class ScreenCapture(private val logBus: LogBus) {
         }
     }
 
-    private fun acquireLatest(reader: ImageReader, retries: Int): Image? {
-        repeat(retries) { attempt ->
+    private fun acquireLatest(
+        reader: ImageReader,
+        retries: Int,
+        waitForNewFrame: Boolean,
+        waitTimeoutMs: Long,
+    ): Image? {
+        val deadline = if (waitForNewFrame && waitTimeoutMs > 0L) {
+            SystemClock.elapsedRealtime() + waitTimeoutMs
+        } else {
+            0L
+        }
+        var attempt = 0
+        while (true) {
             val image = runCatching { reader.acquireLatestImage() }.getOrNull()
             if (image != null) return image
-            if (attempt < retries - 1) {
+            if (deadline > 0L) {
+                if (SystemClock.elapsedRealtime() >= deadline) return null
+                runCatching { Thread.sleep(FRESH_FRAME_RETRY_MS) }
+            } else {
+                if (attempt >= retries - 1) return null
+                attempt++
                 runCatching {
                     Thread.sleep(DeveloperTuning.current.captureRetryDelayMs.toLong())
                 }
             }
         }
-        return null
     }
 
     private fun currentGeometry(context: Context): CaptureGeometry {
@@ -451,5 +475,8 @@ class ScreenCapture(private val logBus: LogBus) {
 
         /** 无显示回调时，[capture] 主动兜底检测几何变化的最小间隔。 */
         const val GEOMETRY_CHECK_INTERVAL_MS = 400L
+
+        /** 等待新画面时的重试间隔；约一帧时间，避免过度占用 CPU。 */
+        const val FRESH_FRAME_RETRY_MS = 16L
     }
 }

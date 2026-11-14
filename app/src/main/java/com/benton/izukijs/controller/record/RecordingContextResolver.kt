@@ -23,6 +23,7 @@ class RecordingContextResolver(
     fun foreground(): String = runCatching { foregroundProvider() }.getOrNull().orEmpty()
 
     /** 返回前台包名变化事件；没有变化返回 null。 */
+    @Synchronized
     fun foregroundChanged(packageName: String): String? {
         val previous = lastForeground
         if (packageName.isBlank()) return null

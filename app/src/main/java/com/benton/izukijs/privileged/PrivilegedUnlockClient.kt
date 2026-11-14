@@ -138,6 +138,14 @@ class PrivilegedUnlockClient(
         }
     }
 
+    /** 停止并等待服务端确认，供录制收尾时紧接着 poll 剩余动作。 */
+    suspend fun stopInteractionRecordNow() {
+        if (!ensureConnected()) return
+        withContext(Dispatchers.IO) {
+            runCatching { connector.serviceOrNull()?.stopInteractionRecord() }
+        }
+    }
+
     private suspend fun callString(block: (IUnlockService) -> String?): String? =
         withContext(Dispatchers.IO) {
             val current = connector.serviceOrNull() ?: return@withContext null
@@ -186,6 +194,10 @@ data class PrivilegedInteractionBatch(
     val error: String? = null,
     val rawEvents: Long = 0L,
     val startUptime: Long = 0L,
+    /** 服务端本批之后仍积压的事件数，客户端应继续 poll 直到 0。 */
+    val remaining: Int = 0,
+    /** 服务端因缓冲上限丢弃的事件累计数。 */
+    val dropped: Long = 0L,
 ) {
     val isTerminal: Boolean get() = status == "STOPPED" || status == "FAILED"
 
@@ -204,6 +216,8 @@ data class PrivilegedInteractionBatch(
                 error = json.optString("error").takeIf { it.isNotBlank() },
                 rawEvents = json.optLong("rawEvents"),
                 startUptime = json.optLong("startUptime"),
+                remaining = json.optInt("remaining", 0).coerceAtLeast(0),
+                dropped = json.optLong("dropped", 0L).coerceAtLeast(0L),
             )
         }
     }

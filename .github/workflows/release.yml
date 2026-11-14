@@ -111,7 +111,7 @@ jobs:
       - name: Verify release signature
         run: |
           set -euo pipefail
-          EXPECTED="95392aa229296dbe946c52328450e22b73fc05b417e068dbf6ba2193a7771ea5"
+          EXPECTED="9e4fcf501f6a2c84c8259ce13dfbf711cf81b3b622ec5e0356cb7f96f9db2db3"
           APKSIGNER="$(command -v apksigner || true)"
           if [ -z "$APKSIGNER" ]; then
             APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -name apksigner -type f | sort -V | tail -1)"

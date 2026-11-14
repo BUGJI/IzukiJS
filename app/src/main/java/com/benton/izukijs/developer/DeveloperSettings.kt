@@ -62,9 +62,11 @@ data class DeveloperSettings(
     val pipelineMaxRecognitionDepth: Int = 8,
 
     // ---- 录制 ----
-    val recordingMaxUniqueFrames: Int = 800,
-    val recordingFrameQuality: Int = 88,
-    val recordingFrameMaxDimension: Int = 0,
+    // 默认限制最长边并提高帧数上限：长录制不再因 800 张全尺寸帧过早截断，
+    // 同时 960px / q82 的单帧更小，整体占用反而低于旧默认值。
+    val recordingMaxUniqueFrames: Int = 1_600,
+    val recordingFrameQuality: Int = 82,
+    val recordingFrameMaxDimension: Int = 960,
 ) {
 
     /** 按注册表逐项裁剪到合法范围，并修正跨字段约束。 */

@@ -1,6 +1,7 @@
 package com.benton.izukijs.privileged.internal
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DisplayPackageResolverTest {
@@ -36,6 +37,36 @@ class DisplayPackageResolverTest {
             DisplayPackageResolver.resolve(
                 DisplayPackageResolver.SHELL_UID,
                 null,
+                "com.benton.izukijs",
+            ),
+        )
+    }
+
+    @Test
+    fun rootUidWithoutPackagesHasNoResolvablePackage() {
+        assertNull(
+            DisplayPackageResolver.resolve(
+                DisplayPackageResolver.ROOT_UID,
+                null,
+                "com.benton.izukijs",
+            ),
+        )
+        assertNull(
+            DisplayPackageResolver.resolve(
+                DisplayPackageResolver.ROOT_UID,
+                emptyList(),
+                "com.benton.izukijs",
+            ),
+        )
+    }
+
+    @Test
+    fun rootUidUsesOnlyPackagesActuallyOwnedByRoot() {
+        assertEquals(
+            "com.example.root",
+            DisplayPackageResolver.resolve(
+                DisplayPackageResolver.ROOT_UID,
+                listOf("  com.example.root  "),
                 "com.benton.izukijs",
             ),
         )

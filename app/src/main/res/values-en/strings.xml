@@ -168,6 +168,7 @@
     <string name="scripts_delete_title">Delete script</string>
     <string name="scripts_delete_message">Delete \"%1$s\"? You can undo this from the message at the bottom.</string>
     <string name="scripts_deleted">Deleted \"%1$s\"</string>
+    <string name="scripts_delete_failed">Failed to delete \"%1$s\"; the file is still in place</string>
     <string name="scripts_exported">Exported %1$s</string>
     <string name="scripts_export_failed">Export failed</string>
     <string name="scripts_imported">Imported %1$s</string>
@@ -181,6 +182,19 @@
     <string name="scripts_subscription_badge">Subscription · sync every %1$s</string>
     <string name="scripts_subscription_badge_disabled">Subscription · disabled</string>
     <string name="scripts_subscription_failed">%1$s · sync failed</string>
+    <string name="scripts_selected_count">%1$d selected</string>
+    <string name="scripts_select_all">Select all</string>
+    <string name="scripts_unselect_all">Unselect all</string>
+    <string name="scripts_tags_add">Add</string>
+    <string name="scripts_tags_remove">Remove</string>
+    <string name="scripts_batch_add_tags">Add tags to selected</string>
+    <string name="scripts_batch_remove_tags">Remove tags from selected</string>
+    <string name="scripts_batch_delete_message">Delete the %1$d selected scripts? You can undo this from the message at the bottom.</string>
+    <string name="scripts_batch_deleted">Deleted %1$d scripts</string>
+    <string name="scripts_batch_deleted_partial">Deleted %1$d scripts; %2$d failed and remain in place</string>
+    <string name="scripts_batch_delete_failed">Failed to delete; %1$d scripts remain in place</string>
+    <string name="scripts_batch_exported">Exported %1$d scripts</string>
+    <string name="scripts_export_zip_name">scripts-%1$s.zip</string>
 
     <!-- Script editor -->
     <string name="script_edit_title">Edit \"%1$s\"</string>
@@ -599,6 +613,14 @@
     <string name="virtual_screen_error_background_disabled">Background virtual display is not allowed in settings</string>
     <string name="virtual_screen_error_frame_source">Failed to create the virtual display frame source: %1$s</string>
     <string name="virtual_screen_error_create">Failed to create the virtual display: %1$s</string>
+    <string name="virtual_screen_error_identity">Shizuku is running as root, so the virtual screen requires switching to the shell identity, but the system check failed: %1$s. Restart Shizuku via wireless debugging and retry.</string>
+    <string name="virtual_screen_error_identity_looper">the main looper is unavailable</string>
+    <string name="virtual_screen_error_identity_post">failed to post the privilege drop to the main thread</string>
+    <string name="virtual_screen_error_identity_timeout">the main-thread privilege drop timed out</string>
+    <string name="virtual_screen_error_identity_setuid">failed to switch the calling identity (setuid)</string>
+    <string name="virtual_screen_error_identity_uid">the uid did not change to shell after setuid</string>
+    <string name="virtual_screen_error_identity_generic">identity switch failed (%1$s)</string>
+    <string name="virtual_screen_error_package_mismatch">The system rejected the virtual display package check (packageName must match the calling uid). Check how Shizuku was started or your ROM restrictions.</string>
     <string name="virtual_screen_error_create_generic">Failed to create the virtual display. Check Shizuku permission or ROM restrictions.</string>
     <string name="virtual_screen_run_hint">Background virtual display is running · press Home on the Run page for the PiP preview</string>
     <string name="virtual_screen_page_title">Virtual screen</string>
@@ -738,6 +760,7 @@
     <string name="record_detail_status_interrupted">not finished</string>
     <string name="record_detail_status_truncated">frames truncated</string>
     <string name="record_detail_stale_frame">This frame reuses the previous image (screen unchanged or frame limit reached)</string>
+    <string name="record_detail_frame_truncated">This action happened after the frame limit; no matching screenshot was recorded</string>
     <string name="record_detail_rename">Rename</string>
     <string name="record_detail_rename_title">Rename recording</string>
     <string name="record_detail_renamed">Renamed</string>

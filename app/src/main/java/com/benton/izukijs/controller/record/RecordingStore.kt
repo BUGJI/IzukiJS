@@ -493,7 +493,7 @@ class RecordingWriter internal constructor(
     @Volatile private var meta: RecordingMeta,
     private val maxUniqueFrames: Int = DEFAULT_MAX_UNIQUE_FRAMES,
     private val frameQuality: Int = DEFAULT_FRAME_QUALITY,
-    private val frameMaxDimension: Int = 0,
+    private val frameMaxDimension: Int = DEFAULT_FRAME_MAX_DIMENSION,
 ) {
     private val lock = Any()
     private val ioLock = Any()
@@ -539,6 +539,10 @@ class RecordingWriter internal constructor(
     private var lastWidth = 0
     private var lastHeight = 0
 
+    /** 页面切换后强制写一张新帧，避免画面片段相同被去重成上一页。 */
+    @Volatile
+    private var forceNextFrame = false
+
     @Volatile
     private var frameCapMarked = false
 
@@ -552,6 +556,47 @@ class RecordingWriter internal constructor(
         if (frameCapMarked) return
         frameCapMarked = true
         updateMeta { it.copy(truncated = true) }
+    }
+
+    /** 页面切换后调用：下一帧即使与上一帧相似也必须重新写盘。 */
+    fun requestFreshFrame() {
+        forceNextFrame = true
+    }
+
+    /**
+     * 帧数达到上限后写入一条复用最后一帧的 `screencap` 事件。
+     *
+     * 不保存新文件，只保留时间线连续性；调用方不能把它加入采样索引，
+     * 否则后续动作会再次被标记成上限之前的旧页面。
+     */
+    fun recordCappedFrame(
+        atMs: Long,
+        elapsedMs: Long = 0L,
+        source: String = RecordSource.USER,
+    ) {
+        markFrameCapReached()
+        val frame = synchronized(frameLock) {
+            val path = lastFramePath ?: return
+            Triple(path, lastWidth, lastHeight)
+        }
+        synchronized(lock) {
+            if (closed) return
+            val seq = seqCounter.incrementAndGet()
+            worker.execute {
+                writeEvent(
+                    ScreenshotEvent(
+                        timestamp = atMs,
+                        frame = frame.first,
+                        width = frame.second,
+                        height = frame.third,
+                        stale = true,
+                        source = source,
+                        elapsedMs = elapsedMs,
+                    ),
+                    seq,
+                )
+            }
+        }
     }
 
     fun timestamp(): Long = timestampOf(System.currentTimeMillis())
@@ -684,7 +729,10 @@ class RecordingWriter internal constructor(
                 val height = target.height
                 val sample = sampleHash(target)
                 val previousPath = lastFramePath
-                if (previousPath != null && sample == lastSampleHash &&
+                // 页面切换后即使采样哈希相同也强制写新帧，防止新旧页面的公共区域导致误去重。
+                val force = forceNextFrame
+                forceNextFrame = false
+                if (!force && previousPath != null && sample == lastSampleHash &&
                     width == lastWidth && height == lastHeight
                 ) {
                     writeEvent(
@@ -871,12 +919,13 @@ class RecordingWriter internal constructor(
 
     private companion object {
         const val META_FLUSH_EVERY = 20
-        const val DEFAULT_MAX_UNIQUE_FRAMES = 800
-        const val DEFAULT_FRAME_QUALITY = 88
+        const val DEFAULT_MAX_UNIQUE_FRAMES = 1_600
+        const val DEFAULT_FRAME_QUALITY = 82
+        const val DEFAULT_FRAME_MAX_DIMENSION = 960
         const val MAX_PENDING_SCREENSHOTS = 8
         const val FRAME_WAIT_SECONDS = 5L
-        const val SAMPLE_COLUMNS = 32
-        const val SAMPLE_ROWS = 32
+        const val SAMPLE_COLUMNS = 64
+        const val SAMPLE_ROWS = 64
         const val META_FILE = "meta.json"
         const val EVENTS_FILE = "events.jsonl"
         const val FRAMES_DIR = "frames"

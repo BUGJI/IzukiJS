@@ -586,8 +586,9 @@ if (hit) click(hit.x, hit.y);
 ## `record`（控制操作录制 / 回放）
 
 录制当前控制后端收到的操作与屏幕帧，用于离线回归测试。录制期间控制器会被临时包一层，
-停止后自动恢复；截图帧按采样哈希去重，默认最多保留 800 张。超过上限后采样停止，后续
-`screencap` 事件带 `stale=true` 并复用上一帧；可在开发者选项限制录制帧最长边以降低占用。
+停止后自动恢复；截图帧按采样哈希去重，默认最多保留 1600 张、最长边 960px、JPEG 质量 82。
+达到上限后仍会写入 `stale=true` 的 `screencap` 事件，但不再把旧帧挂到新动作的
+`beforeFrame`；可在开发者选项调整帧数、质量与最长边。
 
 录制文件为 v2 格式：`meta.json` 记录版本、设备与选项，`events.jsonl` 每行包含
 `v / seq / atMs / elapsedMs / type / source / ok / data`。`screencap` 是独立事件，

@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Process
 import android.view.Surface
+import com.benton.izukijs.privileged.VirtualScreenProtocol
 import java.lang.reflect.Method
 
 /**
@@ -39,6 +40,10 @@ internal class PrivilegedVirtualDisplay(
     @Volatile
     private var displayManager: DisplayManager? = null
 
+    /** [displayManager] 对应的调用 uid；root 降权后需要重新解析。 */
+    @Volatile
+    private var displayManagerUid: Int = Int.MIN_VALUE
+
     @SuppressLint("WrongConstant")
     @Synchronized
     fun create(
@@ -50,6 +55,9 @@ internal class PrivilegedVirtualDisplay(
     ): Int {
         destroy()
         lastError = null
+        DisplayIdentity.ensureShellForDisplay()?.let { failure ->
+            return fail(failure.encode())
+        }
         val manager = obtainDisplayManager()
             ?: return fail("DisplayManager unavailable")
         var primaryError: String? = null
@@ -82,6 +90,8 @@ internal class PrivilegedVirtualDisplay(
             )
             if (primaryError == null) primaryError = message
         }
+        // packageName 不匹配由 App 侧 formatCreateFailure 识别并换成专门提示，
+        // 这里保留原始异常文案，避免被误当成身份切换错误。
         return fail(primaryError ?: "createVirtualDisplay failed")
     }
 
@@ -271,21 +281,30 @@ internal class PrivilegedVirtualDisplay(
     }
 
     private fun obtainDisplayManager(): DisplayManager? {
-        displayManager?.let { return it }
         val uid = Process.myUid()
+        displayManager?.let { if (displayManagerUid == uid) return it }
         val packages = runCatching { context.packageManager.getPackagesForUid(uid) }
             .getOrNull()
             ?.toList()
         val packageName = DisplayPackageResolver.resolve(uid, packages, context.packageName)
+        if (packageName == null) {
+            PrivilegedLog.e("cannot resolve a package for uid=$uid")
+            return null
+        }
         val manager = if (packageName == context.packageName) {
             context.getSystemService(DisplayManager::class.java)
         } else {
             createPackageDisplayManager(packageName) ?: createWrappedDisplayManager(packageName)
-        } ?: context.getSystemService(DisplayManager::class.java)
-        displayManager = manager
-        if (manager != null) {
-            PrivilegedLog.i("DisplayManager package=$packageName uid=$uid")
         }
+        if (manager == null) {
+            // 不再回退到 App 包名的 DisplayManager：packageName 与 uid 不匹配时
+            // DisplayManagerService 只会抛 SecurityException，掩盖真实原因。
+            PrivilegedLog.e("no DisplayManager for package=$packageName uid=$uid")
+            return null
+        }
+        displayManager = manager
+        displayManagerUid = uid
+        PrivilegedLog.i("DisplayManager package=$packageName uid=$uid")
         return manager
     }
 

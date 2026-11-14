@@ -66,6 +66,10 @@ keyAlias=...
 keyPassword=...
 ```
 
+Debug 默认使用 AGP 的 debug 签名。需要本地 debug/release 覆盖安装并共享数据时，
+在 `gradle.properties` 设置 `izuki.debugSharedSignature=true`；仅当正式签名文件有效时
+才生效，debug 包可调试，不要分发。
+
 `keystore.properties` 与 `*.jks` / `*.keystore` 已在 `.gitignore` 中，**不要提交**。
 正式发布流程见 [docs/RELEASING.md](docs/RELEASING.md)。
 

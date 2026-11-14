@@ -196,6 +196,8 @@ controllers.controllerFor(Capability.SHELL)
 - `virtualscreen/VirtualScreenManager.kt` 负责生命周期、帧源、目标切换、输入、预览、心跳；
 - 特权侧 `privileged/VirtualScreenUserService.kt` 通过 AIDL
   `IVirtualScreenService` 在 Shizuku UserService 进程中创建 `VirtualDisplay` 并拉起应用；
+  Shizuku 以 root 运行时由 `DisplayIdentity` 在建屏前把调用身份降到 shell（uid 2000），
+  避免 `packageName must match the calling uid`；
 - 画面采集与 PiP 预览在 App 进程内完成，特权进程只做创建 / 销毁 / 前台包名查询；
 - 虚拟屏激活时 `ControllerManager.targetDisplayId` 非空，只选择支持 display 定向的后端。
 

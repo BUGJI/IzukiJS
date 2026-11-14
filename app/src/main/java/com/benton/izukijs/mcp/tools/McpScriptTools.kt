@@ -394,7 +394,9 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
         if (executionManager.runningScriptId.value == script.id) {
             return@McpTool McpToolResult.error("脚本正在运行，无法删除：${script.name}")
         }
-        scriptRepository.delete(script)
+        if (!scriptRepository.delete(script)) {
+            return@McpTool McpToolResult.error("删除脚本失败：${script.name}")
+        }
         McpToolResult.text(
             JSONObject().put("ok", true).put("id", script.id).put("deleted", true).toString(),
         )

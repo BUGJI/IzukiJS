@@ -27,6 +27,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
@@ -83,7 +85,8 @@ class RecordingSession(
     private val logBus: LogBus,
     private val hooks: RecordingHooks = RecordingHooks(),
     private val privileged: PrivilegedUnlockClient? = null,
-    private val captureProvider: (() -> Bitmap?)? = null,
+    /** [fresh] 为 true 时等待一帧比调用时刻更新的画面，避免把缓存的上一页写进录制。 */
+    private val captureProvider: ((fresh: Boolean) -> Bitmap?)? = null,
     private val nodeTreeProvider: ((Long) -> NodeTreeResult)? = null,
     private val foregroundProvider: (() -> String?)? = null,
 ) {
@@ -100,6 +103,17 @@ class RecordingSession(
     private var contextExecutor: ExecutorService? = null
     private var contextResolver: RecordingContextResolver? = null
     private var stopping = false
+
+    private var sessionStartWall = 0L
+    private var sessionStartUptime = 0L
+    private var userOptions: UserRecordingOptions? = null
+
+    /** 停止时输入循环据此退出，并保留一次 drain 剩余动作的机会。 */
+    @Volatile
+    private var stopRequested = false
+
+    private var lastForegroundPollUptime = 0L
+    private var lastReportedDropped = 0L
 
     private val _active = MutableStateFlow(false)
     val active: StateFlow<Boolean> = _active.asStateFlow()
@@ -254,6 +268,13 @@ class RecordingSession(
                 _issue.value = null
                 _active.value = true
 
+                stopRequested = false
+                sessionStartWall = System.currentTimeMillis()
+                sessionStartUptime = SystemClock.uptimeMillis()
+                userOptions = options
+                lastForegroundPollUptime = 0L
+                lastReportedDropped = 0L
+
                 val provider = captureProvider
                 val loop = if (options.captureScreenshots && provider != null) {
                     RecordingCaptureLoop(
@@ -316,12 +337,16 @@ class RecordingSession(
         val id: String?
         val wasUser: Boolean
         val executor: ExecutorService?
+        val resolver: RecordingContextResolver?
+        val options: UserRecordingOptions?
         synchronized(lock) {
             if (stopping) return currentId
             current = writer ?: return null
             id = currentId
             wasUser = _activeKind.value == RecordingMeta.KIND_USER
             stopping = true
+            // 让输入循环自己退出，stop 随后统一 drain 特权侧尚未 poll 的动作。
+            stopRequested = true
             hooks.captureObserver = null
             hooks.appObserver = null
             captureLoop?.stop()
@@ -333,17 +358,31 @@ class RecordingSession(
             unwrapControllersLocked()
             executor = contextExecutor
             contextExecutor = null
+            resolver = contextResolver
             contextResolver = null
+            options = userOptions
+            userOptions = null
         }
         // close() 会等待写入队列收尾，放到锁外避免阻塞其它录制状态查询。
         var failed = false
         try {
-            if (wasUser) {
+            if (wasUser && resolver != null && options != null) {
+                // 先停采集，再把缓冲区里剩余的动作取完；否则停止前最后几次点击会丢失，
+                // 导出脚本也会缺少对应步骤。
+                runCatching {
+                    runBlocking {
+                        withTimeoutOrNull(STOP_DRAIN_TIMEOUT_MS) {
+                            drainRemainingInput(current, resolver, options)
+                        }
+                    }
+                }
                 runCatching { privileged?.stopInteractionRecord() }
             }
             // 先停止异步 context 生产，避免 writer 关闭后仍有任务尝试写入或被静默丢弃。
-            executor?.shutdownNow()
+            // 用 shutdown + await 让已排队的控件信息落盘，超时后再强制中断。
+            executor?.shutdown()
             runCatching { executor?.awaitTermination(CONTEXT_SHUTDOWN_WAIT_MS, TimeUnit.MILLISECONDS) }
+            if (executor != null && !executor.isTerminated) executor.shutdownNow()
             current.close()
         } catch (t: Throwable) {
             failed = true
@@ -386,46 +425,55 @@ class RecordingSession(
         loop: RecordingCaptureLoop?,
         resolver: RecordingContextResolver,
     ) {
-        val sessionStartWall = System.currentTimeMillis()
-        val sessionStartUptime = SystemClock.uptimeMillis()
-
         val privilegedClient = privileged
         try {
+            var fallbackToShell = false
             if (privilegedClient != null && privilegedClient.startInteractionRecord(0)) {
                 updateInputSource(newWriter, "shizuku")
                 var consecutiveFailures = 0
-                while (userScope?.isActive == true) {
+                while (userScope?.isActive == true && !stopRequested) {
                     delay(POLL_INTERVAL_MS)
-                    val batch = runCatching { privilegedClient.pollInteractionRecord() }.getOrNull()
-                    if (batch == null) {
-                        consecutiveFailures++
-                        if (consecutiveFailures >= MAX_POLL_FAILURES) {
-                            logBus.warn("用户触摸录制：特权服务连续无响应，回退 Shell")
+                    var rounds = 0
+                    var terminal = false
+                    // 一次 poll 有上限；积压较多时连续取完再采样，避免 250ms 轮询跟不上。
+                    while (userScope?.isActive == true && rounds++ < MAX_POLL_ROUNDS) {
+                        val batch = runCatching { privilegedClient.pollInteractionRecord() }.getOrNull()
+                        if (batch == null) {
+                            consecutiveFailures++
+                            if (consecutiveFailures >= MAX_POLL_FAILURES) {
+                                logBus.warn("用户触摸录制：特权服务连续无响应，回退 Shell")
+                                fallbackToShell = true
+                            }
                             break
                         }
-                        continue
+                        consecutiveFailures = 0
+                        reportDropped(batch.dropped)
+                        val terminalStatus = batch.status == "STOPPED" || batch.status == "FAILED"
+                        if (batch.status == "FAILED") {
+                            logBus.warn("用户触摸录制失败：${batch.error ?: "unknown"}，回退 Shell")
+                            fallbackToShell = true
+                        }
+                        if (batch.events.isNotEmpty()) {
+                            processBatch(
+                                events = batch.events,
+                                inputSource = "shizuku",
+                                newWriter = newWriter,
+                                resolver = resolver,
+                                loop = loop,
+                                captureContext = options.captureContext,
+                                batchStartUptime = batch.startUptime,
+                            )
+                        }
+                        if (terminalStatus) terminal = true
+                        // 终止状态也可能只返回了前 200 条；继续把 remaining 取完再退出。
+                        if (batch.remaining <= 0) break
                     }
-                    consecutiveFailures = 0
-                    if (batch.status == "FAILED") {
-                        logBus.warn("用户触摸录制失败：${batch.error ?: "unknown"}，回退 Shell")
-                        break
-                    }
-                    processBatch(
-                        events = batch.events,
-                        inputSource = "shizuku",
-                        newWriter = newWriter,
-                        resolver = resolver,
-                        loop = loop,
-                        captureContext = options.captureContext,
-                        sessionStartWall = sessionStartWall,
-                        sessionStartUptime = sessionStartUptime,
-                        batchStartUptime = batch.startUptime,
-                    )
-                    if (batch.status == "STOPPED") break
+                    if (fallbackToShell || terminal) break
+                    maybeCapturePageChange(newWriter, resolver, loop)
                 }
             }
 
-            if (userScope?.isActive == true) {
+            if (userScope?.isActive == true && !stopRequested) {
                 runShellInputLoop(
                     newWriter = newWriter,
                     resolver = resolver,
@@ -444,15 +492,75 @@ class RecordingSession(
         }
     }
 
-    private suspend fun processBatch(
+    /** 停止时把特权缓冲里尚未 poll 的动作补写到事件文件，避免丢尾部步骤。 */
+    private suspend fun drainRemainingInput(
+        newWriter: RecordingWriter,
+        resolver: RecordingContextResolver,
+        options: UserRecordingOptions,
+    ) {
+        val client = privileged ?: return
+        runCatching { client.stopInteractionRecordNow() }
+        var rounds = 0
+        while (rounds++ < MAX_DRAIN_ROUNDS) {
+            val batch = runCatching { client.pollInteractionRecord() }.getOrNull() ?: break
+            reportDropped(batch.dropped)
+            if (batch.events.isNotEmpty()) {
+                processBatch(
+                    events = batch.events,
+                    inputSource = "shizuku",
+                    newWriter = newWriter,
+                    resolver = resolver,
+                    loop = null,
+                    captureContext = options.captureContext,
+                    batchStartUptime = batch.startUptime,
+                )
+            }
+            if (batch.remaining <= 0 && batch.events.isEmpty()) break
+            if (batch.status == "IDLE" && batch.events.isEmpty()) break
+        }
+    }
+
+    private fun reportDropped(dropped: Long) {
+        if (dropped <= lastReportedDropped) return
+        val delta = dropped - lastReportedDropped
+        lastReportedDropped = dropped
+        logBus.warn("用户触摸录制缓冲区溢出，已丢弃 $delta 个动作（累计 $dropped）")
+    }
+
+    /**
+     * 独立于触摸事件检测前台页面变化：页面由加载 / 自动跳转打开时也能留下痕迹和画面。
+     * 与 [processBatch] 共用 [RecordingContextResolver.foregroundChanged]，只会有一方看到切换。
+     */
+    private fun maybeCapturePageChange(
+        newWriter: RecordingWriter,
+        resolver: RecordingContextResolver,
+        loop: RecordingCaptureLoop?,
+    ) {
+        val now = SystemClock.uptimeMillis()
+        if (lastForegroundPollUptime != 0L && now - lastForegroundPollUptime < FOREGROUND_POLL_MS) {
+            return
+        }
+        lastForegroundPollUptime = now
+        val packageName = resolver.foreground()
+        if (packageName.isBlank()) return
+        val previous = resolver.foregroundChanged(packageName) ?: return
+        val timestamp = newWriter.timestamp()
+        newWriter.record(
+            AppEvent(timestamp, "switch:$previous", packageName, true, RecordSource.USER),
+        )
+        if (loop != null) {
+            loop.invalidateSamples()
+            loop.scheduleAfter(timestamp, null)
+        }
+    }
+
+    private fun processBatch(
         events: List<JSONObject>,
         inputSource: String,
         newWriter: RecordingWriter,
         resolver: RecordingContextResolver,
         loop: RecordingCaptureLoop?,
         captureContext: Boolean,
-        sessionStartWall: Long,
-        sessionStartUptime: Long,
         batchStartUptime: Long,
     ) {
         if (events.isEmpty()) return
@@ -504,15 +612,19 @@ class RecordingSession(
         // 前台切换事件必须使用本批首个动作的时间，否则按 seq 排序后时间戳会倒退，
         // RecordingValidator 会把整条录制判成「事件时间戳倒退」。
         if (previousPackage != null) {
+            val switchAt = parsed.firstOrNull()?.timestamp ?: newWriter.timestamp()
             newWriter.record(
                 AppEvent(
-                    timestamp = parsed.firstOrNull()?.timestamp ?: newWriter.timestamp(),
+                    timestamp = switchAt,
                     action = "switch:$previousPackage",
                     packageName = packageName,
                     success = true,
                     source = RecordSource.USER,
                 ),
             )
+            // 新页面的动作不能再引用上一页的 beforeFrame；同时补一张切页后的画面。
+            loop?.invalidateSamples()
+            loop?.scheduleAfter(switchAt, null)
         }
         parsed.forEach { event ->
             val seq = newWriter.record(event)
@@ -598,7 +710,7 @@ class RecordingSession(
                 controller.shell("command -v timeout >/dev/null 2>&1; echo \$?")
             }?.stdout?.trim() == "0"
         }.getOrDefault(false)
-        while (userScope?.isActive == true) {
+        while (userScope?.isActive == true && !stopRequested) {
             val commandStartedWall = System.currentTimeMillis()
             val commandStartedUptime = SystemClock.uptimeMillis()
             val cmd = if (hasTimeout) {
@@ -630,6 +742,7 @@ class RecordingSession(
                     )
                 }
             }
+            maybeCapturePageChange(newWriter, resolver, loop)
             delay(SHELL_POLL_INTERVAL_MS)
         }
     }
@@ -763,8 +876,12 @@ class RecordingSession(
         const val POLL_INTERVAL_MS = 250L
         const val SHELL_POLL_INTERVAL_MS = 50L
         const val MAX_POLL_FAILURES = 8
+        const val MAX_POLL_ROUNDS = 12
+        const val MAX_DRAIN_ROUNDS = 50
+        const val FOREGROUND_POLL_MS = 600L
+        const val STOP_DRAIN_TIMEOUT_MS = 2_500L
         const val TAP_SLOP = 24.0
         const val LONG_PRESS_MS = 500L
-        const val CONTEXT_SHUTDOWN_WAIT_MS = 1_000L
+        const val CONTEXT_SHUTDOWN_WAIT_MS = 1_500L
     }
 }

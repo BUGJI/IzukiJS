@@ -2,6 +2,7 @@ package com.benton.izukijs.ui.scripts
 
 import android.content.Context
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.RepeatMode
@@ -9,8 +10,9 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,10 +36,13 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -62,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -98,6 +104,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,6 +149,16 @@ fun ScriptsScreen(
     var pendingScanFile by remember { mutableStateOf<File?>(null) }
     var query by rememberSaveable { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
+    // 多选只存 id 列表，rememberSaveable 可直接序列化；是否处于选择模式由非空推导。
+    var selectedIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val selectedIdSet = remember(selectedIds) { selectedIds.toSet() }
+    val selectionMode = selectedIds.isNotEmpty()
+    var showBatchTagDialog by remember { mutableStateOf(false) }
+    var batchTagMode by rememberSaveable { mutableStateOf(BATCH_TAG_ADD) }
+    var batchTagInput by rememberSaveable { mutableStateOf("") }
+    var batchDeletePending by remember { mutableStateOf(false) }
+    // 只保存 id：SAF 选择器打开期间若页面重建，仍能按 id 找回待导出脚本。
+    var batchExportIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
 
     // 置顶优先，其次按所选排序方式；搜索只在已排序结果上过滤。
     val ordered = remember(scripts, pinned, sort) {
@@ -162,6 +183,26 @@ fun ScriptsScreen(
     val groups = remember(filtered, tags, groupMode) {
         buildScriptGroups(filtered, tags, groupMode)
     }
+
+    val allVisibleSelected = filtered.isNotEmpty() && filtered.all { it.id in selectedIdSet }
+    val allSelectedPinned = selectionMode && selectedIdSet.all { it in pinned }
+
+    // 外部删除或刷新后丢弃已不存在的选中项；选中清空即自动退出选择模式。
+    LaunchedEffect(scripts) {
+        if (selectedIds.isNotEmpty()) {
+            val pruned = pruneSelection(selectedIdSet, scripts)
+            if (pruned != selectedIdSet) selectedIds = pruned.toList()
+        }
+    }
+
+    LaunchedEffect(selectionMode) {
+        if (!selectionMode) {
+            showBatchTagDialog = false
+            batchDeletePending = false
+        }
+    }
+
+    BackHandler(enabled = selectionMode) { selectedIds = emptyList() }
 
     suspend fun refresh() = coroutineScope {
         loadError = false
@@ -198,6 +239,48 @@ fun ScriptsScreen(
                 }
                 snackbar.show(message)
             }
+        }
+    }
+
+    val batchExportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip"),
+    ) { uri ->
+        val ids = batchExportIds
+        batchExportIds = emptyList()
+        if (uri == null || ids.isEmpty()) return@rememberLauncherForActivityResult
+        val knownScripts = scripts
+        scope.launch {
+            val count = withContext(Dispatchers.IO) {
+                val entries = mutableListOf<Pair<String, String>>()
+                for (id in ids) {
+                    val script = knownScripts.firstOrNull { it.id == id }
+                        ?: container.scriptRepository.findAsync(id)
+                        ?: continue
+                    val content = runCatching { container.scriptRepository.read(script) }
+                        .getOrNull() ?: continue
+                    entries += (script.name + ".js") to content
+                }
+                if (entries.isEmpty()) 0 else if (writeZipToUri(context, uri, entries)) entries.size else 0
+            }
+            val message = if (count > 0) {
+                resources.getString(R.string.scripts_batch_exported, count)
+            } else {
+                resources.getString(R.string.scripts_export_failed)
+            }
+            snackbar.show(message)
+        }
+    }
+
+    fun startBatchExport() {
+        val targetIds = scripts.filter { it.id in selectedIdSet }.map { it.id }
+        if (targetIds.isEmpty()) return
+        batchExportIds = targetIds
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date())
+        runCatching {
+            batchExportLauncher.launch(resources.getString(R.string.scripts_export_zip_name, stamp))
+        }.onFailure {
+            batchExportIds = emptyList()
+            scope.launch { snackbar.show(resources.getString(R.string.scripts_export_failed)) }
         }
     }
 
@@ -268,7 +351,19 @@ fun ScriptsScreen(
             tags = tags[script.id].orEmpty(),
             pinned = script.id in pinned,
             pinnedToTile = script.id == tileScriptId,
-            onClick = { onOpenScript(script.id) },
+            selectionMode = selectionMode,
+            selected = script.id in selectedIdSet,
+            onClick = {
+                if (selectionMode) {
+                    selectedIds = toggleSelection(selectedIdSet, script.id).toList()
+                } else {
+                    onOpenScript(script.id)
+                }
+            },
+            onLongClick = {
+                haptics.toggle()
+                selectedIds = (selectedIdSet + script.id).toList()
+            },
             onTogglePin = {
                 haptics.toggle()
                 container.scriptListPreferences.togglePinned(script.id)
@@ -290,75 +385,126 @@ fun ScriptsScreen(
     }
 
     IzukiPageScaffold(
-        title = { Text(stringResource(R.string.scripts_title)) },
+        title = {
+            Text(
+                if (selectionMode) {
+                    stringResource(R.string.scripts_selected_count, selectedIds.size)
+                } else {
+                    stringResource(R.string.scripts_title)
+                },
+            )
+        },
+        onBack = if (selectionMode) ({ selectedIds = emptyList() }) else null,
         actions = {
-                    IconButton(onClick = { startScanImport() }) {
-                        Icon(
-                            painterResource(R.drawable.ic_qr_code_scanner),
-                            contentDescription = stringResource(R.string.scripts_scan_import),
+            if (selectionMode) {
+                TextButton(
+                    onClick = {
+                        selectedIds = toggleSelectAllVisible(selectedIdSet, filtered).toList()
+                    },
+                ) {
+                    Text(
+                        stringResource(
+                            if (allVisibleSelected) {
+                                R.string.scripts_unselect_all
+                            } else {
+                                R.string.scripts_select_all
+                            },
+                        ),
+                    )
+                }
+            } else {
+                IconButton(onClick = { startScanImport() }) {
+                    Icon(
+                        painterResource(R.drawable.ic_qr_code_scanner),
+                        contentDescription = stringResource(R.string.scripts_scan_import),
+                    )
+                }
+                Box {
+                    IconButton(onClick = { showOverflow = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
+                    }
+                    DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.scripts_import)) },
+                            onClick = {
+                                showOverflow = false
+                                importLauncher.launch(arrayOf("text/*", "application/javascript"))
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.scripts_schedule)) },
+                            onClick = { showOverflow = false; onOpenSchedule() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.scripts_flows)) },
+                            onClick = { showOverflow = false; onOpenFlows() },
+                        )
+                        HorizontalDivider()
+                        CheckedMenuItem(
+                            label = stringResource(R.string.scripts_sort_updated),
+                            selected = sort == ScriptSort.UPDATED,
+                            onClick = {
+                                container.scriptListPreferences.setSort(ScriptSort.UPDATED)
+                                showOverflow = false
+                            },
+                        )
+                        CheckedMenuItem(
+                            label = stringResource(R.string.scripts_sort_name),
+                            selected = sort == ScriptSort.NAME,
+                            onClick = {
+                                container.scriptListPreferences.setSort(ScriptSort.NAME)
+                                showOverflow = false
+                            },
+                        )
+                        HorizontalDivider()
+                        CheckedMenuItem(
+                            label = stringResource(R.string.scripts_group_none),
+                            selected = groupMode == ScriptGroupMode.NONE,
+                            onClick = {
+                                container.scriptListPreferences.setGroupMode(ScriptGroupMode.NONE)
+                                showOverflow = false
+                            },
+                        )
+                        CheckedMenuItem(
+                            label = stringResource(R.string.scripts_group_by_tag),
+                            selected = groupMode == ScriptGroupMode.TAG,
+                            onClick = {
+                                container.scriptListPreferences.setGroupMode(ScriptGroupMode.TAG)
+                                showOverflow = false
+                            },
                         )
                     }
-                    Box {
-                        IconButton(onClick = { showOverflow = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
-                        }
-                        DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.scripts_import)) },
-                                onClick = {
-                                    showOverflow = false
-                                    importLauncher.launch(arrayOf("text/*", "application/javascript"))
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.scripts_schedule)) },
-                                onClick = { showOverflow = false; onOpenSchedule() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.scripts_flows)) },
-                                onClick = { showOverflow = false; onOpenFlows() },
-                            )
-                            HorizontalDivider()
-                            CheckedMenuItem(
-                                label = stringResource(R.string.scripts_sort_updated),
-                                selected = sort == ScriptSort.UPDATED,
-                                onClick = {
-                                    container.scriptListPreferences.setSort(ScriptSort.UPDATED)
-                                    showOverflow = false
-                                },
-                            )
-                            CheckedMenuItem(
-                                label = stringResource(R.string.scripts_sort_name),
-                                selected = sort == ScriptSort.NAME,
-                                onClick = {
-                                    container.scriptListPreferences.setSort(ScriptSort.NAME)
-                                    showOverflow = false
-                                },
-                            )
-                            HorizontalDivider()
-                            CheckedMenuItem(
-                                label = stringResource(R.string.scripts_group_none),
-                                selected = groupMode == ScriptGroupMode.NONE,
-                                onClick = {
-                                    container.scriptListPreferences.setGroupMode(ScriptGroupMode.NONE)
-                                    showOverflow = false
-                                },
-                            )
-                            CheckedMenuItem(
-                                label = stringResource(R.string.scripts_group_by_tag),
-                                selected = groupMode == ScriptGroupMode.TAG,
-                                onClick = {
-                                    container.scriptListPreferences.setGroupMode(ScriptGroupMode.TAG)
-                                    showOverflow = false
-                                },
-                            )
-                        }
-                    }
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { newName = defaultName; showNewDialog = true }) {
-                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.scripts_new))
+                }
             }
+        },
+        floatingActionButton = if (selectionMode) {
+            null
+        } else {
+            {
+                FloatingActionButton(onClick = { newName = defaultName; showNewDialog = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.scripts_new))
+                }
+            }
+        },
+        bottomBar = if (selectionMode) {
+            {
+                ScriptSelectionBar(
+                    allPinned = allSelectedPinned,
+                    onTogglePin = {
+                        haptics.toggle()
+                        container.scriptListPreferences.setPinnedAll(selectedIdSet, !allSelectedPinned)
+                    },
+                    onEditTags = {
+                        batchTagMode = BATCH_TAG_ADD
+                        batchTagInput = ""
+                        showBatchTagDialog = true
+                    },
+                    onExport = { startBatchExport() },
+                    onDelete = { batchDeletePending = true },
+                )
+            }
+        } else {
+            null
         },
     ) { padding ->
         Box(
@@ -518,6 +664,12 @@ fun ScriptsScreen(
                                 pinnedToTile = target.id == tileScriptId,
                             )
                         }
+                        if (backup == null) {
+                            snackbar.show(
+                                resources.getString(R.string.scripts_delete_failed, target.name),
+                            )
+                            return@launch
+                        }
                         val result = snackbar.show(
                             message = resources.getString(R.string.scripts_deleted, target.name),
                             actionLabel = resources.getString(R.string.common_undo),
@@ -536,8 +688,124 @@ fun ScriptsScreen(
             },
         )
     }
+
+    if (showBatchTagDialog && selectionMode) {
+        AlertDialog(
+            onDismissRequest = { showBatchTagDialog = false },
+            title = {
+                Text(
+                    stringResource(
+                        if (batchTagMode == BATCH_TAG_REMOVE) {
+                            R.string.scripts_batch_remove_tags
+                        } else {
+                            R.string.scripts_batch_add_tags
+                        },
+                    ),
+                )
+            },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(
+                            selected = batchTagMode == BATCH_TAG_ADD,
+                            onClick = { batchTagMode = BATCH_TAG_ADD },
+                            label = { Text(stringResource(R.string.scripts_tags_add)) },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(
+                            selected = batchTagMode == BATCH_TAG_REMOVE,
+                            onClick = { batchTagMode = BATCH_TAG_REMOVE },
+                            label = { Text(stringResource(R.string.scripts_tags_remove)) },
+                        )
+                    }
+                    OutlinedTextField(
+                        value = batchTagInput,
+                        onValueChange = { batchTagInput = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.scripts_tags_label)) },
+                        placeholder = { Text(stringResource(R.string.scripts_tags_placeholder)) },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val input = parseTagInput(batchTagInput)
+                    if (input.isNotEmpty()) {
+                        if (batchTagMode == BATCH_TAG_REMOVE) {
+                            container.scriptListPreferences.removeTagsFrom(selectedIdSet, input)
+                        } else {
+                            container.scriptListPreferences.addTagsTo(selectedIdSet, input)
+                        }
+                    }
+                    showBatchTagDialog = false
+                }) { Text(stringResource(R.string.common_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBatchTagDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    if (batchDeletePending && selectionMode) {
+        ConfirmDialog(
+            title = stringResource(R.string.scripts_delete_title),
+            message = stringResource(R.string.scripts_batch_delete_message, selectedIds.size),
+            destructive = true,
+            onDismiss = { batchDeletePending = false },
+            onConfirm = {
+                val targets = scripts.filter { it.id in selectedIdSet }
+                val tagsSnapshot = tags
+                val pinnedSnapshot = pinned
+                val tileSnapshot = tileScriptId
+                batchDeletePending = false
+                selectedIds = emptyList()
+                if (targets.isEmpty()) return@ConfirmDialog
+                haptics.reject()
+                // 与单条删除一致：使用应用级作用域，切页后仍可撤销；级联删除不可中断。
+                container.uiScope.launch {
+                    val outcome = withContext(NonCancellable) {
+                        deletion.deleteAll(
+                            scripts = targets,
+                            tagsOf = { tagsSnapshot[it].orEmpty() },
+                            pinnedOf = { it in pinnedSnapshot },
+                            pinnedToTileId = tileSnapshot,
+                        )
+                    }
+                    if (outcome.backups.isEmpty()) {
+                        snackbar.show(
+                            resources.getString(
+                                R.string.scripts_batch_delete_failed,
+                                outcome.failedNames.size,
+                            ),
+                        )
+                        return@launch
+                    }
+                    val message = if (outcome.failedNames.isEmpty()) {
+                        resources.getString(R.string.scripts_batch_deleted, outcome.backups.size)
+                    } else {
+                        resources.getString(
+                            R.string.scripts_batch_deleted_partial,
+                            outcome.backups.size,
+                            outcome.failedNames.size,
+                        )
+                    }
+                    val result = snackbar.show(
+                        message = message,
+                        actionLabel = resources.getString(R.string.common_undo),
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        withContext(NonCancellable) { deletion.restoreAll(outcome.backups) }
+                    }
+                }
+            },
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ScriptRow(
     script: ScriptInfo,
@@ -545,7 +813,10 @@ private fun ScriptRow(
     tags: List<String>,
     pinned: Boolean,
     pinnedToTile: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     onTogglePin: () -> Unit,
     onToggleTile: () -> Unit,
     onEditTags: () -> Unit,
@@ -557,14 +828,23 @@ private fun ScriptRow(
 
     ListItem(
         leadingContent = {
-            IconButton(onClick = onTogglePin) {
-                Icon(
-                    ImageVector.vectorResource(if (pinned) R.drawable.ic_pin else R.drawable.ic_pin_outline),
-                    contentDescription = stringResource(
-                        if (pinned) R.string.scripts_unpin else R.string.scripts_pin,
-                    ),
-                    tint = if (pinned) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            // 选择模式下用勾选框替代置顶按钮，避免同时承载两种语义。
+            if (selectionMode) {
+                Checkbox(checked = selected, onCheckedChange = null)
+            } else {
+                IconButton(onClick = onTogglePin) {
+                    Icon(
+                        ImageVector.vectorResource(if (pinned) R.drawable.ic_pin else R.drawable.ic_pin_outline),
+                        contentDescription = stringResource(
+                            if (pinned) R.string.scripts_unpin else R.string.scripts_pin,
+                        ),
+                        tint = if (pinned) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
             }
         },
         headlineContent = { Text(script.name) },
@@ -600,43 +880,83 @@ private fun ScriptRow(
         },
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
-        trailingContent = {
-            Box {
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    if (pinnedToTile) R.string.scripts_tile_unpin else R.string.scripts_tile_pin,
-                                ),
-                            )
-                        },
-                        onClick = { menuOpen = false; onToggleTile() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.scripts_manage_tags)) },
-                        onClick = { menuOpen = false; onEditTags() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.scripts_settings)) },
-                        onClick = { menuOpen = false; onEdit() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.common_export)) },
-                        onClick = { menuOpen = false; onExport() },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.common_delete)) },
-                        onClick = { menuOpen = false; onDelete() },
-                    )
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+            )
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        trailingContent = if (selectionMode) {
+            null
+        } else {
+            {
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = {
+                                Text(
+                                    stringResource(
+                                        if (pinnedToTile) {
+                                            R.string.scripts_tile_unpin
+                                        } else {
+                                            R.string.scripts_tile_pin
+                                        },
+                                    ),
+                                )
+                            },
+                            onClick = { menuOpen = false; onToggleTile() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.scripts_manage_tags)) },
+                            onClick = { menuOpen = false; onEditTags() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.scripts_settings)) },
+                            onClick = { menuOpen = false; onEdit() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.common_export)) },
+                            onClick = { menuOpen = false; onExport() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.common_delete)) },
+                            onClick = { menuOpen = false; onDelete() },
+                        )
+                    }
                 }
             }
         },
     )
+}
+
+/** 多选模式底部操作栏；破坏性操作使用错误色，与其它删除入口保持一致。 */
+@Composable
+private fun ScriptSelectionBar(
+    allPinned: Boolean,
+    onTogglePin: () -> Unit,
+    onEditTags: () -> Unit,
+    onExport: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    BottomAppBar {
+        TextButton(onClick = onTogglePin) {
+            Text(stringResource(if (allPinned) R.string.scripts_unpin else R.string.scripts_pin))
+        }
+        TextButton(onClick = onEditTags) {
+            Text(stringResource(R.string.scripts_manage_tags))
+        }
+        TextButton(onClick = onExport) {
+            Text(stringResource(R.string.common_export))
+        }
+        Spacer(Modifier.weight(1f))
+        TextButton(
+            onClick = onDelete,
+            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+        ) {
+            Text(stringResource(R.string.common_delete))
+        }
+    }
 }
 
 internal data class ScriptGroup(
@@ -770,6 +1090,26 @@ private fun writeTextToUri(context: Context, uri: Uri, text: String): Boolean = 
     stream.use { it.write(text.toByteArray()) }
     true
 }.getOrDefault(false)
+
+/** 把多个脚本打包为 zip；单个条目读取失败不会中断导出。 */
+private fun writeZipToUri(
+    context: Context,
+    uri: Uri,
+    entries: List<Pair<String, String>>,
+): Boolean = runCatching {
+    val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false
+    ZipOutputStream(stream.buffered()).use { zip ->
+        entries.forEach { (name, content) ->
+            zip.putNextEntry(ZipEntry(name))
+            zip.write(content.toByteArray())
+            zip.closeEntry()
+        }
+    }
+    true
+}.getOrDefault(false)
+
+private const val BATCH_TAG_ADD = "add"
+private const val BATCH_TAG_REMOVE = "remove"
 
 private fun readTextFromUri(context: Context, uri: Uri): String? = runCatching {
     context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }

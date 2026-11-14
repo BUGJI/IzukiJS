@@ -5,7 +5,8 @@ import android.view.Surface;
 
 /**
  * 后台虚拟屏的特权服务面。运行在 Shizuku UserService 进程里，
- * 以 shell/root 身份创建 VirtualDisplay 并把目标应用拉到该屏。
+ * 以 shell 身份创建 VirtualDisplay 并把目标应用拉到该屏；
+ * Shizuku 以 root 运行时会在建屏前把调用身份降级到 shell。
  */
 interface IVirtualScreenService {
 

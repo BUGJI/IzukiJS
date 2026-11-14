@@ -24,6 +24,8 @@ import com.benton.izukijs.virtualscreen.VirtualScreenManager
  */
 class DeviceApiBundle(
     val screenshotProvider: () -> Bitmap?,
+    /** 录制采样专用：true 时要求等待一帧更新画面，避免页面切换瞬间拿到缓存旧页。 */
+    val recordingCaptureProvider: (fresh: Boolean) -> Bitmap?,
     val captureProvider: (ScreenTarget, Long) -> Bitmap?,
     val inputApi: InputApi,
     val deviceApi: DeviceApi,
@@ -44,6 +46,7 @@ class DeviceApiBundle(
      */
     fun withExitRequested(isExitRequested: () -> Boolean): DeviceApiBundle = DeviceApiBundle(
         screenshotProvider = screenshotProvider,
+        recordingCaptureProvider = recordingCaptureProvider,
         captureProvider = captureProvider,
         inputApi = inputApi,
         deviceApi = deviceApi,
@@ -60,6 +63,9 @@ class DeviceApiBundle(
         private val DEFAULT_CAPTURE_WAIT_MS: Long
             get() = DeveloperTuning.current.captureWaitMs.toLong()
 
+        /** 页面切换后的动作补帧会等待新画面，最多等这么久。 */
+        private const val FRESH_FRAME_WAIT_MS = 800L
+
         fun create(
             context: Context,
             controllers: ControllerManager,
@@ -72,9 +78,12 @@ class DeviceApiBundle(
             isExitRequested: () -> Boolean = { false },
             recordingHooks: RecordingHooks = RecordingHooks(),
         ): DeviceApiBundle {
-            val mainScreenshotProvider: () -> Bitmap? = {
+            val mainScreenshotProvider: (fresh: Boolean) -> Bitmap? = { fresh ->
                 OverlayCoordinator.withoutOverlay {
-                    val projected = screenCapture.capture()
+                    val projected = screenCapture.capture(
+                        waitForNewFrame = fresh,
+                        waitTimeoutMs = if (fresh) FRESH_FRAME_WAIT_MS else 0L,
+                    )
                     if (projected != null) {
                         logBus.debug("捕获屏幕 ${projected.width}×${projected.height} → 持续录屏")
                         projected
@@ -97,7 +106,7 @@ class DeviceApiBundle(
                     }
                 }
             }
-            val rawCaptureProvider: (ScreenTarget, Long) -> Bitmap? = { source, waitMs ->
+            val rawCaptureProvider: (ScreenTarget, Long, Boolean) -> Bitmap? = { source, waitMs, fresh ->
                 val resolved = when (source) {
                     ScreenTarget.AUTO -> virtualScreen?.resolvedTarget() ?: ScreenTarget.MAIN
                     ScreenTarget.VIRTUAL -> ScreenTarget.VIRTUAL
@@ -122,18 +131,28 @@ class DeviceApiBundle(
                         }
                     }
 
-                    ScreenTarget.MAIN, ScreenTarget.AUTO -> mainScreenshotProvider()
+                    ScreenTarget.MAIN, ScreenTarget.AUTO -> mainScreenshotProvider(fresh)
                 }
             }
-            val captureProvider: (ScreenTarget, Long) -> Bitmap? = { source, waitMs ->
+            val captureInternal: (ScreenTarget, Long, Boolean) -> Bitmap? = { source, waitMs, fresh ->
                 val startedWall = System.currentTimeMillis()
-                val bitmap = rawCaptureProvider(source, waitMs)
+                val bitmap = rawCaptureProvider(source, waitMs, fresh)
                 val elapsed = (System.currentTimeMillis() - startedWall).coerceAtLeast(0L)
                 recordingHooks.captureObserver?.invoke(bitmap, startedWall, elapsed)
                 bitmap
             }
+            val captureProvider: (ScreenTarget, Long) -> Bitmap? = { source, waitMs ->
+                captureInternal(source, waitMs, false)
+            }
+            val recordingCaptureProvider: (Boolean) -> Bitmap? = { fresh ->
+                captureInternal(
+                    ScreenTarget.AUTO,
+                    if (fresh) FRESH_FRAME_WAIT_MS else DEFAULT_CAPTURE_WAIT_MS,
+                    fresh,
+                )
+            }
             val screenshotProvider: () -> Bitmap? = {
-                captureProvider(ScreenTarget.AUTO, DEFAULT_CAPTURE_WAIT_MS)
+                captureInternal(ScreenTarget.AUTO, DEFAULT_CAPTURE_WAIT_MS, false)
             }
             val shellExec: (String) -> String? = { cmd ->
                 controllers.controllerFor(Capability.SHELL)?.shell(cmd)?.stdout
@@ -150,6 +169,7 @@ class DeviceApiBundle(
             }
             return DeviceApiBundle(
                 screenshotProvider = screenshotProvider,
+                recordingCaptureProvider = recordingCaptureProvider,
                 captureProvider = captureProvider,
                 inputApi = InputApi(controllers, logBus, virtualScreen),
                 deviceApi = DeviceApi(context, virtualScreen),

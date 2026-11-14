@@ -76,11 +76,25 @@ keyAlias=...
 keyPassword=...
 ```
 
-文件存在时 Release 使用该签名；不存在时使用 debug 签名并打印告警。
+文件存在且 `storeFile` 有效时 Release 使用该签名；否则使用 debug 签名并打印告警。
 **debug 签名产物不能用于正式分发**，尤其是自动更新：不同机器的 debug 证书不同，
 旧版本无法覆盖安装。
 
+Debug 构建默认仍使用 AGP 的 debug 签名。需要在本地让 debug 与 release 互相覆盖安装
+并共享数据时，在 `gradle.properties` 中显式开启：
+
+```properties
+izuki.debugSharedSignature=true
+```
+
+只有该开关为 `true` 且正式签名可用时才会复用 release 证书；debug 包因此是可调试的，
+不要分发或长期安装在共享设备上。CI 的 `android.yml` 没有签名文件，不受该开关影响。
+
 CI 发布不会回退：`release.yml` 在缺少 `KEYSTORE_BASE64` 时直接失败。
+
+历史发布证书（1.2.2 及更早）SHA-256 为
+`95392aa229296dbe946c52328450e22b73fc05b417e068dbf6ba2193a7771ea5`；1.2.3 起使用新证书，
+旧版本无法覆盖安装，需先导出数据再卸载重装。
 
 ## CI
 
@@ -120,7 +134,7 @@ CI 发布不会回退：`release.yml` 在缺少 `KEYSTORE_BASE64` 时直接失�
 
    同时复制一份 `app-<abi>-release.apk` 别名，兼容 1.2.0 及更早客户端的应用内更新；
 5. 用 `apksigner verify --print-certs` 校验证书 SHA-256 指纹，必须匹配
-   `95392aa229296dbe946c52328450e22b73fc05b417e068dbf6ba2193a7771ea5`；
+   `9e4fcf501f6a2c84c8259ce13dfbf711cf81b3b622ec5e0356cb7f96f9db2db3`；
 6. 从 `CHANGELOG.md` 抽取对应版本小节，生成 Release body，创建或更新 Release 并上传 APK。
 
 如果轮换签名证书，必须同步更新 `release.yml` 中的 `EXPECTED` 指纹，并评估老用户

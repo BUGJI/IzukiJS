@@ -57,6 +57,15 @@ class ScriptListPreferences(context: Context) {
         setPinned(newId, true)
     }
 
+    /** 批量置顶 / 取消置顶：只写一次 prefs、只发一次状态，避免列表连续重组。 */
+    fun setPinnedAll(ids: Collection<String>, pinned: Boolean) {
+        if (ids.isEmpty()) return
+        val next = if (pinned) _pinned.value + ids else _pinned.value - ids.toSet()
+        if (next == _pinned.value) return
+        _pinned.value = next
+        prefs.edit().putStringSet(KEY_PINNED, next).apply()
+    }
+
     fun setSort(sort: ScriptSort) {
         _sort.value = sort
         prefs.edit().putString(KEY_SORT, sort.name).apply()
@@ -84,6 +93,44 @@ class ScriptListPreferences(context: Context) {
     fun moveTags(oldId: String, newId: String) {
         val tags = _tags.value[oldId] ?: return
         _tags.value = _tags.value - oldId + (newId to tags)
+        persistTags()
+    }
+
+    /** 给多个脚本追加标签；已有标签顺序保持不变，超出上限的部分丢弃。 */
+    fun addTagsTo(ids: Collection<String>, tags: List<String>) {
+        val extra = normalizeTags(tags)
+        if (ids.isEmpty() || extra.isEmpty()) return
+        val next = _tags.value.toMutableMap()
+        ids.forEach { id ->
+            val merged = (next[id].orEmpty() + extra).distinct().take(MAX_TAGS)
+            if (merged.isNotEmpty()) next[id] = merged
+        }
+        if (next == _tags.value) return
+        _tags.value = next
+        persistTags()
+    }
+
+    /** 从多个脚本移除指定标签；清空后删除该脚本的标签记录。 */
+    fun removeTagsFrom(ids: Collection<String>, tags: List<String>) {
+        val removed = normalizeTags(tags).toSet()
+        if (ids.isEmpty() || removed.isEmpty()) return
+        val next = _tags.value.toMutableMap()
+        ids.forEach { id ->
+            val existing = next[id] ?: return@forEach
+            val kept = existing.filterNot { it in removed }
+            if (kept.isEmpty()) next.remove(id) else next[id] = kept
+        }
+        if (next == _tags.value) return
+        _tags.value = next
+        persistTags()
+    }
+
+    /** 批量删除脚本时一次性清理标签。 */
+    fun clearTags(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val next = _tags.value - ids.toSet()
+        if (next == _tags.value) return
+        _tags.value = next
         persistTags()
     }
 
