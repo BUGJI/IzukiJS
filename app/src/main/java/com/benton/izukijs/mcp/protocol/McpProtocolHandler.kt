@@ -305,6 +305,9 @@ class McpProtocolHandler(
                 "蓝牙 HID 注入点击、滑动、文本与按键。坐标默认是全分辨率屏幕像素；click 支持 " +
                 "normalized=true 的 0~1 归一化坐标（推荐，免疫截图缩放）。操作前建议先用 ocr / " +
                 "ui_dump / screenshot 观察。耗时操作超过同步窗口会返回 {status:\"running\", request_id}，" +
-                "此时动作可能已执行，请用 get_result 查询，不要直接重试。shell 与脚本执行默认关闭。"
+                "此时动作可能已执行，请用 get_result 查询，不要直接重试。shell 与脚本执行默认关闭。" +
+                "需要脚本 API、架构、控制能力矩阵等细节时先调 docs(action=\"list\")，再按 name 读取，" +
+                "大文档用 next_offset 续读；等价资源为 izuki://docs 与 izuki://docs/{name}。" +
+                "这些文档是仓库镜像，可能滞后于当前版本。"
     }
 }

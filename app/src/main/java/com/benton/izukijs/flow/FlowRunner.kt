@@ -61,12 +61,6 @@ class FlowRunner(
             if (!manual) flowManager.onSkipped(flow)
             return FlowRunStart.BUSY
         }
-        if (executionManager.running.value) {
-            running.set(false)
-            logBus.warn("编排跳过：已有脚本正在运行（${flow.name}）")
-            if (!manual) flowManager.onSkipped(flow)
-            return FlowRunStart.BUSY
-        }
         scope.launch {
             try {
                 runInternal(flow, manual)
@@ -103,11 +97,6 @@ class FlowRunner(
     }
 
     private suspend fun runInternal(flow: ScriptFlow, manual: Boolean) {
-        if (executionManager.running.value) {
-            logBus.warn("编排跳过：已有脚本正在运行（${flow.name}）")
-            if (!manual) flowManager.onSkipped(flow)
-            return
-        }
         if (screenUnlock.isEnabled()) {
             val result = screenUnlock.ensureUnlocked()
             if (result != UnlockResult.OK &&

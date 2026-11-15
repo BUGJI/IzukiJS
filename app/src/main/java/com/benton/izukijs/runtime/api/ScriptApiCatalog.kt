@@ -65,7 +65,8 @@ object ScriptApiCatalog {
             suggestions = listOf(
                 "accessibility(", "shizuku(", "adb(", "root(", "hid(", "overlay(",
                 "screenCapture(", "notifications(", "bluetooth(", "usageAccess(",
-                "notificationListener(", "manageStorage(", "appList(", "http(",
+                "notificationListener(", "manageStorage(", "localNetwork(", "exactAlarm(",
+                "installUnknownApps(", "appList(", "http(",
                 "granted(", "all(", "has(", "canControl(", "canScreenshot(",
                 "virtualScreen(", "runMode(",
             ),

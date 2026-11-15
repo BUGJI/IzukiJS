@@ -25,8 +25,12 @@ data class AiConfig(
     val extraHeaderName: String = "",
     val extraHeaderValue: String = "",
 ) {
+    /** 连接参数是否齐全；不要求先启用，便于在总开关打开前先做连通性验证。 */
+    val canTest: Boolean
+        get() = apiKey.isNotBlank() && model.isNotBlank() && baseUrl.isNotBlank()
+
     val isConfigured: Boolean
-        get() = enabled && apiKey.isNotBlank() && model.isNotBlank() && baseUrl.isNotBlank()
+        get() = enabled && canTest
 
     fun chatCompletionsUrl(): String = baseUrl.trim().trimEnd('/') + "/chat/completions"
 
@@ -34,6 +38,8 @@ data class AiConfig(
         const val DEFAULT_BASE_URL = "https://api.openai.com/v1"
         const val DEFAULT_MODEL = "gpt-4o-mini"
         const val DEFAULT_MAX_STEPS = 12
+        /** 与 AiAgent 的步数上限保持一致，UI 与执行侧共用同一事实源。 */
+        const val MAX_STEPS_LIMIT = 50
     }
 }
 

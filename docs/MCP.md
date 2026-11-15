@@ -23,6 +23,7 @@ Cursor / Cline 等）可以通过标准 MCP 工具读取屏幕并控制设备。
 - [后台保活](#后台保活)
 - [安全护栏](#安全护栏)
 - [资源](#资源)
+- [开发文档](#开发文档)
 - [实现说明](#实现说明)
 - [排障](#排障)
 - [用户操作录制](#用户操作录制)
@@ -122,13 +123,14 @@ adb forward tcp:8765 tcp:8765
 | `get_result` / `list_operations` | 查询异步操作结果 / 列出最近操作 |
 | `read_logs` | 读取应用最近日志尾部（`lines` 1~2000，默认 200），支持 `level` / `since_ms` / `grep`；传 `run_id` 可读取某次脚本运行的配对日志 |
 | `get_run_log` | 按 `run_id` 读取一次脚本运行的状态、耗时、错误与日志尾部 |
+| `docs` | 读取打包在应用内的开发文档（仓库 `docs/` 镜像）：`action=list` 返回索引，`action=read` + `name` 读取正文；大文档用 `offset` / `max_chars`（默认 8000，范围 1000~40000）分页，返回 `next_offset`。文档可能滞后于当前版本 |
 
 需显式开启后可用：
 
 | 工具 | 开关 | 说明 |
 |---|---|---|
 | `shell` | 允许 Shell | 执行 Shell 命令（需 Shizuku / 无线调试 / Root），返回 `{ok, stdout, stderr, exit_code, elapsed_ms}`；高危命令默认拦截 |
-| `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理；`read_script` 支持 `offset` / `limit` / `line_numbers` / `meta` 分页读取并返回 `sha256`；`run_script` 返回 `run_id`，用 `get_run_log` 取回配对输出 |
+| `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理；`read_script` 支持 `offset` / `limit` / `line_numbers` / `meta` 分页读取并返回 `sha256`；`run_script` 立即启动时返回 `run_id`，按忙时策略排队 / 终止时返回 `queued` / `terminating` 且暂无 `run_id`，用 `get_run_log` 取回配对输出；`stop_script` 同时取消排队项 |
 | `script_write` | 允许运行脚本 | 新建或覆盖脚本源码（上限 1 MiB）；覆盖前旧内容进入历史，返回真实脚本 id |
 | `script_edit` | 允许运行脚本 | 增量编辑：按顺序用 `newText` 精确替换 `oldText`，支持多编辑原子应用、`dry_run` 预演与 `expectedSha256` 并发校验；失败返回 `reason` 与候选行 |
 | `script_search` | 允许运行脚本 | 在单个或全部脚本中搜索文本（`literal` / `regex`），返回行号、列号与上下文；建议先搜索定位再编辑 |
@@ -253,6 +255,34 @@ adb forward tcp:8765 tcp:8765
 | `izuki://logs` | 最近日志（尾部） |
 | `izuki://audit` | MCP 工具调用审计日志（JSONL，敏感参数脱敏） |
 | `izuki://screenshot` | 当前屏幕截图（`blob`，JPEG Base64，75% 缩放） |
+| `izuki://docs` | 开发文档索引（JSON，含文件名、标题、字节数、说明） |
+| `izuki://docs/{name}` | 开发文档全文（`text/markdown`，`name` 可省略 `.md`；分页请用 `docs` 工具） |
+
+## 开发文档
+
+应用内打包了仓库 `docs/` 下的全部 Markdown（不含 `docs/images` 等图片），
+外部 AI 客户端无需访问仓库即可读取脚本 API、架构、控制能力矩阵等说明：
+
+```json
+// 1) 先看有哪些文档
+{ "tool": "docs", "arguments": { "action": "list" } }
+
+// 2) 读取一篇（默认返回前 8000 字符）
+{ "tool": "docs", "arguments": { "action": "read", "name": "SCRIPT_API" } }
+
+// 3) 用 next_offset 续读大文档
+{ "tool": "docs", "arguments": {
+  "action": "read", "name": "SCRIPT_API", "offset": 8000, "max_chars": 8000
+} }
+```
+
+- `name` 为索引里的 `id`（文件名去掉 `.md`），大小写不敏感，也可直接传 `SCRIPT_API.md`。
+- 返回 `{ok, id, title, total_chars, offset, returned_chars, has_more, next_offset, text}`；
+  `ok=false` 时附 `available` 列表，便于换用正确的名字。
+- 等价资源：`izuki://docs` 是索引，`izuki://docs/{name}` 是全文（资源不带分页参数，
+  大文档建议走 `docs` 工具）。
+- **文档是仓库镜像，可能滞后于当前版本**；行为以实际工具返回与代码为准。
+- 文档清单来自 APK 内 `assets/docs`，由构建期从 `docs/*.md` 复制，新增文档无需改代码。
 
 ## 实现说明
 
@@ -261,6 +291,8 @@ adb forward tcp:8765 tcp:8765
 - 前台服务 `McpServerService` 保活进程，通知栏常驻访问地址与「停止」入口；应用再次启动时
   若此前已启用会自动恢复运行。
 - 令牌经 Android Keystore（`SecretCipher`）加密存储；请在设置页「重新生成」以轮换令牌。
+- 开发文档由 `app/build.gradle.kts` 的 `copyDocsAssets` 在构建期从仓库 `docs/` 复制到
+  `assets/docs`，仓库仍是唯一事实源；索引标题取每篇首个一级标题，缺失时回退文件名。
 - 截图统一走「持续录屏优先、控制后端兜底」，并会自动隐藏悬浮层以免被截入画面；MCP 截图
   不再复用「保存截图」的压缩设置，避免图像被缩放而坐标未缩放。
 - 控件树读取：无障碍优先；当无障碍未开启但 Shizuku / 无线调试 / Root 就绪时，回退到 Shell 执行

@@ -1,6 +1,5 @@
 package com.benton.izukijs.controller.hid
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -15,13 +14,12 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import androidx.core.content.ContextCompat
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.permission.SystemPermissionChecks
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -155,15 +153,7 @@ class HidGattClient(
 
     // ---- 权限 ----
 
-    fun hasPermissions(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            return has(Manifest.permission.BLUETOOTH_SCAN) && has(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        return has(Manifest.permission.ACCESS_FINE_LOCATION)
-    }
-
-    private fun has(permission: String): Boolean =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+    fun hasPermissions(): Boolean = SystemPermissionChecks.bluetoothGranted(context)
 
     fun isBluetoothEnabled(): Boolean = adapter?.isEnabled == true
 

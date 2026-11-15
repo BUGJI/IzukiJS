@@ -332,6 +332,17 @@ class RecordingSession(
         }
     }
 
+    /**
+     * 仅停止脚本发起的录制。
+     *
+     * 终止超时强行启动新脚本时，旧脚本的 `RecordApi.close()` 可能晚于新 run；
+     * 先在这里释放脚本录制，新脚本才能重新开始录制，用户录制不受影响。
+     */
+    fun stopScriptRecording(): String? {
+        if (_activeKind.value != RecordingMeta.KIND_SCRIPT || !_active.value) return null
+        return stop()
+    }
+
     fun stop(): String? {
         val current: RecordingWriter
         val id: String?

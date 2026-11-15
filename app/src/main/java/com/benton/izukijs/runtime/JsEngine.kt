@@ -40,6 +40,8 @@ class JsEngine(
     private val runId: String? = null,
     private val pushDispatcher: NotificationDispatcher? = null,
     private val recordingSession: com.benton.izukijs.controller.record.RecordingSession? = null,
+    /** 当前 run 是否仍持有运行位；用于阻止被终止的旧脚本抢回虚拟屏 / 通知。 */
+    private val isRunActive: () -> Boolean = { true },
 ) : Closeable {
 
     private var runtime: QuickJS? = null
@@ -109,6 +111,7 @@ class JsEngine(
             recordingSession = recordingSession,
             exitRequested = { exitRequested },
             onExit = { requestExit() },
+            isRunActive = isRunActive,
         )
         apiEnvironment = env
         env.bind(ctx, needs)

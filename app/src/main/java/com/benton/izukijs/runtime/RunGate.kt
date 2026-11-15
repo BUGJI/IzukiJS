@@ -8,7 +8,9 @@ package com.benton.izukijs.runtime
  * 不必拉起完整运行时。
  *
  * 关键约束：
- * - 同一时刻只允许一个 run；
+ * - 同一时刻只允许一个活动 run；
+ * - 终止超时后用 [replaceActive] 原子转交运行位：旧 run 可能仍有线程卡在阻塞调用中，
+ *   但不再拥有运行位，新 run 可立即启动；
  * - 引擎创建前的停止请求必须挂起，绑定引擎后立即生效；
  * - 旧 run 的收尾不得清空新 run 的引擎或运行位（ABA）。
  */
@@ -22,6 +24,9 @@ internal class RunGate<E : Any> {
     fun isRunning(): Boolean = synchronized(lock) { activeRunId != null }
 
     fun activeRunId(): String? = synchronized(lock) { activeRunId }
+
+    /** 该 run 是否仍拥有运行位；被强制放弃的旧 run 会返回 false。 */
+    fun isActive(runId: String): Boolean = synchronized(lock) { activeRunId == runId }
 
     /** 尝试占用运行位；已有运行返回 false。成功后清空上一次的停止请求。 */
     fun tryStart(runId: String): Boolean = synchronized(lock) {
@@ -74,6 +79,19 @@ internal class RunGate<E : Any> {
     fun reset(runId: String): Boolean = synchronized(lock) {
         if (activeRunId != runId) return false
         activeRunId = null
+        engine = null
+        stopRequested = false
+        true
+    }
+
+    /**
+     * 原子地把运行位从 [oldRunId] 转交给 [newRunId]。
+     *
+     * 供终止超时使用：不先清空、再抢占，避免两步之间被其他启动请求插入。
+     */
+    fun replaceActive(oldRunId: String, newRunId: String): Boolean = synchronized(lock) {
+        if (activeRunId != oldRunId) return false
+        activeRunId = newRunId
         engine = null
         stopRequested = false
         true

@@ -8,6 +8,7 @@ import com.benton.izukijs.flow.FlowStore
 import com.benton.izukijs.flow.ScriptFlow
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.model.UnlockResult
+import com.benton.izukijs.runtime.RunStartResult
 import com.benton.izukijs.runtime.RunTrigger
 import com.benton.izukijs.runtime.RunUnlocker
 import com.benton.izukijs.runtime.ScriptRunOutcome
@@ -37,7 +38,7 @@ class FakeScriptRunner : ScriptRunner {
     val scheduledRuns = CopyOnWriteArrayList<RecordedRun>()
     val completionRuns = CopyOnWriteArrayList<RecordedRun>()
 
-    var scheduledResult: Boolean = true
+    var scheduledResult: RunStartResult = RunStartResult.Started
     val outcomes = mutableMapOf<String, ScriptRunOutcome>()
     var stopCount: Int = 0
         private set
@@ -60,9 +61,9 @@ class FakeScriptRunner : ScriptRunner {
         source: String,
         trigger: RunTrigger,
         onFinished: (Boolean) -> Unit,
-    ): Boolean {
+    ): RunStartResult {
         scheduledRuns += RecordedRun(scriptId, scriptName, source, trigger)
-        if (scheduledResult) onFinished(true)
+        if (scheduledResult == RunStartResult.Started) onFinished(true)
         return scheduledResult
     }
 

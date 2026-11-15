@@ -8,6 +8,7 @@ import com.benton.izukijs.controller.record.UserRecordingOptions
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.core.McpConfig
 import com.benton.izukijs.mcp.protocol.McpToolCatalog
+import com.benton.izukijs.mcp.resources.McpDocCatalog
 import com.benton.izukijs.runtime.LogFileStore
 import com.benton.izukijs.runtime.ScriptExecutionManager
 import com.benton.izukijs.runtime.api.DeviceApiBundle
@@ -31,6 +32,8 @@ class McpToolRegistry(
     internal val userRecordingStarter: ((UserRecordingOptions) -> Boolean)? = null,
     /** 与 [userRecordingStarter] 配对，确保 MCP 停止录制时前台服务一并退出。 */
     internal val userRecordingStopper: (() -> Unit)? = null,
+    /** 打包在 assets/docs 的开发文档；为空时不注册 `docs` 工具。 */
+    internal val docs: McpDocCatalog? = null,
 ) : McpToolCatalog {
 
     @Volatile
@@ -85,6 +88,7 @@ class McpToolRegistry(
             }
             add(readLogsTool())
             add(getRunLogTool())
+            docs?.let { add(docsTool(it)) }
             add(getResultTool())
             add(listOperationsTool())
             if (config.allowUnlock && screenUnlock != null) add(unlockTool())

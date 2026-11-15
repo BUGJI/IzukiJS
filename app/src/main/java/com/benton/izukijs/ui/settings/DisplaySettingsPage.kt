@@ -28,6 +28,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.permission.SystemPermissionChecks
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.runtime.FloatingWindowMode
@@ -61,13 +62,13 @@ private fun FloatingWindowSettingsSection(ui: SettingsUiState, viewModel: Settin
     val context = LocalContext.current
     val floatingEnabled by FloatingWindowService.active.collectAsStateWithLifecycle()
     val debugOverlayEnabled by DebugOverlayService.active.collectAsStateWithLifecycle()
-    var canDrawOverlays by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var canDrawOverlays by remember { mutableStateOf(SystemPermissionChecks.canDrawOverlays(context)) }
     var pendingGrant by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) {
-        if (Settings.canDrawOverlays(context)) {
+        if (SystemPermissionChecks.canDrawOverlays(context)) {
             canDrawOverlays = true
             val action = pendingGrant
             pendingGrant = null
@@ -79,7 +80,7 @@ private fun FloatingWindowSettingsSection(ui: SettingsUiState, viewModel: Settin
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                canDrawOverlays = Settings.canDrawOverlays(context)
+                canDrawOverlays = SystemPermissionChecks.canDrawOverlays(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -87,7 +88,7 @@ private fun FloatingWindowSettingsSection(ui: SettingsUiState, viewModel: Settin
     }
 
     fun withOverlay(onGranted: () -> Unit) {
-        if (Settings.canDrawOverlays(context)) {
+        if (SystemPermissionChecks.canDrawOverlays(context)) {
             onGranted()
             return
         }

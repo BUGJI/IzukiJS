@@ -1,5 +1,7 @@
 package com.benton.izukijs.virtualscreen
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -8,6 +10,7 @@ import android.os.Build
 import android.view.Surface
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.privileged.VirtualScreenServiceClient
@@ -92,6 +95,15 @@ class VirtualScreenManager(
     /** 每次真正创建/重建虚拟屏自增；脚本运行结束时据此判断是否由本次脚本启动。 */
     @Volatile
     private var startGenerationValue: Long = 0L
+
+    /**
+     * 当前虚拟屏的启动者 runId。
+     *
+     * 终止超时后旧 run 的收尾可能晚于新 run 启动；只允许启动者停止自己创建的虚拟屏，
+     * 避免旧 run 误停新 run 正在使用的实例。
+     */
+    @Volatile
+    private var ownerRunId: String? = null
 
     @Volatile
     private var lastStopReasonValue: String? = null
@@ -182,12 +194,26 @@ class VirtualScreenManager(
         ScreenTarget.MAIN -> ScreenTarget.MAIN
     }
 
-    suspend fun start(options: VirtualScreenOptions? = null): Boolean = startMutex.withLock {
+    suspend fun start(
+        options: VirtualScreenOptions? = null,
+        ownerRunId: String? = null,
+        isRequesterCurrent: (() -> Boolean)? = null,
+    ): Boolean = startMutex.withLock {
         val resolution = (options?.resolution ?: settingsRepository.current().resolution)
             .normalized()
         val current = _state.value
+        // 当前实例的归属；无主调用（页面 / MCP）不得清掉脚本的 owner。
+        val existingOwner = if (current is VirtualScreenState.Active) this.ownerRunId else null
         if (current is VirtualScreenState.Active) {
+            // 已被新运行接管的旧脚本不能重新抢回虚拟屏；当前活动 run 可以接管旧实例。
+            val canTakeOver = existingOwner == ownerRunId ||
+                isRequesterCurrent?.invoke() == true
+            if (ownerRunId != null && existingOwner != null && !canTakeOver) {
+                logBus.warn("虚拟屏已由其他运行接管，忽略启动请求")
+                return@withLock false
+            }
             if (current.resolution == resolution) {
+                if (ownerRunId != null) this.ownerRunId = ownerRunId
                 if (!targetExplicit) targetMode = ScreenTarget.AUTO
                 applyTarget()
                 return@withLock true
@@ -260,6 +286,8 @@ class VirtualScreenManager(
         previewRenderer.setFrameSource(source)
         previewSurfaces.forEach { (owner, surface) -> previewRenderer.attach(owner, surface) }
         _state.value = VirtualScreenState.Active(displayId, resolution)
+        // 重建时保留原 owner，避免无主调用改分辨率后让脚本失去归属。
+        this.ownerRunId = ownerRunId ?: existingOwner
         startGenerationValue++
         settingsRepository.saveResolution(resolution)
         settingsRepository.markActive(true)
@@ -270,9 +298,21 @@ class VirtualScreenManager(
         true
     }
 
-    fun startBlocking(options: VirtualScreenOptions? = null): Boolean =
+    fun startBlocking(
+        options: VirtualScreenOptions? = null,
+        ownerRunId: String? = null,
+        isRequesterCurrent: (() -> Boolean)? = null,
+    ): Boolean =
         runCatching {
-            runBlocking { withTimeout(START_TIMEOUT_MS) { start(options) } }
+            runBlocking {
+                withTimeout(START_TIMEOUT_MS) {
+                    start(
+                        options,
+                        ownerRunId = ownerRunId,
+                        isRequesterCurrent = isRequesterCurrent,
+                    )
+                }
+            }
         }.getOrElse {
             logBus.error("启动虚拟屏超时或失败：${it.message}")
             false
@@ -287,6 +327,31 @@ class VirtualScreenManager(
         }
     }
 
+    /**
+     * 仅当虚拟屏由 [runId] 启动时停止。
+     *
+     * [allowUnowned] 为 true 时也允许停止无主（用户手动启动）的实例，供脚本 `virtualScreen.stop`
+     * 保持旧行为；收尾自动停止必须用默认值，避免误停用户的虚拟屏。
+     *
+     * 返回 false 表示当前实例属于其他 run（例如已被新 run 接管），调用方不应再做清理。
+     */
+    suspend fun stopIfOwned(
+        runId: String?,
+        reason: String = STOP_RUN_FINISHED,
+        allowUnowned: Boolean = false,
+    ): Boolean {
+        fun canStop(owner: String?): Boolean = owner == runId || (allowUnowned && owner == null)
+        if (!canStop(ownerRunId)) return false
+        return startMutex.withLock {
+            // 拿到锁后再次确认，避免等待期间被其他脚本重新启动。
+            if (!canStop(ownerRunId)) return@withLock false
+            withContext(NonCancellable) {
+                cleanupInternal(destroyRemote = true, reason = reason)
+            }
+            true
+        }
+    }
+
     fun stopBlocking(reason: String = STOP_USER) {
         runCatching {
             runBlocking { withTimeout(STOP_TIMEOUT_MS) { stop(reason) } }
@@ -294,6 +359,22 @@ class VirtualScreenManager(
             logBus.warn("停止虚拟屏超时或失败：${it.message}")
         }
     }
+
+    /** [stopIfOwned] 的阻塞桥；返回 false 表示当前实例属于其他 run。 */
+    fun stopIfOwnedBlocking(
+        runId: String?,
+        reason: String = STOP_USER,
+        allowUnowned: Boolean = false,
+    ): Boolean =
+        runCatching {
+            runBlocking {
+                withTimeout(STOP_TIMEOUT_MS) {
+                    stopIfOwned(runId, reason, allowUnowned)
+                }
+            }
+        }.onFailure {
+            logBus.warn("停止虚拟屏超时或失败：${it.message}")
+        }.getOrDefault(false)
 
     /** 取最新一帧；[waitMs] > 0 时等待首帧。返回的 Bitmap 由调用方负责 recycle。 */
     fun capture(waitMs: Long = 0L): Bitmap? = frameSource?.captureLatest(waitMs)
@@ -395,6 +476,76 @@ class VirtualScreenManager(
 
     suspend fun key(keyCode: Int): Boolean =
         inputCommand { id -> "input -d $id keyevent $keyCode" }
+
+    /**
+     * 向虚拟屏输入文本。
+     *
+     * ASCII 走 `input text`；中文 / emoji / 换行等非 ASCII 文本走「剪贴板 + 粘贴键」。
+     * 不使用 ADBKeyboard 广播，因为它无法定向 display，可能输入到主屏。
+     */
+    suspend fun inputText(text: String): Boolean {
+        if (text.isEmpty()) return false
+        return withContext(Dispatchers.IO) {
+            if (!isActive()) return@withContext false
+            val displayId = displayId()
+            if (displayId < 0) return@withContext false
+            val controller = controllers.controllerFor(Capability.SHELL) ?: run {
+                logBus.warn("没有可用的 Shell 后端，无法向虚拟屏输入文本")
+                return@withContext false
+            }
+            if (VirtualScreenTextInput.needsClipboard(text)) {
+                pasteTextToDisplay(controller, displayId, text)
+            } else {
+                runTextCommand(
+                    controller,
+                    "input -d $displayId text ${VirtualScreenTextInput.escapeForInput(text)}",
+                )
+            }
+        }
+    }
+
+    /** 执行文本命令；失败只记录 exit code，避免把用户输入写进日志。 */
+    private fun runTextCommand(controller: DeviceController, command: String): Boolean {
+        val result = controller.shell(command) ?: return false
+        if (result.exitCode != 0) {
+            logBus.warn("虚拟屏文本输入失败（exit=${result.exitCode}）")
+        }
+        return result.exitCode == 0
+    }
+
+    /**
+     * 非 ASCII 文本临时写入剪贴板并注入粘贴键，随后恢复原内容。
+     * 读取不到原剪贴板时不恢复，避免清空用户数据。
+     */
+    private suspend fun pasteTextToDisplay(
+        controller: DeviceController,
+        displayId: Int,
+        text: String,
+    ): Boolean {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            ?: return false
+        val previous = runCatching { clipboard.primaryClip }.getOrNull()
+        val written = runCatching {
+            clipboard.setPrimaryClip(ClipData.newPlainText(CLIPBOARD_LABEL, text))
+        }.isSuccess
+        if (!written) {
+            logBus.warn("写入剪贴板失败，无法向虚拟屏输入非 ASCII 文本")
+            return false
+        }
+        return try {
+            runTextCommand(controller, "input -d $displayId keyevent $KEYCODE_PASTE")
+        } finally {
+            if (previous != null) {
+                // 等目标应用读取剪贴板后再恢复；页面退出取消协程时也要完成恢复，避免用户剪贴板被占。
+                withContext(NonCancellable) {
+                    delay(CLIPBOARD_RESTORE_DELAY_MS)
+                    if (runCatching { clipboard.setPrimaryClip(previous) }.isFailure) {
+                        logBus.warn("恢复剪贴板失败")
+                    }
+                }
+            }
+        }
+    }
 
     private suspend fun inputCommand(build: (displayId: Int) -> String): Boolean =
         withContext(Dispatchers.IO) {
@@ -500,6 +651,7 @@ class VirtualScreenManager(
         val hadState = _state.value !is VirtualScreenState.Idle
         heartbeatJob?.cancel()
         heartbeatJob = null
+        ownerRunId = null
         targetMode = ScreenTarget.AUTO
         targetExplicit = false
         controllers.targetDisplayId = null
@@ -587,12 +739,18 @@ class VirtualScreenManager(
     companion object {
         const val PIP_PREVIEW_OWNER = "pip"
         const val PAGE_PREVIEW_OWNER = "page"
+        const val FULLSCREEN_PREVIEW_OWNER = "page_fullscreen"
 
         private const val DISPLAY_NONE = -1
         private const val DEFAULT_FRAME_WAIT_MS = 1_000L
         private const val DEFAULT_STABLE_INTERVAL_MS = 80L
         private const val MAX_INPUT_DURATION_MS = 60_000L
         private const val HEARTBEAT_INTERVAL_MS = 30_000L
+
+        /** KEYCODE_PASTE：触发虚拟屏上当前焦点控件粘贴。 */
+        private const val KEYCODE_PASTE = 279
+        private const val CLIPBOARD_LABEL = "izuki"
+        private const val CLIPBOARD_RESTORE_DELAY_MS = 250L
 
         /** 阻塞桥的硬超时：仅在 JS / MCP 同步入口使用，避免单线程执行器被永久占用。 */
         private const val START_TIMEOUT_MS = 30_000L

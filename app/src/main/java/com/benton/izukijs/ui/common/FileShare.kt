@@ -2,6 +2,7 @@ package com.benton.izukijs.ui.common
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.benton.izukijs.core.fileProviderAuthority
 import java.io.File
@@ -29,6 +30,26 @@ fun shareFile(
             type = mimeType
             putExtra(Intent.EXTRA_STREAM, uri)
             subject?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(
+            Intent.createChooser(send, chooserTitle)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+}
+
+/** 分享已有的 content URI（例如刚写入 MediaStore 的截图）。 */
+fun shareUri(
+    context: Context,
+    uri: Uri,
+    chooserTitle: String,
+    mimeType: String = "application/octet-stream",
+) {
+    runCatching {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = mimeType
+            putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         context.startActivity(

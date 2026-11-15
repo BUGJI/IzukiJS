@@ -44,7 +44,14 @@ class ScriptTileService : TileService() {
             updateTile()
             return
         }
-        if (container.scriptExecutionManager.running.value) {
+        // 只有当前运行的正是钉选脚本时，点击才是停止；
+        // 其他脚本在跑时按忙时策略再次启动，避免无条件打断别人的运行。
+        val pinnedId = container.tileSettingsRepository.current()
+        if (pinnedId == null) {
+            updateTile()
+            return
+        }
+        if (container.scriptExecutionManager.runningScriptId.value == pinnedId) {
             container.scriptExecutionManager.requestStop()
             updateTile()
         } else {
@@ -52,8 +59,7 @@ class ScriptTileService : TileService() {
             scope.launch {
                 val loaded = withContext(Dispatchers.IO) {
                     runCatching {
-                        val id = container.tileSettingsRepository.current()
-                        val script = id?.let { container.scriptRepository.find(it) }
+                        val script = container.scriptRepository.find(pinnedId)
                         script?.let { it to container.scriptRepository.read(it) }
                     }.getOrNull()
                 }

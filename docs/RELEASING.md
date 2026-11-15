@@ -24,14 +24,14 @@
 
 ```properties
 # gradle.properties
-izuki.versionCode=18
-izuki.versionName=1.2.3
+izuki.versionCode=19
+izuki.versionName=1.2.4
 ```
 
 并在 `CHANGELOG.md` 增加对应小节：
 
 ```markdown
-## [1.2.3] - 2026-11-14
+## [1.2.4] - 2026-11-15
 ### 新增
 - ...
 ### 修复
@@ -163,8 +163,8 @@ CI 发布不会回退：`release.yml` 在缺少 `KEYSTORE_BASE64` 时直接失�
 5. 打 tag 并推送：
 
    ```bash
-   git tag v1.2.3
-   git push origin v1.2.3
+   git tag v1.2.4
+   git push origin v1.2.4
    ```
 
 6. 等待 `Release` workflow 完成；检查：

@@ -7,7 +7,6 @@ import androidx.core.app.NotificationManagerCompat
 import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.core.notification.ScriptNotificationCenter
 import com.benton.izukijs.data.GlobalEnvRepository
 import com.benton.izukijs.data.RunHistoryRepository
 import com.benton.izukijs.data.ScriptEnvRepository
@@ -55,6 +54,7 @@ class RunPreparer(
         values: Map<String, String>,
         needs: Set<String>?,
         onStarted: (scriptName: String, scriptId: String, runId: String) -> Unit,
+        isActive: () -> Boolean = { true },
     ): PreparedRun {
         // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
         val useGlobal = scriptEnvRepository.useGlobalEnv(scriptId)
@@ -89,19 +89,21 @@ class RunPreparer(
             warnMissingNeeds(needs)
         }
 
-        ScriptNotificationCenter.begin(scriptName)
-        runCatching { ScriptForegroundService.start(appContext, scriptName) }.onFailure {
-            logBus.warn("前台服务启动失败，脚本将继续运行但可能被系统回收：${it.message}")
-        }
-        val floatingMode = runtimeSettings.current().floatingWindowMode
-        if (floatingMode != FloatingWindowMode.OFF) {
-            runCatching {
-                FloatingWindowService.showForRun(
-                    appContext,
-                    collapsed = floatingMode == FloatingWindowMode.COLLAPSED,
-                )
-            }.onFailure {
-                logBus.warn("悬浮窗启动失败：${it.message}")
+        // 准备阶段可能被「终止超时后强行启动」取代；已被放弃的 run 不得抢新 run 的前台服务 / 悬浮窗。
+        if (isActive()) {
+            runCatching { ScriptForegroundService.start(appContext, scriptName) }.onFailure {
+                logBus.warn("前台服务启动失败，脚本将继续运行但可能被系统回收：${it.message}")
+            }
+            val floatingMode = runtimeSettings.current().floatingWindowMode
+            if (floatingMode != FloatingWindowMode.OFF) {
+                runCatching {
+                    FloatingWindowService.showForRun(
+                        appContext,
+                        collapsed = floatingMode == FloatingWindowMode.COLLAPSED,
+                    )
+                }.onFailure {
+                    logBus.warn("悬浮窗启动失败：${it.message}")
+                }
             }
         }
         return PreparedRun(scriptEnv, plannedRunMode, virtualSettings)

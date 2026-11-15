@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
  * - [progressNotification]：是否允许脚本通过 `notify.progress` 更新运行通知的进度样式。
  * - [tileEnabled]：快捷磁贴是否响应点击。
  * - [scriptTimeoutMinutes]：单次脚本运行的超时分钟数，0 表示不限制。
+ * - [busyPolicy]：已有脚本运行时，新启动请求的处理方式。
  * - [perfBaseline]：是否采集并定期输出性能基线（帧耗时、截图、找图找色、日志刷新等）。
  * - [floatingWindowMode]：脚本运行时日志悬浮条的显示方式。
  */
@@ -24,6 +25,7 @@ data class RuntimeSettings(
     val progressNotification: Boolean = true,
     val tileEnabled: Boolean = true,
     val scriptTimeoutMinutes: Int = 0,
+    val busyPolicy: RunBusyPolicy = RunBusyPolicy.REJECT,
     val perfBaseline: Boolean = false,
     val floatingWindowMode: FloatingWindowMode = FloatingWindowMode.EXPANDED,
 )
@@ -57,6 +59,7 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
         progressNotification = prefs.getBoolean(KEY_PROGRESS_NOTIFICATION, true),
         tileEnabled = prefs.getBoolean(KEY_TILE, true),
         scriptTimeoutMinutes = prefs.getInt(KEY_SCRIPT_TIMEOUT, 0).coerceAtLeast(0),
+        busyPolicy = RunBusyPolicy.fromKey(prefs.getString(KEY_BUSY_POLICY, null)),
         perfBaseline = prefs.getBoolean(KEY_PERF_BASELINE, false),
         floatingWindowMode = FloatingWindowMode.fromKey(
             prefs.getString(KEY_FLOATING_WINDOW_MODE, null),
@@ -71,6 +74,7 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
             .putBoolean(KEY_PROGRESS_NOTIFICATION, value.progressNotification)
             .putBoolean(KEY_TILE, value.tileEnabled)
             .putInt(KEY_SCRIPT_TIMEOUT, value.scriptTimeoutMinutes)
+            .putString(KEY_BUSY_POLICY, value.busyPolicy.key)
             .putBoolean(KEY_PERF_BASELINE, value.perfBaseline)
             .putString(KEY_FLOATING_WINDOW_MODE, value.floatingWindowMode.key)
     }
@@ -83,6 +87,7 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
         const val KEY_PROGRESS_NOTIFICATION = "progress_notification"
         const val KEY_TILE = "tile_enabled"
         const val KEY_SCRIPT_TIMEOUT = "script_timeout_minutes"
+        const val KEY_BUSY_POLICY = "busy_policy"
         const val KEY_PERF_BASELINE = "perf_baseline"
         const val KEY_FLOATING_WINDOW_MODE = "floating_window_mode"
     }

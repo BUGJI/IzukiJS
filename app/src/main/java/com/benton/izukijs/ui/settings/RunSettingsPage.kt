@@ -4,9 +4,7 @@ import com.benton.izukijs.ui.common.SectionGap
 import android.Manifest
 import android.app.StatusBarManager
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,12 +28,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
+import com.benton.izukijs.core.permission.SystemPermissionChecks
+import com.benton.izukijs.runtime.RunBusyPolicy
 import com.benton.izukijs.service.ScriptTileService
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LocalSnackbarController
@@ -54,6 +53,9 @@ internal fun RunSettings() {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
 
     TimeoutSettingsSection(ui, viewModel)
+
+    Spacer(Modifier.height(SectionGap))
+    BusySettingsSection(ui, viewModel)
 
     Spacer(Modifier.height(SectionGap))
     WakeSettingsSection(ui, viewModel)
@@ -99,6 +101,43 @@ private fun TimeoutSettingsSection(ui: SettingsUiState, viewModel: SettingsViewM
 }
 
 @Composable
+private fun BusySettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
+    val settings = ui.runtimeSettings
+
+    SectionCard(stringResource(R.string.settings_busy_title)) {
+        Text(
+            stringResource(R.string.settings_busy_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ChipFlow {
+            listOf(
+                RunBusyPolicy.REJECT to R.string.settings_busy_reject,
+                RunBusyPolicy.QUEUE to R.string.settings_busy_queue,
+                RunBusyPolicy.TERMINATE to R.string.settings_busy_terminate,
+            ).forEach { (policy, label) ->
+                FilterChip(
+                    selected = settings.busyPolicy == policy,
+                    onClick = {
+                        viewModel.saveRuntimeSettings(settings.copy(busyPolicy = policy))
+                    },
+                    label = { Text(stringResource(label)) },
+                )
+            }
+        }
+        if (settings.busyPolicy == RunBusyPolicy.TERMINATE) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.settings_busy_terminate_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
 private fun WakeSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
     val settings = ui.runtimeSettings
 
@@ -121,7 +160,7 @@ private fun WakeSettingsSection(ui: SettingsUiState, viewModel: SettingsViewMode
 @Composable
 private fun NotificationSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
     val context = LocalContext.current
-    var granted by remember { mutableStateOf(hasPostNotifications(context)) }
+    var granted by remember { mutableStateOf(SystemPermissionChecks.notificationsEnabled(context)) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { granted = it }
@@ -129,7 +168,7 @@ private fun NotificationSettingsSection(ui: SettingsUiState, viewModel: Settings
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                granted = hasPostNotifications(context)
+                granted = SystemPermissionChecks.notificationsEnabled(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -181,16 +220,6 @@ private fun NotificationSettingsSection(ui: SettingsUiState, viewModel: Settings
         }
     }
 }
-
-private fun hasPostNotifications(context: Context): Boolean =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
-    } else {
-        true
-    }
 
 @Composable
 private fun TileSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {

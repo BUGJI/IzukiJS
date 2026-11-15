@@ -1,17 +1,9 @@
 package com.benton.izukijs.runtime.api
 
-import android.Manifest
-import android.app.AppOpsManager
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Environment
-import android.os.Process
-import android.provider.Settings
 import android.webkit.JavascriptInterface
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import com.benton.izukijs.controller.ControllerManager
+import com.benton.izukijs.core.permission.SystemPermissionChecks
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RunMode
@@ -49,55 +41,40 @@ class PermissionsApi(
     fun hid(): Boolean = ControlMode.HID in controllers.readyModes.value
 
     @JavascriptInterface
-    fun overlay(): Boolean = Settings.canDrawOverlays(context)
+    fun overlay(): Boolean = SystemPermissionChecks.canDrawOverlays(context)
 
     @JavascriptInterface
     fun screenCapture(): Boolean = screenCapture.isActive
 
     @JavascriptInterface
-    fun notifications(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            isGranted(Manifest.permission.POST_NOTIFICATIONS)
-        } else {
-            true
-        }
+    fun notifications(): Boolean = SystemPermissionChecks.notificationsEnabled(context)
 
     @JavascriptInterface
-    fun bluetooth(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            isGranted(Manifest.permission.BLUETOOTH_CONNECT) && isGranted(Manifest.permission.BLUETOOTH_SCAN)
-        } else {
-            isGranted(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
+    fun bluetooth(): Boolean = SystemPermissionChecks.bluetoothGranted(context)
 
     /** 使用情况访问（PACKAGE_USAGE_STATS）。 */
     @JavascriptInterface
-    fun usageAccess(): Boolean {
-        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager ?: return false
-        val mode = runCatching {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
-            } else {
-                @Suppress("DEPRECATION")
-                appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, Process.myUid(), context.packageName)
-            }
-        }.getOrDefault(AppOpsManager.MODE_DEFAULT)
-        return mode == AppOpsManager.MODE_ALLOWED
-    }
+    fun usageAccess(): Boolean = SystemPermissionChecks.hasUsageAccess(context)
 
     /** 通知使用权（通知监听服务已开启）。 */
     @JavascriptInterface
-    fun notificationListener(): Boolean =
-        NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
+    fun notificationListener(): Boolean = SystemPermissionChecks.hasNotificationListener(context)
 
     /** 全部文件访问（MANAGE_EXTERNAL_STORAGE，或旧版外部存储写权限）。 */
     @JavascriptInterface
-    fun manageStorage(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
-        } else {
-            isGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-        }
+    fun manageStorage(): Boolean = SystemPermissionChecks.hasAllFilesAccess(context)
+
+    /** 本地网络（Android 17 / API 37 起需要）。 */
+    @JavascriptInterface
+    fun localNetwork(): Boolean = SystemPermissionChecks.localNetworkGranted(context)
+
+    /** 精确闹钟（Android 12 / API 31 起需要）。 */
+    @JavascriptInterface
+    fun exactAlarm(): Boolean = SystemPermissionChecks.canScheduleExactAlarms(context)
+
+    /** 安装未知来源应用（应用内更新）。 */
+    @JavascriptInterface
+    fun installUnknownApps(): Boolean = SystemPermissionChecks.canInstallUnknownApps(context)
 
     /** 应用列表（QUERY_ALL_PACKAGES + 应用内开关）。 */
     @JavascriptInterface
@@ -169,11 +146,11 @@ class PermissionsApi(
         "usageAccess" to usageAccess(),
         "notificationListener" to notificationListener(),
         "manageStorage" to manageStorage(),
+        "localNetwork" to localNetwork(),
+        "exactAlarm" to exactAlarm(),
+        "installUnknownApps" to installUnknownApps(),
         "appList" to appList(),
         "http" to http(),
         "virtualScreen" to virtualScreen(),
     )
-
-    private fun isGranted(permission: String): Boolean =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 }

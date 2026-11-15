@@ -265,6 +265,17 @@ if (config.allowMyFeature) add(myTool())
 - 补工具 schema / 参数解析测试（参考 `OperationRegistryTest`、`McpConfigTest`）；
 - 手动验证 `tools/list` 与 `tools/call`，以及关闭开关后工具消失。
 
+## 新增开发文档
+
+`docs/` 下的 Markdown 会在构建期复制进 `assets/docs`，自动出现在 MCP 的 `docs` 工具与
+`izuki://docs` 资源里，无需改 Kotlin 代码：
+
+1. 在 `docs/` 新建或修改 `.md`；文件名（去掉后缀）就是 `docs` 工具的 `name`；
+2. 首行用 `# 标题`，会作为索引标题，缺失时回退文件名；
+3. 需要被读者找到时，同时更新 [README.md](README.md) 索引与 [MCP.md](MCP.md)；
+4. `docs/images` 等非 `.md` 内容不打包，正文里的图片链接只是说明，客户端读不到图；
+5. 文档是仓库镜像，修订行为时记得同步，避免 MCP 侧读到过期描述。
+
 ## 新增 pipeline 识别 / 动作
 
 ### 识别

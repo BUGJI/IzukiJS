@@ -336,7 +336,7 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
     },
     McpTool(
         name = "run_script",
-        description = "运行指定脚本。立即返回 run_id；用 get_run_log / read_logs(run_id=...) 取回配对的输出与退出状态。",
+        description = "运行指定脚本。立即启动时返回 run_id；若按忙时策略排队或终止当前脚本，返回 queued / terminating 且暂无 run_id。",
         inputSchema = McpSchemas.objectSchema(
             mapOf(
                 "id" to McpSchemas.string("脚本 id"),
@@ -350,23 +350,53 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
     ) { args ->
         val script = scriptRepository.find(args.getString("id"))
             ?: return@McpTool McpToolResult.error("找不到脚本：${args.getString("id")}")
-        if (executionManager.running.value) {
-            return@McpTool McpToolResult.error("已有脚本正在运行：${executionManager.runningScript.value}")
-        }
         val values = args.optJSONObject("values")?.let { obj ->
             obj.keys().asSequence().associateWith { obj.optString(it) }
         } ?: emptyMap()
-        val started = executionManager.run(
+        val result = executionManager.run(
             script.id,
             script.name,
             scriptRepository.read(script),
             values,
             trigger = com.benton.izukijs.runtime.RunTrigger.MCP,
         )
-        if (!started) {
-            return@McpTool McpToolResult.text(
-                JSONObject().put("ok", false).put("message", "脚本启动失败").toString(),
-            )
+        when (result) {
+            is com.benton.izukijs.runtime.RunStartResult.Rejected -> {
+                val current = result.currentScript
+                return@McpTool McpToolResult.text(
+                    JSONObject()
+                        .put("ok", false)
+                        .put("busy", true)
+                        .put("message", "已有脚本正在运行${current?.let { "：$it" }.orEmpty()}")
+                        .toString(),
+                )
+            }
+
+            com.benton.izukijs.runtime.RunStartResult.Queued -> {
+                return@McpTool McpToolResult.text(
+                    JSONObject().apply {
+                        put("ok", true)
+                        put("queued", true)
+                        put("script_id", script.id)
+                        put("name", script.name)
+                    }.toString(),
+                )
+            }
+
+            is com.benton.izukijs.runtime.RunStartResult.Terminating -> {
+                return@McpTool McpToolResult.text(
+                    JSONObject().apply {
+                        put("ok", true)
+                        put("queued", true)
+                        put("terminating", true)
+                        put("current", result.currentScript ?: JSONObject.NULL)
+                        put("script_id", script.id)
+                        put("name", script.name)
+                    }.toString(),
+                )
+            }
+
+            com.benton.izukijs.runtime.RunStartResult.Started -> Unit
         }
         val runId = executionManager.lastRunId()
         val record = runId?.let { RunLogRegistry.find(it) }
@@ -436,7 +466,7 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
     },
     McpTool(
         name = "stop_script",
-        description = "请求停止当前正在运行的脚本。",
+        description = "请求停止当前正在运行的脚本，并取消待执行队列。",
         inputSchema = McpSchemas.objectSchema(emptyMap()),
     ) {
         executionManager.requestStop()

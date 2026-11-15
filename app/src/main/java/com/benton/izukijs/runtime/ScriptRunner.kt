@@ -15,7 +15,7 @@ interface ScriptRunner {
 
     /**
      * 启动一次调度触发的脚本；[onFinished] 与现有回调语义一致。
-     * 返回 false 表示已有脚本在运行。
+     * 返回结果区分「已启动 / 已排队 / 已请求终止 / 被拒绝」。
      */
     fun runScheduled(
         scriptId: String,
@@ -23,7 +23,7 @@ interface ScriptRunner {
         source: String,
         trigger: RunTrigger,
         onFinished: (Boolean) -> Unit,
-    ): Boolean
+    ): RunStartResult
 
     /** 启动脚本并等待其真正结束，供编排「一步结束再启动下一步」。 */
     suspend fun runToCompletion(

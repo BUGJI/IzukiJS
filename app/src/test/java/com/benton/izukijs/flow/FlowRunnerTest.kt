@@ -116,13 +116,15 @@ class FlowRunnerTest {
     }
 
     @Test
-    fun rejectsWhenScriptAlreadyRunning() {
+    fun busyOutcomeIsReportedByStepInsteadOfStart() {
         execution.running.value = true
+        execution.outcomes["a"] = ScriptRunOutcome.Busy
         val flow = flow(listOf(step("a")))
 
-        assertEquals(FlowRunStart.BUSY, runner().run(flow))
-        assertEquals(listOf(flow), scheduler.skipped.toList())
-        assertTrue(execution.completionRuns.isEmpty())
+        assertEquals(FlowRunStart.STARTED, runner().run(flow))
+
+        assertEquals(listOf("a"), execution.completionRuns.map { it.scriptId })
+        assertEquals(listOf(false), scheduler.finished.map { it.second })
     }
 
     @Test

@@ -7,8 +7,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("18").toInt()
-val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.2.3")
+val appVersionCode = providers.gradleProperty("izuki.versionCode").getOrElse("19").toInt()
+val appVersionName = providers.gradleProperty("izuki.versionName").getOrElse("1.2.4")
 
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
@@ -25,6 +25,16 @@ val releaseStoreFile = keystoreProperties.getProperty("storeFile")
     ?.takeIf { it.isNotBlank() }
     ?.let { file(it) }
 val releaseSigningAvailable = keystorePropertiesFile.exists() && releaseStoreFile?.exists() == true
+
+// 仓库 docs/ 是文档的唯一事实源：构建时只把 .md 复制进 assets/docs，供 MCP 资源与
+// `docs` 工具读取；docs/images 等非文本资源不打包，避免 APK 多出几 MB。
+val docsAssetsDir = layout.buildDirectory.dir("generated/docsAssets")
+val copyDocsAssets = tasks.register<Copy>("copyDocsAssets") {
+    from(rootProject.file("docs")) {
+        include("**/*.md")
+    }
+    into(docsAssetsDir.map { it.dir("docs") })
+}
 
 android {
     namespace = "com.benton.izukijs"
@@ -137,6 +147,17 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // AGP 的 SourceSet API 不接受 Provider（无法判断目录是否只读生成物），
+    // 这里传具体目录；产出任务依赖在 android 块之后显式挂上。
+    sourceSets.getByName("main").assets.srcDir(docsAssetsDir.get().asFile)
+}
+
+// AGP 不会推导出自定义 assets 目录的产出任务，显式挂到资源合并与 preBuild 上。
+tasks.matching {
+    it.name == "preBuild" || (it.name.startsWith("merge") && it.name.endsWith("Assets"))
+}.configureEach {
+    dependsOn(copyDocsAssets)
 }
 
 kotlin {

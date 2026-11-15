@@ -3,6 +3,7 @@ package com.benton.izukijs.schedule
 import com.benton.izukijs.core.log.RunLogSink
 import com.benton.izukijs.data.ScriptSource
 import com.benton.izukijs.model.UnlockResult
+import com.benton.izukijs.runtime.RunStartResult
 import com.benton.izukijs.runtime.RunTrigger
 import com.benton.izukijs.runtime.RunUnlocker
 import com.benton.izukijs.runtime.ScriptRunner
@@ -53,11 +54,6 @@ class ScheduleRunner(
     }
 
     private suspend fun runInternal(schedule: Schedule) {
-        if (executionManager.running.value) {
-            logBus.warn("定时任务跳过：已有脚本正在运行（${schedule.scriptName}）")
-            scheduleManager.onSkipped(schedule)
-            return
-        }
         if (screenUnlock.isEnabled()) {
             val result = screenUnlock.ensureUnlocked()
             if (result != UnlockResult.OK &&
@@ -81,16 +77,23 @@ class ScheduleRunner(
         val updated = schedule.copy(lastTriggeredAtMillis = now())
         repository.upsert(updated)
         logBus.info("⏰ 定时触发: ${script.name}")
-        val started = executionManager.runScheduled(
+        val result = executionManager.runScheduled(
             scriptId = script.id,
             scriptName = script.name,
             source = scriptRepository.read(script),
             trigger = RunTrigger.SCHEDULE,
             onFinished = { success -> scheduleManager.onFinished(updated, success) },
         )
-        if (!started) {
-            logBus.warn("定时任务未能启动（已有脚本运行）: ${schedule.scriptName}")
-            scheduleManager.onSkipped(schedule)
+        when (result) {
+            RunStartResult.Started -> Unit
+            RunStartResult.Queued -> logBus.info("定时任务已排队: ${schedule.scriptName}")
+            is RunStartResult.Terminating -> logBus.info(
+                "定时任务将终止当前脚本后运行: ${schedule.scriptName}",
+            )
+            is RunStartResult.Rejected -> {
+                logBus.warn("定时任务未能启动（已有脚本运行）: ${schedule.scriptName}")
+                scheduleManager.onSkipped(schedule)
+            }
         }
     }
 

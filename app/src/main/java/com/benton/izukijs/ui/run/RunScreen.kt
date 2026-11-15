@@ -233,6 +233,21 @@ fun RunScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                ui.queuedScript?.let { queued ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(
+                            if (ui.queuedTerminating) {
+                                R.string.run_queued_terminating
+                            } else {
+                                R.string.run_queued_script
+                            },
+                            queued,
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Button(
@@ -242,7 +257,7 @@ fun RunScreen(
                                 viewModel.requestRun(it.script)
                             }
                         },
-                        enabled = !ui.running && primary != null,
+                        enabled = primary != null,
                     ) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
@@ -255,6 +270,14 @@ fun RunScreen(
                         },
                         enabled = ui.running,
                     ) { Text(stringResource(R.string.common_stop)) }
+                    if (ui.queuedScript != null) {
+                        TextButton(
+                            onClick = {
+                                haptics.reject()
+                                viewModel.cancelQueued()
+                            },
+                        ) { Text(stringResource(R.string.run_cancel_queued)) }
+                    }
                 }
                 val runState = ui.runState
                 if (ui.running && runState.isNotEmpty()) {

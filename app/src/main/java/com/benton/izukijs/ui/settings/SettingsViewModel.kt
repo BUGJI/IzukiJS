@@ -30,6 +30,7 @@ import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.CaptureSettings
 import com.benton.izukijs.service.UserRecordingService
+import com.benton.izukijs.update.UpdateInfo
 import com.benton.izukijs.update.UpdateSettings
 import com.benton.izukijs.update.UpdateState
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
@@ -58,6 +59,8 @@ data class SettingsUiState(
     val appearance: AppearanceSettings = AppearanceSettings(),
     val updateSettings: UpdateSettings = UpdateSettings(),
     val updateState: UpdateState = UpdateState.Idle,
+    val updateAvailableInfo: UpdateInfo? = null,
+    val updateLastCheckedAt: Long? = null,
     val globalEnv: Map<String, String> = emptyMap(),
     val virtualScreenSettings: VirtualScreenSettings = VirtualScreenSettings(),
     val virtualScreenState: VirtualScreenState = VirtualScreenState.Idle,
@@ -119,6 +122,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
         container.updateManager.state.collectInto { state, value ->
             state.copy(updateState = value)
+        }
+        container.updateManager.availableInfo.collectInto { state, value ->
+            state.copy(updateAvailableInfo = value)
+        }
+        container.updateManager.lastCheckedAt.collectInto { state, value ->
+            state.copy(updateLastCheckedAt = value)
         }
         container.globalEnvRepository.values.collectInto { state, value ->
             state.copy(globalEnv = value)
@@ -230,6 +239,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun openUpdateOnGitHub() = container.updateManager.openOnGitHub()
 
     fun installDownloadedUpdate() = container.updateManager.installDownloaded()
+
+    fun cancelUpdateDownload() = container.updateManager.cancelDownload()
+
+    fun retryUpdate() = container.updateManager.retry()
+
+    fun openInstallPermissionSettings() = container.updateManager.openInstallPermissionSettings()
+
+    fun retryInstallAfterPermission() = container.updateManager.retryInstallAfterPermission()
 
     suspend fun logFileSizeBytes(): Long =
         withContext(Dispatchers.IO) { container.logFileStore.sizeBytes() }

@@ -1,20 +1,13 @@
 package com.benton.izukijs.ui.run
 
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.benton.izukijs.R
 import com.benton.izukijs.di.AppContainer
 import com.benton.izukijs.model.ControlMode
-import com.benton.izukijs.model.EnvField
-import com.benton.izukijs.model.EnvText
 import com.benton.izukijs.model.RecentRun
-import com.benton.izukijs.model.ScriptEnvSpec
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.ui.common.ScriptLaunchViewModel
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
 import com.benton.izukijs.virtualscreen.VirtualScreenState
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,7 +16,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** 运行页的完整 UI 状态。 */
 data class RunUiState(
@@ -32,6 +24,8 @@ data class RunUiState(
     val running: Boolean = false,
     val runningScript: String? = null,
     val runningScriptId: String? = null,
+    val queuedScript: String? = null,
+    val queuedTerminating: Boolean = false,
     val runState: Map<String, String> = emptyMap(),
     val virtualScreenState: VirtualScreenState = VirtualScreenState.Idle,
     val virtualScreenSettings: VirtualScreenSettings = VirtualScreenSettings(),
@@ -44,36 +38,18 @@ data class RunUiState(
 /** 快速启动项：仍然存在的脚本 + 最近一次运行时间。 */
 data class RunItem(val script: ScriptInfo, val at: Long)
 
-/** 需要用户填写运行参数的脚本。 */
-data class EnvDialogState(
-    val script: ScriptInfo,
-    val source: String,
-    val fields: List<EnvField>,
-    val initial: Map<String, String>,
-)
-
 /**
  * 运行页状态持有者：聚合各仓库 / 管理器的状态，并把「读取脚本、决定是否弹参数框、
  * 记录运行历史」等逻辑收在这里，Composable 只负责渲染与交互。
+ *
+ * 手动运行入口由 [ScriptLaunchViewModel] 统一提供，脚本中心复用同一套逻辑。
  */
-class RunViewModel(private val container: AppContainer) : ViewModel() {
-
-    private val execution = container.scriptExecutionManager
-    private val scriptRepository = container.scriptRepository
-    private val scriptEnvRepository = container.scriptEnvRepository
+class RunViewModel(container: AppContainer) : ScriptLaunchViewModel(container) {
 
     private val scriptsFlow = MutableStateFlow<List<ScriptInfo>>(emptyList())
 
     private val _uiState = MutableStateFlow(RunUiState())
     val uiState: StateFlow<RunUiState> = _uiState.asStateFlow()
-
-    private val _envDialog = MutableStateFlow<EnvDialogState?>(null)
-    val envDialog: StateFlow<EnvDialogState?> = _envDialog.asStateFlow()
-
-    private val _runError = MutableStateFlow<String?>(null)
-    val runError: StateFlow<String?> = _runError.asStateFlow()
-
-    private var requestJob: Job? = null
 
     init {
         container.controllerManager.effectiveReadyModes.collectInto { state, value ->
@@ -90,6 +66,12 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
         }
         execution.runningScriptId.collectInto { state, value ->
             state.copy(runningScriptId = value)
+        }
+        execution.queuedScript.collectInto { state, value ->
+            state.copy(queuedScript = value)
+        }
+        execution.queuedTerminating.collectInto { state, value ->
+            state.copy(queuedTerminating = value)
         }
         container.virtualScreenManager.state.collectInto { state, value ->
             state.copy(virtualScreenState = value)
@@ -128,61 +110,12 @@ class RunViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun requestRun(script: ScriptInfo) {
-        // 启动中 / 运行中忽略重复点击，避免多次读取、多个参数框与重复运行。
-        if (execution.running.value || requestJob?.isActive == true) return
-        requestJob = viewModelScope.launch {
-            try {
-                val source = scriptRepository.readAsync(script)
-                val spec = withContext(Dispatchers.Default) { ScriptEnvSpec.parse(source) }
-                val stored = scriptEnvRepository.values(script.id)
-                if (spec.fields.isEmpty()) {
-                    // 没有需要填写的字段时直接运行；历史遗留的 stored 仍会在解析阶段生效。
-                    if (!execution.run(script.id, script.name, source)) {
-                        _runError.value = container.application.getString(R.string.run_error_already_running)
-                    }
-                } else {
-                    _envDialog.value = EnvDialogState(
-                        script = script,
-                        source = source,
-                        fields = spec.fields,
-                        initial = EnvText.resolve(
-                            defaults = spec.defaults(),
-                            global = container.globalEnvRepository.current(),
-                            script = scriptEnvRepository.env(script.id),
-                            runtime = stored,
-                            useGlobal = scriptEnvRepository.useGlobalEnv(script.id),
-                        ),
-                    )
-                }
-            } catch (t: Throwable) {
-                if (t is CancellationException) throw t
-                _runError.value = t.message ?: container.application.getString(R.string.run_error_read_failed)
-            }
-        }
-    }
-
-    fun confirmEnv(values: Map<String, String>) {
-        val state = _envDialog.value ?: return
-        // 只把用户实际改过的字段作为本次输入；继承的全局 / 脚本值不应被固化成脚本覆盖。
-        val changed = values.filter { (key, value) -> state.initial[key] != value }
-        if (!execution.run(state.script.id, state.script.name, state.source, changed)) {
-            _runError.value = container.application.getString(R.string.run_error_already_running)
-            return
-        }
-        _envDialog.value = null
-    }
-
-    fun consumeRunError() {
-        _runError.value = null
-    }
-
-    fun dismissEnv() {
-        _envDialog.value = null
-    }
-
     fun stop() {
         execution.requestStop()
+    }
+
+    fun cancelQueued() {
+        execution.cancelQueued()
     }
 
     fun clearHistory() {

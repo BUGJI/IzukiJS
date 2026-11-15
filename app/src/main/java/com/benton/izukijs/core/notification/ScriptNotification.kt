@@ -246,45 +246,92 @@ object ScriptNotificationCenter {
     private val _state = MutableStateFlow(ScriptNotificationState())
     val state: StateFlow<ScriptNotificationState> = _state.asStateFlow()
 
+    private val lock = Any()
+
+    /** 当前通知所属的 run；终止超时后旧 run 的收尾不能清掉新 run 的通知。 */
+    @Volatile
+    private var activeRunId: String? = null
+
     val isActive: Boolean get() = _state.value.active
 
-    fun begin(scriptName: String) {
-        _state.value = ScriptNotificationState(
-            active = true,
-            scriptName = scriptName,
-            text = scriptName,
-        )
-    }
+    fun begin(scriptName: String) = begin(null, scriptName)
 
-    fun update(json: String, allowProgress: Boolean): Boolean {
-        val options = ScriptNotificationOptions.parse(json) ?: return false
-        return update(options, allowProgress)
-    }
-
-    fun update(options: ScriptNotificationOptions, allowProgress: Boolean): Boolean {
-        if (!_state.value.active) return false
-        _state.update { it.applyOptions(options, allowProgress) }
-        return true
-    }
-
-    fun reset() {
-        _state.update {
-            it.copy(
-                value = 0,
-                max = ScriptNotificationState.DEFAULT_PROGRESS_MAX,
-                indeterminate = true,
-                color = null,
-                segments = emptyList(),
-                points = emptyList(),
-                shortCriticalText = null,
-                trackerIcon = null,
-                startIcon = null,
-                endIcon = null,
+    fun begin(runId: String?, scriptName: String) {
+        synchronized(lock) {
+            activeRunId = runId
+            _state.value = ScriptNotificationState(
+                active = true,
+                scriptName = scriptName,
+                text = scriptName,
             )
         }
     }
 
-    fun clear() {
-        _state.value = ScriptNotificationState()
+    fun update(
+        json: String,
+        allowProgress: Boolean,
+        runId: String? = null,
+    ): Boolean {
+        val options = ScriptNotificationOptions.parse(json) ?: return false
+        return update(options, allowProgress, runId)
+    }
+
+    /** [runId] 非空时只在归属匹配时生效，避免被强制放弃的旧脚本改写新 run 的通知。 */
+    fun update(
+        options: ScriptNotificationOptions,
+        allowProgress: Boolean,
+        runId: String? = null,
+    ): Boolean {
+        synchronized(lock) {
+            if (!_state.value.active) return false
+            if (!ownedByLocked(runId)) return false
+            _state.update { it.applyOptions(options, allowProgress) }
+            return true
+        }
+    }
+
+    /** 清除进度样式；[runId] 语义与 [update] 相同。返回是否实际生效。 */
+    fun reset(runId: String? = null): Boolean {
+        synchronized(lock) {
+            if (!ownedByLocked(runId)) return false
+            _state.update {
+                it.copy(
+                    value = 0,
+                    max = ScriptNotificationState.DEFAULT_PROGRESS_MAX,
+                    indeterminate = true,
+                    color = null,
+                    segments = emptyList(),
+                    points = emptyList(),
+                    shortCriticalText = null,
+                    trackerIcon = null,
+                    startIcon = null,
+                    endIcon = null,
+                )
+            }
+            return true
+        }
+    }
+
+    /**
+     * 归属未知（例如通知由前台服务先建但尚未绑定 run）时放行，
+     * 只有明确属于其他 run 才拒绝，避免旧脚本误伤新 run。
+     */
+    private fun ownedByLocked(runId: String?): Boolean {
+        if (runId == null) return true
+        val owner = activeRunId
+        return owner == null || owner == runId
+    }
+
+    /**
+     * 清空通知。[runId] 非空时仅在归属匹配时生效，
+     * 避免被强制放弃的旧 run 在收尾时清掉新 run 的通知。
+     */
+    fun clear(runId: String? = null) {
+        synchronized(lock) {
+            val owner = activeRunId
+            if (runId != null && owner != null && owner != runId) return
+            activeRunId = null
+            _state.value = ScriptNotificationState()
+        }
     }
 }

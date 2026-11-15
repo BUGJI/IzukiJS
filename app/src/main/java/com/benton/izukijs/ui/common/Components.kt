@@ -103,7 +103,12 @@ fun SectionCard(
     }
 }
 
-/** 带标题的普通输入框，多个设置页共用；自带 8dp 上间距。 */
+/**
+ * 带标题的普通输入框，多个设置页共用；自带 8dp 上间距。
+ *
+ * [commitOnBlur] 为 true 时改为失焦 / 页面销毁后回写，用于回写会触发落盘或重建的字段，
+ * 避免逐字符写入 SharedPreferences。
+ */
 @Composable
 fun LabeledField(
     label: String,
@@ -111,17 +116,42 @@ fun LabeledField(
     modifier: Modifier = Modifier,
     placeholder: String = "",
     keyboardType: KeyboardType = KeyboardType.Text,
+    commitOnBlur: Boolean = false,
     onChange: (String) -> Unit,
 ) {
+    var text by remember { mutableStateOf(value) }
+    var editing by remember { mutableStateOf(false) }
+    val latestText by rememberUpdatedState(text)
+    val latestValue by rememberUpdatedState(value)
+    val latestEditing by rememberUpdatedState(editing)
+    val latestOnChange by rememberUpdatedState(onChange)
+    // commitOnBlur 下编辑期间的外部变化只可能来自代码（预设 / 导入 / 重置），必须以外因为准；
+    // 非 commitOnBlur 的实时回写会把自身输入回灌成 value，不能用它覆盖用户正在输入的格式。
+    LaunchedEffect(value) { if (!editing || commitOnBlur) text = value }
+    DisposableEffect(commitOnBlur) {
+        onDispose {
+            if (commitOnBlur && latestEditing && latestText != latestValue) {
+                latestOnChange(latestText)
+            }
+        }
+    }
     Spacer(Modifier.height(8.dp))
     OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
+        value = text,
+        onValueChange = { input ->
+            text = input
+            if (!commitOnBlur) onChange(input)
+        },
         label = { Text(label) },
         placeholder = if (placeholder.isEmpty()) null else ({ Text(placeholder) }),
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { state ->
+                if (editing && !state.isFocused && commitOnBlur && text != value) onChange(text)
+                editing = state.isFocused
+            },
     )
 }
 
@@ -141,12 +171,15 @@ fun SecretField(
     var editing by remember { mutableStateOf(false) }
     val latestText by rememberUpdatedState(text)
     val latestValue by rememberUpdatedState(value)
+    val latestEditing by rememberUpdatedState(editing)
     val latestOnChange by rememberUpdatedState(onChange)
-    LaunchedEffect(value) { if (!editing) text = value }
+    LaunchedEffect(value) { if (!editing || commitOnBlur) text = value }
     // 页面/弹窗在输入框仍有焦点时销毁也要落盘，避免「输入了但没失焦」丢失。
     DisposableEffect(commitOnBlur) {
         onDispose {
-            if (commitOnBlur && latestText != latestValue) latestOnChange(latestText)
+            if (commitOnBlur && latestEditing && latestText != latestValue) {
+                latestOnChange(latestText)
+            }
         }
     }
     Spacer(Modifier.height(8.dp))
@@ -197,16 +230,18 @@ fun NumberField(
     var invalid by remember { mutableStateOf(false) }
     val latestText by rememberUpdatedState(text)
     val latestValue by rememberUpdatedState(value.toString())
+    val latestEditing by rememberUpdatedState(editing)
     val latestOnChange by rememberUpdatedState(onChange)
     LaunchedEffect(value) {
-        if (!editing) {
+        // commitOnBlur 下编辑期间不会有本框的回写，外部变化必然来自代码，直接采用。
+        if (!editing || commitOnBlur) {
             text = value.toString()
             invalid = false
         }
     }
     DisposableEffect(commitOnBlur) {
         onDispose {
-            if (commitOnBlur && latestText != latestValue) {
+            if (commitOnBlur && latestEditing && latestText != latestValue) {
                 latestText.toIntOrNull()?.takeIf { it in range }?.let(latestOnChange)
             }
         }
@@ -242,7 +277,8 @@ fun NumberField(
             if (editing && !state.isFocused) {
                 val parsed = text.toIntOrNull()
                 if (parsed != null && parsed in range) {
-                    onChange(parsed)
+                    // 外部值已经同步过时不再重复回写，避免 commitOnBlur 字段多一次落盘。
+                    if (parsed != value) onChange(parsed)
                     text = parsed.toString()
                     invalid = false
                 } else {
@@ -273,11 +309,12 @@ fun DecimalField(
     var editing by remember { mutableStateOf(false) }
     val latestText by rememberUpdatedState(text)
     val latestValue by rememberUpdatedState(value.toString())
+    val latestEditing by rememberUpdatedState(editing)
     val latestOnChange by rememberUpdatedState(onChange)
-    LaunchedEffect(value) { if (!editing) text = value.toString() }
+    LaunchedEffect(value) { if (!editing || commitOnBlur) text = value.toString() }
     DisposableEffect(commitOnBlur) {
         onDispose {
-            if (commitOnBlur && latestText != latestValue) {
+            if (commitOnBlur && latestEditing && latestText != latestValue) {
                 latestText.toDoubleOrNull()?.takeIf { it in range }?.let(latestOnChange)
             }
         }
@@ -311,7 +348,7 @@ fun DecimalField(
             if (editing && !state.isFocused) {
                 val parsed = text.toDoubleOrNull()
                 if (parsed != null && parsed in range) {
-                    onChange(parsed)
+                    if (parsed != value) onChange(parsed)
                     text = parsed.toString()
                 } else {
                     text = value.toString()

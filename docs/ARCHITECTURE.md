@@ -135,7 +135,9 @@ controllers.controllerFor(Capability.SHELL)
 调用方
   └─ ScriptExecutionManager.run(scriptId, name, source, values, trigger)
        ├─ ScriptNeeds.parse(source)                 // 解析 // @need
-       ├─ 同步占用运行锁（同一时间只允许一个脚本）
+       ├─ 忙时策略（拒绝 / 排队 / 终止）在同一把决策锁内判断
+       ├─ 空闲：同步占用运行位（同一时间只有一个活动 run）
+       ├─ 忙碌：拒绝，或写入单槽队列，或中断当前 run
        ├─ 后台协程 → RunPreparer.prepare(...)
        │    ├─ 解析 @env 默认值并合并全局 / 脚本 / 本次输入
        │    ├─ 决定 RunMode（前台 / 后台虚拟屏）
@@ -156,10 +158,20 @@ controllers.controllerFor(Capability.SHELL)
 
 关键并发点：
 
-- `runLock` 保护 `engine` / `activeSession` / `_running` 的状态转换，避免停止请求丢失和
-  ABA 问题；旧 run 的收尾不会清掉新 run 的状态。
-- 用户停止与脚本 `exit()` 都置退出标志，但只有 `stopRequested` 表示用户停止，
-  因此编排不会把用户停止当成成功继续下一步。
+- `RunGate` 仍保护 `engine` / `activeRunId` / `stopRequested` 的状态转换，避免停止请求
+  丢失和 ABA 问题；旧 run 的收尾不会清掉新 run 的状态。
+- `decisionLock` 是启动决策的单一入口：判断运行位、入队、出队、提升排队项与强制放弃都在
+  同一把锁内完成；锁顺序固定为 `decisionLock -> RunGate` 内部锁。
+- 单槽队列后到覆盖；被覆盖 / 被取消的排队项必须回调 `onFinished(false)` 与
+  `onCompletion(cancelledBeforeStart=true)`，否则编排 / 定时任务会永久等待。收尾提升排队项
+  时用 `replaceActive` 原子转交运行位，不在 `reset` 与 `tryStart` 之间留空窗。
+- `TERMINATE` 先走 QuickJS 中断；15 秒未退出则用 `replaceActive` 原子转交运行位并启动
+  新脚本。强制放弃只解除运行位，不跨线程关闭 QuickJS；旧 run 在阻塞调用返回后自行退出。
+- 终止后的隔离依赖 run 归属：通知中心 `begin/update/reset/clear(runId)`、虚拟屏
+  `start` 拒绝跨 run 抢占且 `stopIfOwned(runId)` 只允许启动者停止、前台服务
+  `stop(runId)`、录制 `RecordApi` 的 `ownedRecordingId`。旧 run 收尾不得清理新 run 的资源。
+- 用户停止与脚本 `exit()` 都置退出标志，但只有 `stopRequested` / `abandoned` 表示停止，
+  因此编排不会把用户停止或强制终止当成成功继续下一步。
 - 准备阶段抛异常会走 `rollbackStart`，防止 `_running` 永久卡在 `true`。
 
 ## QuickJS 与脚本 API 桥接

@@ -31,6 +31,7 @@ import com.benton.izukijs.runtime.FloatingWindowMode
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.LogSettingsRepository
+import com.benton.izukijs.runtime.RunBusyPolicy
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.runtime.RuntimeSettingsRepository
 import com.benton.izukijs.service.CaptureSettings
@@ -329,12 +330,14 @@ object ConfigSections {
             JSONObject().apply {
                 put("autoCheck", c.autoCheck)
                 put("method", c.method.name)
+                put("wifiOnly", c.wifiOnly)
             }
         },
         decode = { o, base ->
             UpdateSettings(
                 autoCheck = o.optBoolean("autoCheck", base.autoCheck),
                 method = o.optString("method", base.method.name).toEnumOr(base.method),
+                wifiOnly = o.optBoolean("wifiOnly", base.wifiOnly),
             )
         },
     )
@@ -376,6 +379,7 @@ object ConfigSections {
                 put("progressNotification", c.progressNotification)
                 put("tileEnabled", c.tileEnabled)
                 put("scriptTimeoutMinutes", c.scriptTimeoutMinutes)
+                put("busyPolicy", c.busyPolicy.key)
                 put("perfBaseline", c.perfBaseline)
                 put("floatingWindowMode", c.floatingWindowMode.key)
             }
@@ -392,6 +396,9 @@ object ConfigSections {
                 tileEnabled = o.optBoolean("tileEnabled", base.tileEnabled),
                 scriptTimeoutMinutes = o.optInt("scriptTimeoutMinutes", base.scriptTimeoutMinutes)
                     .coerceAtLeast(0),
+                busyPolicy = RunBusyPolicy.fromKey(
+                    o.optString("busyPolicy", base.busyPolicy.key),
+                ),
                 perfBaseline = o.optBoolean("perfBaseline", base.perfBaseline),
                 floatingWindowMode = FloatingWindowMode.fromKey(
                     o.optString("floatingWindowMode", base.floatingWindowMode.key),

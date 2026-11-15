@@ -11,6 +11,7 @@ import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.McpConfigRepository
 import com.benton.izukijs.mcp.McpServerController
 import com.benton.izukijs.mcp.core.McpAuditLog
+import com.benton.izukijs.mcp.resources.McpDocCatalog
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpToolRegistry
 import com.benton.izukijs.runtime.LogFileStore
@@ -38,6 +39,26 @@ class McpContainer(
     val configRepository = McpConfigRepository(application)
 
     val auditLog = McpAuditLog(application)
+
+    /**
+     * 仓库 docs/ 在构建期被复制到 assets/docs（见 app/build.gradle.kts），
+     * 这里只负责按名字读取；索引与分页由 [McpDocCatalog] 处理。
+     */
+    private val docsCatalog = McpDocCatalog(
+        assetNames = {
+            runCatching { application.assets.list(DOCS_ASSET_DIR)?.toList() }
+                .getOrNull()
+                .orEmpty()
+        },
+        assetReader = { name ->
+            runCatching {
+                application.assets.open("$DOCS_ASSET_DIR/$name")
+                    .bufferedReader(Charsets.UTF_8)
+                    .use { it.readText() }
+            }.getOrNull()
+        },
+    )
+
 
     val serverController = McpServerController(
         context = application,
@@ -72,6 +93,7 @@ class McpContainer(
                 userRecordingStopper = {
                     runCatching { UserRecordingService.stop(application) }
                 },
+                docs = docsCatalog,
             )
         },
         resourcesFactory = {
@@ -82,9 +104,14 @@ class McpContainer(
                 executionManager = scriptExecutionManager,
                 logFileStore = logFileStore,
                 auditLog = auditLog,
+                docs = docsCatalog,
             )
         },
         serverVersion = BuildConfig.VERSION_NAME,
         localNetworkPermissionGranted = { LocalNetworkPermission.isGranted(application) },
     )
+
+    private companion object {
+        const val DOCS_ASSET_DIR = "docs"
+    }
 }

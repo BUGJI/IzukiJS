@@ -25,7 +25,13 @@ class NotificationApi(
     private val context: Context,
     private val logBus: LogBus? = null,
     private val progressSettingEnabled: () -> Boolean = { true },
+    /** 当前脚本 runId；非空时只允许它改写运行通知，旧 run 不能覆盖新 run。 */
+    private val ownerRunId: String? = null,
 ) {
+
+    /** 为单次脚本运行创建带归属的轻量副本，避免共享 bundle 里的实例无法区分来源。 */
+    fun forRun(runId: String?): NotificationApi =
+        NotificationApi(context, logBus, progressSettingEnabled, runId)
 
     @JavascriptInterface
     fun available(): Boolean =
@@ -117,7 +123,11 @@ class NotificationApi(
             logBus?.warn("notify.progress 已忽略：脚本运行通知未启动")
             return false
         }
-        return ScriptNotificationCenter.update(optionsJson, allowProgress = true)
+        return ScriptNotificationCenter.update(
+            optionsJson,
+            allowProgress = true,
+            runId = ownerRunId,
+        )
     }
 
     /** 局部更新标题 / 文本 / 阶段；进度开关关闭时忽略进度相关字段。 */
@@ -134,6 +144,7 @@ class NotificationApi(
         return ScriptNotificationCenter.update(
             optionsJson,
             allowProgress = progressSettingEnabled(),
+            runId = ownerRunId,
         )
     }
 
@@ -144,8 +155,7 @@ class NotificationApi(
             logBus?.debug("notify.reset 已忽略：脚本运行通知未启动")
             return false
         }
-        ScriptNotificationCenter.reset()
-        return true
+        return ScriptNotificationCenter.reset(ownerRunId)
     }
 
     private fun canPostNotifications(): Boolean =

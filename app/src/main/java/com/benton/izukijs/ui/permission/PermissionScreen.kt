@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.permission
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
@@ -44,6 +45,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.net.HttpSettings
+import com.benton.izukijs.core.permission.LocalNetworkPermission
+import com.benton.izukijs.core.permission.SystemPermissionChecks
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.service.IzukiAccessibilityService
@@ -79,7 +82,8 @@ private enum class RevokeTarget(
 /**
  * 统一的「权限与能力」授权入口：控制后端、屏幕捕获与系统授予项。
  * 顶部以分组标签切换「读取 / 操作 / 附加能力」，并展示读取与操作的整体授权状态；
- * 运行超时、保持唤醒、悬浮窗、快捷磁贴等运行设置已统一移至「设置」页。
+ * 附加能力内再按「系统权限 / 脚本能力」分组，集中通知、悬浮窗、蓝牙等分散授权项。
+ * 运行超时、保持唤醒、快捷磁贴等运行设置仍在「设置」页。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,10 +134,49 @@ fun PermissionScreen(
     val notificationListenerGranted = remember(permissionRefresh) { hasNotificationListener(context) }
     val allFilesGranted = remember(permissionRefresh) { hasAllFilesAccess(context) }
     val ignoringBatteryOptimizations = remember(permissionRefresh) { isIgnoringBatteryOptimizations(context) }
+    val notificationsGranted = remember(permissionRefresh) { SystemPermissionChecks.notificationsEnabled(context) }
+    val overlayGranted = remember(permissionRefresh) { SystemPermissionChecks.canDrawOverlays(context) }
+    val bluetoothGranted = remember(permissionRefresh) { SystemPermissionChecks.bluetoothGranted(context) }
+    val localNetworkApplicable = SystemPermissionChecks.localNetworkApplicable()
+    val localNetworkGranted = remember(permissionRefresh) { SystemPermissionChecks.localNetworkGranted(context) }
+    val exactAlarmApplicable = SystemPermissionChecks.exactAlarmsApplicable()
+    val exactAlarmGranted = remember(permissionRefresh) { SystemPermissionChecks.canScheduleExactAlarms(context) }
+    val installUnknownAppsGranted = remember(permissionRefresh) {
+        SystemPermissionChecks.canInstallUnknownApps(context)
+    }
     val runtimeSettings by container.runtimeSettingsRepository.settings.collectAsStateWithLifecycle()
     val httpSettings by container.httpSettingsRepository.settings.collectAsStateWithLifecycle()
 
     val writeStorageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { permissionRefresh++ }
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        permissionRefresh++
+        // 用户选择“不再询问”后再次申请会静默失败，直接跳到应用通知设置。
+        if (!granted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val activity = context as? Activity
+            if (activity != null &&
+                !activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+            ) {
+                runCatching {
+                    context.startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            }
+        }
+    }
+
+    val bluetoothPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { permissionRefresh++ }
+
+    val localNetworkPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { permissionRefresh++ }
 
@@ -185,6 +228,14 @@ fun PermissionScreen(
         notificationListenerGranted = notificationListenerGranted,
         allFilesGranted = allFilesGranted,
         ignoringBatteryOptimizations = ignoringBatteryOptimizations,
+        notificationsGranted = notificationsGranted,
+        overlayGranted = overlayGranted,
+        bluetoothGranted = bluetoothGranted,
+        localNetworkGranted = localNetworkGranted,
+        localNetworkApplicable = localNetworkApplicable,
+        exactAlarmGranted = exactAlarmGranted,
+        exactAlarmApplicable = exactAlarmApplicable,
+        installUnknownAppsGranted = installUnknownAppsGranted,
         runtimeSettings = runtimeSettings,
         httpSettings = httpSettings,
     )
@@ -232,6 +283,77 @@ fun PermissionScreen(
         saveRuntimeSettings = ::saveRuntimeSettings,
         saveHttpSettings = ::saveHttpSettings,
         openBatterySettings = ::openBatterySettings,
+        requestNotifications = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                openSystemSettings(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                )
+            }
+        },
+        openNotificationSettings = {
+            openSystemSettings(
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+            )
+        },
+        requestOverlay = {
+            openSystemSettings(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        },
+        requestBluetooth = {
+            val permissions = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            } else {
+                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+            bluetoothPermissionLauncher.launch(permissions)
+        },
+        requestLocalNetwork = {
+            localNetworkPermissionLauncher.launch(LocalNetworkPermission.permission)
+        },
+        requestExactAlarm = {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val opened = runCatching {
+                    context.startActivity(
+                        Intent(
+                            Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                            Uri.parse("package:${context.packageName}"),
+                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }.isSuccess
+                if (!opened) {
+                    openSystemSettings(
+                        Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}"),
+                        ),
+                    )
+                }
+            }
+        },
+        requestInstallUnknownApps = {
+            openSystemSettings(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        },
+        openAppSettings = {
+            openSystemSettings(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        },
     )
 
     IzukiPageScaffold(
@@ -301,11 +423,31 @@ fun PermissionScreen(
                         }
 
                         PermissionGroup.OTHER -> {
+                            PermissionSectionHeader(R.string.perm_section_system)
+                            Spacer(Modifier.height(8.dp))
+                            NotificationsCard(state, actions)
+                            Spacer(Modifier.height(12.dp))
+                            OverlayCard(state, actions)
+                            Spacer(Modifier.height(12.dp))
+                            KeepAliveCard(state, actions)
+                            Spacer(Modifier.height(12.dp))
+                            BluetoothCard(state, actions)
+                            if (state.localNetworkApplicable) {
+                                Spacer(Modifier.height(12.dp))
+                                LocalNetworkCard(state, actions)
+                            }
+                            if (state.exactAlarmApplicable) {
+                                Spacer(Modifier.height(12.dp))
+                                ExactAlarmCard(state, actions)
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            InstallUnknownAppsCard(state, actions)
+                            Spacer(Modifier.height(20.dp))
+                            PermissionSectionHeader(R.string.perm_section_script)
+                            Spacer(Modifier.height(8.dp))
                             AppListCard(state, actions)
                             Spacer(Modifier.height(12.dp))
                             HttpCard(state, actions)
-                            Spacer(Modifier.height(12.dp))
-                            KeepAliveCard(state, actions)
                         }
                     }
                     Spacer(Modifier.height(16.dp))

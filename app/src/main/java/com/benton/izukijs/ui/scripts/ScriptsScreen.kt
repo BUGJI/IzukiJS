@@ -32,7 +32,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
@@ -88,11 +90,14 @@ import com.benton.izukijs.data.ScriptNameResolver
 import com.benton.izukijs.data.ScriptSort
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.subscription.ScriptSubscription
+import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.IzukiPageScaffold
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.PageMaxWidth
+import com.benton.izukijs.ui.common.ScriptEnvDialog
+import com.benton.izukijs.ui.common.ScriptLaunchViewModel
 import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.intervalLabel
 import com.benton.izukijs.ui.common.rememberAppHaptics
@@ -124,6 +129,12 @@ fun ScriptsScreen(
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
+    // 运行入口与运行页共用同一套读取 / @env 解析逻辑；Activity 作用域保证切标签不丢请求。
+    val launchViewModel: ScriptLaunchViewModel = appViewModel { ScriptLaunchViewModel(it) }
+    val envDialog by launchViewModel.envDialog.collectAsStateWithLifecycle()
+    val runError by launchViewModel.runError.collectAsStateWithLifecycle()
+    val launching by launchViewModel.launching.collectAsStateWithLifecycle()
+    val runningScriptId by container.scriptExecutionManager.runningScriptId.collectAsStateWithLifecycle()
     val deletion = remember(container) { ScriptDeletion(container) }
     val defaultName = stringResource(R.string.scripts_default_name)
     val pinned by container.scriptListPreferences.pinned.collectAsStateWithLifecycle()
@@ -159,6 +170,13 @@ fun ScriptsScreen(
     var batchDeletePending by remember { mutableStateOf(false) }
     // 只保存 id：SAF 选择器打开期间若页面重建，仍能按 id 找回待导出脚本。
     var batchExportIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+
+    LaunchedEffect(runError) {
+        runError?.let {
+            snackbar.show(it)
+            launchViewModel.consumeRunError()
+        }
+    }
 
     // 置顶优先，其次按所选排序方式；搜索只在已排序结果上过滤。
     val ordered = remember(scripts, pinned, sort) {
@@ -353,6 +371,9 @@ fun ScriptsScreen(
             pinnedToTile = script.id == tileScriptId,
             selectionMode = selectionMode,
             selected = script.id in selectedIdSet,
+            running = runningScriptId == script.id,
+            // 运行中是否允许再次启动交给执行器的忙时策略；这里只防止读脚本期间重复点击。
+            runEnabled = !launching,
             onClick = {
                 if (selectionMode) {
                     selectedIds = toggleSelection(selectedIdSet, script.id).toList()
@@ -381,6 +402,14 @@ fun ScriptsScreen(
             onEdit = { onEditScript(script.id) },
             onExport = { exportTarget = script; exportLauncher.launch(script.name + ".js") },
             onDelete = { deleteTarget = script },
+            onRun = {
+                haptics.tap()
+                launchViewModel.requestRun(script)
+            },
+            onStop = {
+                haptics.reject()
+                container.scriptExecutionManager.requestStop()
+            },
         )
     }
 
@@ -803,6 +832,16 @@ fun ScriptsScreen(
             },
         )
     }
+
+    envDialog?.let { dialog ->
+        ScriptEnvDialog(
+            scriptName = dialog.script.name,
+            fields = dialog.fields,
+            initial = dialog.initial,
+            onDismiss = launchViewModel::dismissEnv,
+            onConfirm = launchViewModel::confirmEnv,
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -815,6 +854,8 @@ private fun ScriptRow(
     pinnedToTile: Boolean,
     selectionMode: Boolean,
     selected: Boolean,
+    running: Boolean,
+    runEnabled: Boolean,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onTogglePin: () -> Unit,
@@ -823,6 +864,8 @@ private fun ScriptRow(
     onEdit: () -> Unit,
     onExport: () -> Unit,
     onDelete: () -> Unit,
+    onRun: () -> Unit,
+    onStop: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -888,41 +931,63 @@ private fun ScriptRow(
             null
         } else {
             {
-                Box {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (running) {
+                        IconButton(onClick = onStop) {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.common_stop),
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = onRun, enabled = runEnabled) {
+                            Icon(
+                                Icons.Filled.PlayArrow,
+                                contentDescription = stringResource(R.string.common_run),
+                                tint = if (runEnabled) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.outline
+                                },
+                            )
+                        }
                     }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    stringResource(
-                                        if (pinnedToTile) {
-                                            R.string.scripts_tile_unpin
-                                        } else {
-                                            R.string.scripts_tile_pin
-                                        },
-                                    ),
-                                )
-                            },
-                            onClick = { menuOpen = false; onToggleTile() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.scripts_manage_tags)) },
-                            onClick = { menuOpen = false; onEditTags() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.scripts_settings)) },
-                            onClick = { menuOpen = false; onEdit() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.common_export)) },
-                            onClick = { menuOpen = false; onExport() },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.common_delete)) },
-                            onClick = { menuOpen = false; onDelete() },
-                        )
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        stringResource(
+                                            if (pinnedToTile) {
+                                                R.string.scripts_tile_unpin
+                                            } else {
+                                                R.string.scripts_tile_pin
+                                            },
+                                        ),
+                                    )
+                                },
+                                onClick = { menuOpen = false; onToggleTile() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.scripts_manage_tags)) },
+                                onClick = { menuOpen = false; onEditTags() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.scripts_settings)) },
+                                onClick = { menuOpen = false; onEdit() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.common_export)) },
+                                onClick = { menuOpen = false; onExport() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.common_delete)) },
+                                onClick = { menuOpen = false; onDelete() },
+                            )
+                        }
                     }
                 }
             }

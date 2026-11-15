@@ -111,4 +111,35 @@ class UpdateCheckerTest {
         assertEquals(listOf(1, 2, 3), UpdateChecker.normalizeVersion(" V1.2.3 "))
         assertEquals(listOf(1, 2), UpdateChecker.normalizeVersion("1.2-x"))
     }
+
+    @Test
+    fun mapsMissingRelease() {
+        assertEquals(UpdateFailure.NotFound, UpdateChecker.classifyHttpFailure(404, null))
+    }
+
+    @Test
+    fun mapsGitHubRateLimit() {
+        assertEquals(
+            UpdateFailure.RateLimited,
+            UpdateChecker.classifyHttpFailure(403, """{"message":"API rate limit exceeded"}"""),
+        )
+    }
+
+    @Test
+    fun keepsOtherForbiddenAsUnknown() {
+        assertEquals(
+            UpdateFailure.Unknown,
+            UpdateChecker.classifyHttpFailure(403, """{"message":"forbidden"}"""),
+        )
+    }
+
+    @Test
+    fun mapsTooManyRequests() {
+        assertEquals(UpdateFailure.RateLimited, UpdateChecker.classifyHttpFailure(429, null))
+    }
+
+    @Test
+    fun mapsServerErrorWithCode() {
+        assertEquals(UpdateFailure.Server(502), UpdateChecker.classifyHttpFailure(502, null))
+    }
 }

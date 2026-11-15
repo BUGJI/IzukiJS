@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,50 +19,66 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.WrapText
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.VerticalAlignBottom
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
-import androidx.compose.material3.minimumInteractiveComponentSize
-
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogEntry
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.perf.PerfMetrics
-import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.EmptyState
 import com.benton.izukijs.ui.common.LocalSnackbarController
@@ -72,6 +89,7 @@ import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.common.shortTag
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ConsolePanel(
     entries: List<LogEntry>,
@@ -99,7 +117,9 @@ fun ConsolePanel(
     var follow by rememberSaveable { mutableStateOf(true) }
     var confirmClear by remember { mutableStateOf(false) }
     var levelMenuOpen by remember { mutableStateOf(false) }
+    var actionsMenuOpen by remember { mutableStateOf(false) }
 
+    val copyLabel = stringResource(R.string.common_copy)
     val trimmedQuery = query.trim()
     val visible = remember(entries, enabledLevels, trimmedQuery) {
         PerfMetrics.measure("console.filter") {
@@ -135,7 +155,7 @@ fun ConsolePanel(
         haptics.tap()
         val text = visible.joinToString("\n") { it.toLine(showTimestamp) }
         clipboard()?.setPrimaryClip(ClipData.newPlainText(resources.getString(R.string.logs_name), text))
-        scope.launch { snackbar.show(resources.getString(R.string.console_copied_all)) }
+        scope.launch { snackbar.show(resources.getString(R.string.console_copied_results)) }
     }
 
     fun copyLine(entry: LogEntry) {
@@ -147,95 +167,138 @@ fun ConsolePanel(
     }
 
     Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showHeader) {
-                Text(stringResource(R.string.editor_console), style = MaterialTheme.typography.titleSmall)
-            }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { copyAll() }, enabled = visible.isNotEmpty()) {
-                Text(stringResource(R.string.common_copy))
-            }
-            TextButton(
-                onClick = { confirmClear = true },
-                enabled = entries.isNotEmpty(),
-            ) { Text(stringResource(R.string.common_clear)) }
-            if (onCollapse != null) {
-                IconButton(onClick = onCollapse) {
-                    Icon(
-                        Icons.Filled.KeyboardArrowDown,
-                        contentDescription = stringResource(R.string.editor_collapse_console),
-                    )
-                }
-            }
-        }
-
-        if (showFilter) {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                trailingIcon = {
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { query = "" }) {
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = stringResource(R.string.console_clear_search),
-                            )
-                        }
-                    }
-                },
-                placeholder = { Text(stringResource(R.string.console_search)) },
+        if (showHeader) {
+            Text(
+                stringResource(R.string.editor_console),
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(start = 12.dp, top = 8.dp),
             )
-            ChipFlow(modifier = Modifier.padding(horizontal = 12.dp)) {
-                // 级别筛选收进下拉，避免 5 个级别 chip 换行占掉一整行。
-                Box {
-                    FilterChip(
-                        selected = enabledLevels.size != LogLevel.entries.size,
-                        onClick = { levelMenuOpen = true },
-                        label = { Text(stringResource(R.string.console_level_filter)) },
-                        trailingIcon = {
-                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
-                        },
+        }
+        // 工具栏压到一行：搜索常显，级别 / 换行 / 跟随 / 更多收成图标，复制与清空进入「更多」。
+        // 本地触控下限降到 40dp，换取窄屏下搜索框不被四个 48dp 图标挤没。
+        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 40.dp) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (showFilter) {
+                    ConsoleSearchField(
+                        query = query,
+                        onQueryChange = { query = it },
+                        modifier = Modifier.weight(1f),
                     )
-                    DropdownMenu(expanded = levelMenuOpen, onDismissRequest = { levelMenuOpen = false }) {
-                        LogLevel.entries.forEach { level ->
-                            DropdownMenuItem(
-                                text = { Text(level.localizedName()) },
-                                trailingIcon = {
-                                    if (level in enabledLevels) {
-                                        Icon(Icons.Filled.Check, contentDescription = null)
-                                    }
+                    Spacer(Modifier.width(4.dp))
+                    Box {
+                        IconButton(onClick = { levelMenuOpen = true }) {
+                            Icon(
+                                Icons.Filled.FilterList,
+                                contentDescription = stringResource(R.string.console_level_filter),
+                                tint = if (enabledLevels.size != LogLevel.entries.size) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
                                 },
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = levelMenuOpen,
+                            onDismissRequest = { levelMenuOpen = false },
+                        ) {
+                            LogLevel.entries.forEach { level ->
+                                DropdownMenuItem(
+                                    text = { Text(level.localizedName()) },
+                                    trailingIcon = {
+                                        if (level in enabledLevels) {
+                                            Icon(Icons.Filled.Check, contentDescription = null)
+                                        }
+                                    },
+                                    onClick = {
+                                        enabledLevelNames = if (level in enabledLevels) {
+                                            enabledLevelNames - level.name
+                                        } else {
+                                            enabledLevelNames + level.name
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    IconToggleButton(checked = wrapLines, onCheckedChange = { wrapLines = it }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.WrapText,
+                            contentDescription = stringResource(R.string.console_wrap),
+                            tint = if (wrapLines) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    IconToggleButton(
+                        checked = follow,
+                        onCheckedChange = { next ->
+                            follow = next
+                            if (next) {
+                                scope.launch {
+                                    listState.animateScrollToItem(visible.lastIndex.coerceAtLeast(0))
+                                }
+                            }
+                        },
+                    ) {
+                        Icon(
+                            Icons.Filled.VerticalAlignBottom,
+                            contentDescription = stringResource(R.string.console_follow),
+                            tint = if (follow) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                Box {
+                    IconButton(onClick = { actionsMenuOpen = true }) {
+                        Icon(
+                            Icons.Filled.MoreVert,
+                            contentDescription = stringResource(R.string.common_more),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = actionsMenuOpen,
+                        onDismissRequest = { actionsMenuOpen = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.console_copy_results)) },
+                            enabled = visible.isNotEmpty(),
+                            onClick = {
+                                actionsMenuOpen = false
+                                copyAll()
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.common_clear)) },
+                            enabled = entries.isNotEmpty(),
+                            onClick = {
+                                actionsMenuOpen = false
+                                confirmClear = true
+                            },
+                        )
+                        if (onCollapse != null) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.editor_collapse_console)) },
                                 onClick = {
-                                    enabledLevelNames = if (level in enabledLevels) {
-                                        enabledLevelNames - level.name
-                                    } else {
-                                        enabledLevelNames + level.name
-                                    }
+                                    actionsMenuOpen = false
+                                    onCollapse()
                                 },
                             )
                         }
                     }
                 }
-                FilterChip(
-                    selected = wrapLines,
-                    onClick = { wrapLines = !wrapLines },
-                    label = { Text(stringResource(R.string.console_wrap)) },
-                )
-                FilterChip(
-                    selected = follow,
-                    onClick = {
-                        val next = !follow
-                        follow = next
-                        if (next) scope.launch { listState.animateScrollToItem(visible.lastIndex.coerceAtLeast(0)) }
-                    },
-                    label = { Text(stringResource(R.string.console_follow)) },
-                )
             }
         }
 
@@ -259,27 +322,44 @@ fun ConsolePanel(
                 }) { Text(stringResource(R.string.console_reset_filter)) }
             }
             else -> Box(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    items(visible, key = { it.id }) { entry ->
-                        // 时间格式化 + 拼串只在该条目 / 时间戳开关变化时做一次。
-                        val line = remember(entry, showTimestamp) { entry.toLine(showTimestamp) }
-                        Text(
-                            text = line,
-                            color = entry.level.displayColor(),
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            softWrap = wrapLines,
-                            maxLines = if (wrapLines) Int.MAX_VALUE else 1,
-                            overflow = if (wrapLines) TextOverflow.Clip else TextOverflow.Ellipsis,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .minimumInteractiveComponentSize()
-                                .clickable(onClickLabel = stringResource(R.string.common_copy)) { copyLine(entry) },
-                        )
+                // 日志行整体压到 32dp：默认 48dp 的触控下限会把一屏日志挤到 6~8 行。
+                CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 32.dp) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        items(visible, key = { it.id }) { entry ->
+                            // 时间与消息分开着色后只在该条 / 时间戳开关变化时重建 AnnotatedString。
+                            val levelColor = entry.level.displayColor()
+                            val timeColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            val messageColor = MaterialTheme.colorScheme.onSurface
+                            val line = remember(entry, showTimestamp, levelColor, timeColor, messageColor) {
+                                entry.toAnnotatedLine(showTimestamp, levelColor, timeColor, messageColor)
+                            }
+                            // 关闭换行时不再用省略号截断，改为单行横向滚动查看完整内容；
+                            // 换行模式不创建无用的 ScrollState。
+                            val rowModifier = if (wrapLines) {
+                                Modifier.fillMaxWidth()
+                            } else {
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                            }
+                            Box(
+                                modifier = rowModifier
+                                    .minimumInteractiveComponentSize()
+                                    .clickable(onClickLabel = copyLabel) { copyLine(entry) },
+                            ) {
+                                Text(
+                                    text = line,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 16.sp,
+                                    softWrap = wrapLines,
+                                    maxLines = if (wrapLines) Int.MAX_VALUE else 1,
+                                    overflow = TextOverflow.Clip,
+                                    modifier = Modifier.then(if (wrapLines) Modifier.fillMaxWidth() else Modifier),
+                                )
+                            }
+                        }
                     }
                 }
                 if (!atBottom) {
@@ -327,6 +407,89 @@ fun ConsolePanel(
             },
         )
     }
+}
+
+/** 紧凑搜索框：避免 OutlinedTextField 的 56dp 最小高度把工具栏撑成两行。 */
+@Composable
+private fun ConsoleSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val focusManager = LocalFocusManager.current
+    Surface(
+        // 44dp 给 2x 字体留出余量：40dp 时单行 bodyMedium 可能裁掉下缘。
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(start = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+            BasicTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                modifier = Modifier.weight(1f),
+                decorationBox = { innerTextField ->
+                    Box(contentAlignment = Alignment.CenterStart) {
+                        if (query.isEmpty()) {
+                            Text(
+                                stringResource(R.string.console_search),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.console_clear_search),
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            } else {
+                Spacer(Modifier.width(8.dp))
+            }
+        }
+    }
+}
+
+private fun LogEntry.toAnnotatedLine(
+    showTimestamp: Boolean,
+    levelColor: Color,
+    timeColor: Color,
+    messageColor: Color,
+): AnnotatedString = buildAnnotatedString {
+    if (showTimestamp) {
+        withStyle(SpanStyle(color = timeColor)) { append(formatLogTime(timeMillis)) }
+        append(' ')
+    }
+    withStyle(SpanStyle(color = levelColor, fontWeight = FontWeight.Medium)) {
+        append(level.shortTag())
+    }
+    append(' ')
+    withStyle(SpanStyle(color = messageColor)) { append(message) }
 }
 
 private fun LogEntry.toLine(showTimestamp: Boolean): String = buildString {

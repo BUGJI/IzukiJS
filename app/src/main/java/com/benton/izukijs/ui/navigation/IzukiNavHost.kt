@@ -605,7 +605,12 @@ private fun DetailNavHost(
             AdbSetupScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.AI) {
-            AiAgentScreen(onBack = { navController.popBackStack() })
+            AiAgentScreen(
+                onBack = { navController.popBackStack() },
+                onOpenSetup = {
+                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
+                },
+            )
         }
         composable(Routes.MCP) {
             McpServerScreen(

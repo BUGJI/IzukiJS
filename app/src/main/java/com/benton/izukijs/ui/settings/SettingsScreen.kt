@@ -307,6 +307,16 @@ fun SettingsScreen(
                         is UpdateState.Available ->
                             stringResource(R.string.update_available, state.info.versionName)
 
+                        is UpdateState.Downloading -> if (state.progress < 0) {
+                            stringResource(R.string.update_downloading_unknown)
+                        } else {
+                            stringResource(R.string.update_downloading, state.progress)
+                        }
+
+                        is UpdateState.InstallPending,
+                        is UpdateState.InstallPermissionRequired,
+                        -> stringResource(R.string.update_install)
+
                         else -> stringResource(R.string.settings_version_short, BuildConfig.VERSION_NAME)
                     },
                 ) { onOpenCategory(SettingsCategory.ABOUT) }
@@ -448,7 +458,7 @@ private fun settingsSearchEntries(
     ) { onOpenCategory(SettingsCategory.DEVELOPER) },
     SettingsSearchEntry(
         stringResource(R.string.settings_about),
-        "关于 版本 更新 about version update",
+        "关于 版本 更新 仓库 反馈 许可 about version update github issue license",
         Icons.Filled.Info,
     ) { onOpenCategory(SettingsCategory.ABOUT) },
     SettingsSearchEntry(

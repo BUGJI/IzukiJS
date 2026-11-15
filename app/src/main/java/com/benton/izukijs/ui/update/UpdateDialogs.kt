@@ -3,13 +3,8 @@ package com.benton.izukijs.ui.update
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
@@ -24,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.BuildConfig
 import com.benton.izukijs.R
@@ -41,29 +38,30 @@ fun UpdatePromptHost() {
     val settings by container.updateSettingsRepository.settings.collectAsStateWithLifecycle()
     val state by container.updateManager.state.collectAsStateWithLifecycle()
     var progressDismissed by remember { mutableStateOf(false) }
+    var permissionDismissed by remember { mutableStateOf(false) }
 
-    val downloadedMessage = stringResource(R.string.update_downloaded)
     val failedMessage = stringResource(R.string.update_download_failed_short)
-    val installLabel = stringResource(R.string.update_install)
     val retryLabel = stringResource(R.string.update_retry)
+    val installPendingMessage = stringResource(R.string.update_install_pending)
+    val permissionMessage = stringResource(R.string.update_need_install_permission)
+    val permissionAction = stringResource(R.string.update_open_permission_settings)
+    val laterLabel = stringResource(R.string.update_later)
+    val downloadFailure = when (val current = state) {
+        is UpdateState.DownloadFailed -> updateFailureMessage(current.failure)
+        else -> null
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        container.updateManager.retryInstallAfterPermission()
+    }
 
     LaunchedEffect(state) {
         if (state !is UpdateState.Downloading) progressDismissed = false
+        if (state !is UpdateState.InstallPermissionRequired) permissionDismissed = false
         when (state) {
-            is UpdateState.Downloaded -> {
-                val result = snackbar.show(
-                    message = downloadedMessage,
-                    actionLabel = installLabel,
-                    duration = SnackbarDuration.Long,
-                )
-                if (result == SnackbarResult.ActionPerformed) {
-                    container.updateManager.installDownloaded()
-                }
-            }
-
             is UpdateState.DownloadFailed -> {
                 val result = snackbar.show(
-                    message = failedMessage,
+                    message = downloadFailure ?: failedMessage,
                     actionLabel = retryLabel,
                     duration = SnackbarDuration.Long,
                 )
@@ -71,6 +69,8 @@ fun UpdatePromptHost() {
                     container.updateManager.retry()
                 }
             }
+
+            is UpdateState.InstallPending -> snackbar.show(installPendingMessage)
 
             else -> Unit
         }
@@ -96,40 +96,46 @@ fun UpdatePromptHost() {
     if (downloading != null && !progressDismissed) {
         UpdateDownloadProgressDialog(
             progress = downloading.progress,
-            onDismiss = { progressDismissed = true },
+            onBackground = { progressDismissed = true },
+            onCancel = { container.updateManager.cancelDownload() },
+        )
+    }
+
+    if (state is UpdateState.InstallPermissionRequired && !permissionDismissed) {
+        AlertDialog(
+            onDismissRequest = { permissionDismissed = true },
+            title = { Text(stringResource(R.string.update_install_permission_title)) },
+            text = { Text(permissionMessage) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        permissionDismissed = true
+                        container.updateManager.openInstallPermissionSettings()
+                    },
+                ) { Text(permissionAction) }
+            },
+            dismissButton = {
+                TextButton(onClick = { permissionDismissed = true }) { Text(laterLabel) }
+            },
         )
     }
 }
 
 @Composable
-private fun UpdateDownloadProgressDialog(progress: Int, onDismiss: () -> Unit) {
+private fun UpdateDownloadProgressDialog(
+    progress: Int,
+    onBackground: () -> Unit,
+    onCancel: () -> Unit,
+) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onBackground,
         title = { Text(stringResource(R.string.update_downloading_title)) },
-        text = {
-            Column {
-                if (progress < 0) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                } else {
-                    LinearProgressIndicator(
-                        progress = { progress / 100f },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    if (progress < 0) {
-                        stringResource(R.string.update_downloading_unknown)
-                    } else {
-                        stringResource(R.string.update_downloading, progress)
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        },
+        text = { UpdateProgress(progress) },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.update_background)) }
+            TextButton(onClick = onBackground) { Text(stringResource(R.string.update_background)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }
@@ -153,13 +159,15 @@ fun UpdateAvailableDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                Text(
-                    info.changelog.ifBlank { stringResource(R.string.update_dialog_no_changelog) },
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier
-                        .heightIn(max = 260.dp)
-                        .verticalScroll(rememberScrollState()),
-                )
+                ReleaseNotesContent(info.changelog)
+                if (info.apkSizeBytes > 0L) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.update_apk_size, formatUpdateSize(info.apkSizeBytes)),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         confirmButton = {

@@ -13,11 +13,17 @@ class RecordApi(
 
     private var startedHere = false
 
+    /** 本次脚本启动的录制 id；收尾时只在仍是同一录制时停止。 */
+    private var ownedRecordingId: String? = null
+
     @JavascriptInterface
     fun startRaw(name: String): String = try {
         val wasActive = session.isRecording()
         val id = session.start(name)
-        if (!wasActive && id != null) startedHere = true
+        if (!wasActive && id != null) {
+            startedHere = true
+            ownedRecordingId = id
+        }
         if (id == null) {
             JsJson.error(if (session.isRecording()) "已有录制进行中" else "没有可录制的控制后端")
         } else {
@@ -35,6 +41,7 @@ class RecordApi(
     fun stopRaw(): String = try {
         val id = session.stop()
         startedHere = false
+        ownedRecordingId = null
         if (id == null) {
             JsJson.error("当前没有进行中的录制")
         } else {
@@ -97,6 +104,10 @@ class RecordApi(
     fun close() {
         if (!startedHere) return
         startedHere = false
+        val owned = ownedRecordingId ?: return
+        ownedRecordingId = null
+        // 终止超时后旧 run 的 close 可能晚于新 run 的录制；只停止自己启动的那一条。
+        if (session.currentRecordingId() != owned) return
         val id = session.stop()
         if (id != null) logBus.info("脚本结束，录制已自动停止: $id")
     }

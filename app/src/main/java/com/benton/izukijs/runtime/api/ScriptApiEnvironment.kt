@@ -47,6 +47,8 @@ class ScriptApiEnvironment(
     private val recordingSession: RecordingSession?,
     private val exitRequested: () -> Boolean,
     private val onExit: () -> Unit,
+    /** 当前 run 是否仍持有运行位；用于虚拟屏归属与通知写入。 */
+    private val isRunActive: () -> Boolean = { true },
 ) : Closeable {
 
     private val screenshotStore = ScreenshotStore(
@@ -113,6 +115,8 @@ class ScriptApiEnvironment(
                     captureProvider = runBundle.captureProvider,
                     screenshotStore = screenshotStore,
                     logBus = logBus,
+                    ownerRunId = runId,
+                    isRequesterCurrent = isRunActive,
                 ),
                 "virtualScreen",
             )
@@ -144,7 +148,9 @@ class ScriptApiEnvironment(
             recordApi = api
             ctx.addJavascriptInterface(api, "record")
         }
-        if (allowed(needs, "notify")) ctx.addJavascriptInterface(runBundle.notificationApi, "notify")
+        if (allowed(needs, "notify")) {
+            ctx.addJavascriptInterface(runBundle.notificationApi.forRun(runId), "notify")
+        }
         if (allowed(needs, "push") && pushDispatcher != null) {
             ctx.addJavascriptInterface(
                 PushApi(

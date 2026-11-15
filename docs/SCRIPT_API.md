@@ -734,10 +734,13 @@ var merged = ocr.dedupeLines(allLines.concat(page.lines), { window: 30 });
 | `permissions.accessibility()` / `permissions.shizuku()` / `permissions.adb()` / `permissions.root()` / `permissions.hid()` | 控制模式是否就绪 |
 | `permissions.overlay()` | 悬浮窗权限 |
 | `permissions.screenCapture()` | 持续录屏是否开启 |
-| `permissions.notifications()` / `permissions.bluetooth()` | 通知 / 蓝牙权限 |
+| `permissions.notifications()` / `permissions.bluetooth()` | 通知总开关（含 Android 13+ 运行时权限）/ 蓝牙权限 |
 | `permissions.usageAccess()` | 使用情况访问 |
 | `permissions.notificationListener()` | 通知使用权 |
 | `permissions.manageStorage()` | 全部文件访问 |
+| `permissions.localNetwork()` | 本地网络权限（Android 17+） |
+| `permissions.exactAlarm()` | 精确闹钟权限（Android 12+） |
+| `permissions.installUnknownApps()` | 安装未知来源应用 |
 | `permissions.appList()` | 应用列表是否开启 |
 | `permissions.http()` | 脚本网络（HTTP）是否启用 |
 | `permissions.granted()` | 已授予项，逗号分隔 |

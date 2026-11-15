@@ -7,6 +7,10 @@ data class RunCompletion(
     val success: Boolean,
     val stopped: Boolean,
     val status: RunStatus,
+    /** 本次 run id；排队期间被取消时为空。 */
+    val runId: String = "",
+    /** 被覆盖 / 取消，从未真正启动；调用方不应等待运行位释放。 */
+    val cancelledBeforeStart: Boolean = false,
 )
 
 /** 一次脚本运行等待完成后的结果。 */

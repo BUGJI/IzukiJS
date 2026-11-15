@@ -20,7 +20,8 @@ data class ResourceContent(
 )
 
 /**
- * 暴露给 MCP 客户端的只读资源：设备信息、运行状态、脚本列表与源码、最近日志。
+ * 暴露给 MCP 客户端的只读资源：设备信息、运行状态、脚本列表与源码、最近日志、
+ * 以及仓库 `docs/` 镜像的开发文档（[docs] 为空时省略后者）。
  */
 class McpResources(
     private val bundle: DeviceApiBundle,
@@ -29,6 +30,7 @@ class McpResources(
     private val executionManager: ScriptExecutionManager,
     private val logFileStore: LogFileStore,
     private val auditLog: McpAuditLog,
+    private val docs: McpDocCatalog? = null,
 ) : McpResourceProvider {
 
     private data class Definition(
@@ -38,22 +40,44 @@ class McpResources(
         val mimeType: String,
     )
 
-    private val definitions = listOf(
-        Definition("izuki://device", "设备信息", "屏幕尺寸、机型、Android 版本与电量", JSON),
-        Definition("izuki://status", "运行状态", "各控制后端就绪状态与当前运行的脚本", JSON),
-        Definition("izuki://scripts", "脚本列表", "已保存脚本的 id / 名称 / 更新时间", JSON),
-        Definition("izuki://logs", "最近日志", "应用最近日志（尾部）", "text/plain"),
-        Definition("izuki://audit", "MCP 审计日志", "最近的工具调用记录（JSONL，敏感参数已脱敏）", "application/x-ndjson"),
-        Definition("izuki://screenshot", "当前屏幕", "当前屏幕截图（JPEG Base64）", "image/jpeg"),
-    )
+    private val definitions = buildList {
+        add(Definition("izuki://device", "设备信息", "屏幕尺寸、机型、Android 版本与电量", JSON))
+        add(Definition("izuki://status", "运行状态", "各控制后端就绪状态与当前运行的脚本", JSON))
+        add(Definition("izuki://scripts", "脚本列表", "已保存脚本的 id / 名称 / 更新时间", JSON))
+        add(Definition("izuki://logs", "最近日志", "应用最近日志（尾部）", "text/plain"))
+        add(Definition("izuki://audit", "MCP 审计日志", "最近的工具调用记录（JSONL，敏感参数已脱敏）", "application/x-ndjson"))
+        add(Definition("izuki://screenshot", "当前屏幕", "当前屏幕截图（JPEG Base64）", "image/jpeg"))
+        if (docs != null) {
+            add(
+                Definition(
+                    "izuki://docs",
+                    "开发文档索引",
+                    "仓库 docs/ 镜像的文档清单；文档可能滞后于当前版本",
+                    JSON,
+                ),
+            )
+        }
+    }
 
-    private val templates = listOf(
-        JSONObject()
-            .put("uriTemplate", "izuki://scripts/{id}")
-            .put("name", "脚本源码")
-            .put("description", "按 id 读取脚本源代码")
-            .put("mimeType", "text/plain"),
-    )
+    private val templates = buildList {
+        add(
+            JSONObject()
+                .put("uriTemplate", "izuki://scripts/{id}")
+                .put("name", "脚本源码")
+                .put("description", "按 id 读取脚本源代码")
+                .put("mimeType", "text/plain"),
+        )
+        if (docs != null) {
+            add(
+                JSONObject()
+                    .put("uriTemplate", "izuki://docs/{name}")
+                    .put("name", "开发文档")
+                    .put("description", "按文件名（可省略 .md）读取开发文档全文；分页请用 docs 工具")
+                    .put("mimeType", McpDocCatalog.MIME_MARKDOWN),
+            )
+        }
+    }
+
 
     override fun listJson(): JSONArray = JSONArray().apply {
         definitions.forEach { def ->
@@ -78,9 +102,21 @@ class McpResources(
         uri == "izuki://logs" -> ResourceContent(uri, "text/plain", logFileStore.tail())
         uri == "izuki://audit" -> ResourceContent(uri, "application/x-ndjson", auditLog.tail())
         uri == "izuki://screenshot" -> readScreenshot(uri)
+        uri == "izuki://docs" -> readDocIndex(uri)
+        uri.startsWith("izuki://docs/") -> readDoc(uri)
         uri.startsWith("izuki://scripts/") -> readScript(uri)
         else -> null
     }
+
+    private fun readDocIndex(uri: String): ResourceContent? =
+        docs?.let { ResourceContent(uri, JSON, it.indexJson().toString()) }
+
+    private fun readDoc(uri: String): ResourceContent? {
+        val catalog = docs ?: return null
+        val entry = catalog.find(uri.removePrefix("izuki://docs/")) ?: return null
+        return ResourceContent(entry.uri, McpDocCatalog.MIME_MARKDOWN, entry.text)
+    }
+
 
     private fun readScreenshot(uri: String): ResourceContent {
         val source = bundle.screenshotProvider()

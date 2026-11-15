@@ -22,6 +22,10 @@ class VirtualScreenApi(
     private val captureProvider: ((ScreenTarget, Long) -> Bitmap?)? = null,
     private val screenshotStore: ScreenshotStore? = null,
     private val logBus: LogBus? = null,
+    /** 当前脚本 runId；用于脚本内启动虚拟屏后的归属判断。 */
+    private val ownerRunId: String? = null,
+    /** 当前 run 是否仍持有运行位；旧 run 不能抢回新 run 的虚拟屏。 */
+    private val isRequesterCurrent: () -> Boolean = { true },
 ) {
 
     @JavascriptInterface
@@ -60,13 +64,27 @@ class VirtualScreenApi(
                 ),
             )
         }
-        return manager.startBlocking(options)
+        return manager.startBlocking(
+            options,
+            ownerRunId = ownerRunId,
+            isRequesterCurrent = isRequesterCurrent,
+        )
     }
 
     @JavascriptInterface
     fun stop(): Boolean {
         if (!manager.isActive()) return true
-        manager.stopBlocking()
+        val owner = ownerRunId
+        if (owner != null) {
+            // 只允许启动者停止；无主实例保持旧行为，其他 run 的实例一律不停。
+            manager.stopIfOwnedBlocking(
+                owner,
+                VirtualScreenManager.STOP_USER,
+                allowUnowned = true,
+            )
+        } else {
+            manager.stopBlocking()
+        }
         return !manager.isActive()
     }
 

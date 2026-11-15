@@ -1,5 +1,6 @@
 package com.benton.izukijs.ui.permission
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -77,6 +78,20 @@ internal fun PermissionStatusPill(label: String, ready: Boolean, modifier: Modif
             color = content,
         )
     }
+}
+
+/**
+ * 附加能力页内的小节标题，用来区分「系统权限」与「脚本能力」。
+ * 只做视觉分组，不承载折叠或状态。
+ */
+@Composable
+internal fun PermissionSectionHeader(@StringRes titleRes: Int) {
+    Text(
+        stringResource(titleRes),
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
+    )
 }
 
 /**

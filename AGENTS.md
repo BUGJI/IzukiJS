@@ -45,8 +45,10 @@ Windows 用 `gradlew.bat`。没有单独的 format 命令；遵循 `.editorconfi
    `PipelineSpec.kt`；控制能力矩阵只改 `docs/CONTROL_MODES.md`。
 2. **失败降级**：设备 / 网络 / 权限失败返回 `false` / `null` / 带 `ok:false` 的 JSON，
    不要把异常抛到脚本或 MCP 客户端之外。
-3. **并发**：`ScriptExecutionManager` 的启动 / 停止 / 收尾必须在同一把 `runLock` 内完成
-   判断与更新；旧 run 不得清理新 run 的状态。
+3. **并发**：`ScriptExecutionManager` 的启动 / 停止 / 收尾必须在同一把 `decisionLock`
+   内完成判断与更新；旧 run 不得清理新 run 的状态。忙时策略的排队提升、终止超时的
+   `replaceActive` 也在该锁内完成，锁顺序为 `decisionLock -> RunGate`。终止后的通知、
+   虚拟屏、前台服务与脚本录制必须按 runId 归属清理，不能跨线程关闭执行中的 QuickJS。
 4. **脚本与 MCP 一致**：设备操作优先复用 `DeviceApiBundle` / `AgentTools`，不要另写一套。
 5. **安全**：不记录或提交令牌、API Key、PIN、设备序列号；Shell、解锁、MCP、录制相关改动
    要检查 `ToolPolicy` / `ShellGuard` / 配置开关。
@@ -99,6 +101,7 @@ python3 scripts/check_docs.py
 ## 文档地图
 
 - [docs/README.md](docs/README.md)：索引与按任务查找
+- [docs/AGENT_OVERVIEW.md](docs/AGENT_OVERVIEW.md)：面向 AI Agent 的功能与开关总览
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：分层、链路、持久化、线程
 - [docs/EXTENDING.md](docs/EXTENDING.md)：新增后端 / API / MCP 工具 / pipeline
 - [docs/TESTING.md](docs/TESTING.md)：测试分层与手动矩阵

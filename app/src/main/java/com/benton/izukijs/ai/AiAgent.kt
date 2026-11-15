@@ -24,7 +24,7 @@ class AiAgent(
         onTool: ((String, String) -> Unit)?,
         onToolResult: ((String, String) -> Unit)?,
     ): String {
-        val maxSteps = (maxStepsOverride ?: config.maxSteps).coerceIn(1, MAX_STEPS_LIMIT)
+        val maxSteps = (maxStepsOverride ?: config.maxSteps).coerceIn(1, AiConfig.MAX_STEPS_LIMIT)
         val messages = ArrayList<ChatMessage>()
         messages.add(ChatMessage(role = "system", content = config.systemPrompt))
         messages.add(ChatMessage(role = "user", content = userPrompt))
@@ -97,7 +97,6 @@ class AiAgent(
     }
 
     private companion object {
-        const val MAX_STEPS_LIMIT = 50
         val TOOLS_UNSUPPORTED_CODES = setOf(400, 404, 422)
     }
 }

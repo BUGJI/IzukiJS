@@ -24,6 +24,10 @@ data class VirtualScreenResolution(
         dpi = dpi.coerceIn(MIN_DPI, MAX_DPI),
     )
 
+    /** 交换宽高，用于横竖屏互换；dpi 保持不变。 */
+    fun swapped(): VirtualScreenResolution =
+        copy(width = height, height = width).normalized()
+
     companion object {
         const val MIN_SIZE = 320
         const val MAX_SIZE = 3840

@@ -122,6 +122,32 @@ class RunGateTest {
     }
 
     @Test
+    fun replaceActiveDoesNotCarryPendingStopToNewRun() {
+        val gate = RunGate<Engine>()
+        gate.tryStart("a")
+        gate.resolveStop()
+
+        assertTrue(gate.replaceActive("a", "b"))
+
+        assertFalse(gate.isStopRequested())
+        assertTrue(gate.isActive("b"))
+    }
+
+    @Test
+    fun replaceActiveTransfersSlotToNewRun() {
+        val gate = RunGate<Engine>()
+        gate.tryStart("a")
+
+        assertTrue(gate.replaceActive("a", "b"))
+        assertTrue(gate.isActive("b"))
+        assertFalse(gate.isActive("a"))
+        assertFalse(gate.reset("a"))
+        assertTrue(gate.isActive("b"))
+    }
+
+
+
+    @Test
     fun concurrentStartAllowsExactlyOne() {
         val gate = RunGate<Engine>()
         val threads = 16

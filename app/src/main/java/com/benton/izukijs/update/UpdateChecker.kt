@@ -18,29 +18,64 @@ data class UpdateInfo(
     val apkSizeBytes: Long,
 )
 
+/**
+ * 更新检查 / 下载 / 安装的失败原因。
+ *
+ * 网络层只产出稳定枚举，界面负责本地化；原始异常文本只写日志，避免把
+ * `SocketTimeoutException` 之类的实现细节直接展示给用户。
+ */
+sealed interface UpdateFailure {
+    data object Network : UpdateFailure
+
+    data object RateLimited : UpdateFailure
+
+    data object NotFound : UpdateFailure
+
+    data class Server(val code: Int) : UpdateFailure
+
+    data object Parse : UpdateFailure
+
+    /** 开启「仅 Wi-Fi 下载」时处于计费网络。 */
+    data object WifiRequired : UpdateFailure
+
+    /** 下载后的字节数与 GitHub 声明的大小不一致。 */
+    data object SizeMismatch : UpdateFailure
+
+    data object MissingFile : UpdateFailure
+
+    data object InstallFailed : UpdateFailure
+
+    data object Unknown : UpdateFailure
+}
+
 sealed interface UpdateCheckResult {
     data object UpToDate : UpdateCheckResult
 
     data class Available(val info: UpdateInfo) : UpdateCheckResult
 
-    data class Failure(val message: String) : UpdateCheckResult
+    data class Failure(val failure: UpdateFailure) : UpdateCheckResult
 }
 
 class UpdateChecker(private val logBus: LogBus? = null) {
 
     fun check(): UpdateCheckResult {
-        val body = try {
+        val response = try {
             httpGet(LATEST_RELEASE_API)
         } catch (t: Throwable) {
-            logBus?.warn("检查更新失败: ${t.message}")
-            return UpdateCheckResult.Failure(t.message ?: "网络错误")
-        } ?: return UpdateCheckResult.Failure("请求失败")
+            logBus?.warn("检查更新失败: ${t.javaClass.simpleName}")
+            return UpdateCheckResult.Failure(UpdateFailure.Network)
+        }
+        if (response is HttpResult.Error) {
+            logBus?.warn("检查更新 HTTP ${response.code}")
+            return UpdateCheckResult.Failure(classifyHttpFailure(response.code, response.body))
+        }
+        val body = (response as HttpResult.Success).body
 
         return try {
             val release = JSONObject(body)
             val tag = release.optString("tag_name").trim()
             if (tag.isBlank()) {
-                return UpdateCheckResult.Failure(release.optString("message", "缺少版本信息"))
+                return UpdateCheckResult.Failure(UpdateFailure.Parse)
             }
             val version = tag.removePrefix("v").removePrefix("V")
             if (compareVersions(version, BuildConfig.VERSION_NAME) <= 0) {
@@ -59,8 +94,8 @@ class UpdateChecker(private val logBus: LogBus? = null) {
                 ),
             )
         } catch (t: Throwable) {
-            logBus?.warn("解析更新信息失败: ${t.message}")
-            UpdateCheckResult.Failure(t.message ?: "解析失败")
+            logBus?.warn("解析更新信息失败: ${t.javaClass.simpleName}")
+            UpdateCheckResult.Failure(UpdateFailure.Parse)
         }
     }
 
@@ -76,7 +111,7 @@ class UpdateChecker(private val logBus: LogBus? = null) {
         return byName[selected]
     }
 
-    private fun httpGet(url: String): String? {
+    private fun httpGet(url: String): HttpResult {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             connectTimeout = 15_000
@@ -88,16 +123,21 @@ class UpdateChecker(private val logBus: LogBus? = null) {
         return try {
             val code = connection.responseCode
             val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader()?.use { it.readText() }
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (code in 200..299) {
-                text
+                HttpResult.Success(text)
             } else {
-                logBus?.warn("检查更新 HTTP $code")
-                text
+                HttpResult.Error(code, text)
             }
         } finally {
             connection.disconnect()
         }
+    }
+
+    private sealed interface HttpResult {
+        data class Success(val body: String) : HttpResult
+
+        data class Error(val code: Int, val body: String) : HttpResult
     }
 
     companion object {
@@ -137,6 +177,17 @@ class UpdateChecker(private val logBus: LogBus? = null) {
                 find("izukijs-$abi-release.apk", "app-$abi-release.apk")?.let { return it }
             }
             return find("izukijs-universal-release.apk", "app-universal-release.apk")
+        }
+
+        /** GitHub 未鉴权请求限流返回 403，且正文带 `rate limit`；其余 4xx 归为未知失败。 */
+        internal fun classifyHttpFailure(code: Int, body: String?): UpdateFailure = when {
+            code == 404 -> UpdateFailure.NotFound
+            code == 403 && body?.contains("rate limit", ignoreCase = true) == true ->
+                UpdateFailure.RateLimited
+
+            code == 429 -> UpdateFailure.RateLimited
+            code in 500..599 -> UpdateFailure.Server(code)
+            else -> UpdateFailure.Unknown
         }
     }
 }

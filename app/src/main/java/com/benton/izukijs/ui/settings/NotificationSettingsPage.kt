@@ -3,7 +3,6 @@ package com.benton.izukijs.ui.settings
 import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,7 +30,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -41,6 +39,7 @@ import com.benton.izukijs.core.notification.NotifyChannel
 import com.benton.izukijs.core.notification.NotifyChannelType
 import com.benton.izukijs.core.notification.NotifyKind
 import com.benton.izukijs.core.notification.NotifyLevel
+import com.benton.izukijs.core.permission.SystemPermissionChecks
 import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LocalSnackbarController
@@ -286,7 +285,7 @@ private fun ChannelRow(
 @Composable
 private fun rememberNotificationPermission(): Pair<Boolean, () -> Unit> {
     val context = LocalContext.current
-    var granted by remember { mutableStateOf(hasPostNotifications(context)) }
+    var granted by remember { mutableStateOf(SystemPermissionChecks.notificationsEnabled(context)) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { allowed ->
@@ -311,7 +310,7 @@ private fun rememberNotificationPermission(): Pair<Boolean, () -> Unit> {
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, context) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) granted = hasPostNotifications(context)
+            if (event == Lifecycle.Event.ON_RESUME) granted = SystemPermissionChecks.notificationsEnabled(context)
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
@@ -323,16 +322,6 @@ private fun rememberNotificationPermission(): Pair<Boolean, () -> Unit> {
     }
     return granted to request
 }
-
-private fun hasPostNotifications(context: android.content.Context): Boolean =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.POST_NOTIFICATIONS,
-        ) == PackageManager.PERMISSION_GRANTED
-    } else {
-        true
-    }
 
 @Composable
 internal fun channelDisplayName(channel: NotifyChannel): String =

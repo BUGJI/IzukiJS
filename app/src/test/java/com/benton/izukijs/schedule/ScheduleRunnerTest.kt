@@ -61,14 +61,26 @@ class ScheduleRunnerTest {
     )
 
     @Test
-    fun skipsWhenScriptAlreadyRunning() {
-        execution.running.value = true
+    fun skipsWhenStartIsRejected() {
+        execution.scheduledResult = com.benton.izukijs.runtime.RunStartResult.Rejected("other")
         val schedule = schedule()
 
         runner().run(schedule)
 
         assertEquals(listOf(schedule), lifecycle.skipped.toList())
-        assertTrue(execution.scheduledRuns.isEmpty())
+        assertEquals(1, execution.scheduledRuns.size)
+    }
+
+    @Test
+    fun queuedStartDoesNotReportSkipped() {
+        execution.scheduledResult = com.benton.izukijs.runtime.RunStartResult.Queued
+        val schedule = schedule()
+
+        runner().run(schedule)
+
+        assertTrue(lifecycle.skipped.isEmpty())
+        assertTrue(lifecycle.finished.isEmpty())
+        assertEquals(1, execution.scheduledRuns.size)
     }
 
     @Test
@@ -109,7 +121,7 @@ class ScheduleRunnerTest {
 
     @Test
     fun reportsSkippedWhenStartIsRejected() {
-        execution.scheduledResult = false
+        execution.scheduledResult = com.benton.izukijs.runtime.RunStartResult.Rejected(null)
         val schedule = schedule()
 
         runner().run(schedule)
