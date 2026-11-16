@@ -32,6 +32,8 @@ class DeviceApiBundle(
     val appApi: AppApi,
     val shellApi: ShellApi,
     val ocrApi: OcrApi,
+    /** 固定识别主屏的 OCR 实例，供 MCP target=main 使用。 */
+    val mainOcrApi: OcrApi,
     val ocrProcessor: OcrProcessor,
     val selectorApi: SelectorApi,
     val notificationApi: NotificationApi,
@@ -53,6 +55,7 @@ class DeviceApiBundle(
         appApi = appApi,
         shellApi = shellApi,
         ocrApi = ocrApi,
+        mainOcrApi = mainOcrApi,
         ocrProcessor = ocrProcessor,
         selectorApi = selectorFactory(isExitRequested),
         notificationApi = notificationApi,
@@ -154,6 +157,13 @@ class DeviceApiBundle(
             val screenshotProvider: () -> Bitmap? = {
                 captureInternal(ScreenTarget.AUTO, DEFAULT_CAPTURE_WAIT_MS, false)
             }
+            val mainOcrApi = OcrApi(
+                ocrProcessor = ocrProcessor,
+                screenshotProvider = {
+                    captureInternal(ScreenTarget.MAIN, DEFAULT_CAPTURE_WAIT_MS, false)
+                },
+                logBus = logBus,
+            )
             val shellExec: (String) -> String? = { cmd ->
                 controllers.controllerFor(Capability.SHELL)?.shell(cmd)?.stdout
             }
@@ -176,6 +186,7 @@ class DeviceApiBundle(
                 appApi = AppApi(context, logBus, shellExec, appListEnabled, virtualScreen, recordingHooks),
                 shellApi = ShellApi(controllers, logBus),
                 ocrApi = OcrApi(ocrProcessor, screenshotProvider, logBus),
+                mainOcrApi = mainOcrApi,
                 ocrProcessor = ocrProcessor,
                 selectorApi = selectorFactory(isExitRequested),
                 notificationApi = NotificationApi(

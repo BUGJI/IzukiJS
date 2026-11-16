@@ -6,6 +6,7 @@ import com.benton.izukijs.ocr.OcrBlock
 import com.benton.izukijs.ocr.OcrLineMatch
 import com.benton.izukijs.ocr.OcrLineSynthesis
 import com.benton.izukijs.ocr.OcrMatcher
+import com.benton.izukijs.virtualscreen.ScreenTarget
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -77,6 +78,14 @@ internal data class SearchOutcome(
     val matches: JSONArray,
     /** 本次查找尝试过控件树但读取失败时的原因，供调用方在 0 命中时给出提示。 */
     val treeFailure: NodeTreeResult.Failure? = null,
+    /** 控件树实际节点数；未读取控件树时为 null。 */
+    val treeNodes: Int? = null,
+    /** 本次查找在控件树上花费的 dump 时间；未读取控件树时为 null。 */
+    val dumpMs: Long? = null,
+    /** 控件树尝试次数（0 命中时会二次取树）。 */
+    val treeAttempts: Int = 0,
+    /** 控件树快照；供 explain / codegen 复用，避免二次 dump。 */
+    val treeRoot: NodeSnapshot? = null,
 )
 
 /**
@@ -96,20 +105,29 @@ internal fun AgentTools.search(
 ): SearchOutcome {
     val matches = JSONArray()
     var treeFailure: NodeTreeResult.Failure? = null
+    var treeNodes: Int? = null
+    var dumpMs: Long? = null
+    var treeAttempts = 0
+    var treeRoot: NodeSnapshot? = null
     fun addUiMatches(predicate: (NodeSnapshot) -> Boolean) {
         val collected = collectNodesResult(predicate)
         treeFailure = collected.failure
+        treeNodes = collected.nodeCount
+        dumpMs = collected.dumpMs
+        treeAttempts = collected.attempts
+        treeRoot = collected.root
         collected.nodes.forEach { matches.put(nodeLabel(it)) }
     }
+    fun outcome() = SearchOutcome(matches, treeFailure, treeNodes, dumpMs, treeAttempts, treeRoot)
     if (by == "id" && value != null) {
         addUiMatches { it.viewId == value }
-        return SearchOutcome(matches, treeFailure)
+        return outcome()
     }
     if (by == "desc" && value != null) {
         addUiMatches { it.contentDescription?.contains(value) == true }
-        return SearchOutcome(matches, treeFailure)
+        return outcome()
     }
-    val query = text ?: value ?: return SearchOutcome(matches)
+    val query = text ?: value ?: return outcome()
     fun uiMatches() {
         addUiMatches {
             it.text?.contains(query) == true || it.contentDescription?.contains(query) == true
@@ -127,7 +145,7 @@ internal fun AgentTools.search(
             ocrBlocks(query, fuzzy, minConfidence).forEach { matches.put(it) }
         }
     }
-    return SearchOutcome(matches, treeFailure)
+    return outcome()
 }
 
 /** 解析 OCR 结构化结果并按行聚合匹配，返回统一格式的匹配项。 */
@@ -192,39 +210,97 @@ internal data class HitProbe(
     val reason: String? = null,
 )
 
-/** 返回屏幕坐标 (x,y) 下最深的控件快照标签，并区分「没有控件树」与「有树但无命中」。 */
+/**
+ * 返回屏幕坐标 (x,y) 下最深的可点击祖先；只有根节点命中时不再拿根节点冒充命中。
+ *
+ * 控件树偶发只解析出根节点或布局容器，调用方需要区分「真的点到控件」和
+ * 「读树失败 / 只拿到根节点」，因此 [HitProbe.reason] 会说明具体原因。
+ */
 internal fun AgentTools.hitProbe(x: Double, y: Double): HitProbe {
     val result = probeTree(HIT_PROBE_BUDGET_MS)
     val root = result.rootOrNull()
         ?: return HitProbe(checked = false, reason = failureMessage(result))
-    val node = deepestAt(root, x.toInt(), y.toInt()) ?: return HitProbe(checked = true)
-    return HitProbe(checked = true, hit = nodeLabel(node))
+    val chain = hitChain(root, x.toInt(), y.toInt())
+    if (chain.isEmpty()) return HitProbe(checked = true, reason = "坐标不在控件树范围内")
+    val clickable = chain.lastOrNull { it.clickable }
+    val node = clickable ?: chain.last()
+    if (node === root) {
+        return HitProbe(checked = true, reason = "仅命中根节点，坐标处没有可校验控件")
+    }
+    return HitProbe(
+        checked = true,
+        hit = nodeLabel(node),
+        reason = if (clickable != null) "命中可点击控件" else "命中控件（不可点击）",
+    )
 }
 
-private fun AgentTools.deepestAt(node: NodeSnapshot, x: Int, y: Int): NodeSnapshot? {
-    if (x < node.left || x > node.right || y < node.top || y > node.bottom) return null
-    var best: NodeSnapshot = node
-    for (child in node.children) {
-        deepestAt(child, x, y)?.let { best = it }
-    }
-    return best
+/** 坐标命中的节点链，从根到最深节点；用于选择最深可点击祖先。 */
+internal fun hitChain(
+    root: NodeSnapshot,
+    x: Int,
+    y: Int,
+): List<NodeSnapshot> {
+    if (x < root.left || x > root.right || y < root.top || y > root.bottom) return emptyList()
+    val children = root.children
+        .mapNotNull { child -> hitChain(child, x, y).takeIf { it.isNotEmpty() } }
+        .maxByOrNull { it.size }
+        .orEmpty()
+    return listOf(root) + children
 }
 
 internal data class CollectedNodes(
     val nodes: List<NodeSnapshot>,
     val failure: NodeTreeResult.Failure? = null,
+    val nodeCount: Int = 0,
+    val dumpMs: Long = 0L,
+    val attempts: Int = 0,
+    val root: NodeSnapshot? = null,
 )
 
 internal fun AgentTools.collectNodesResult(predicate: (NodeSnapshot) -> Boolean): CollectedNodes {
-    val result = probeTree(TREE_PROBE_BUDGET_MS)
-    val root = result.rootOrNull() ?: return CollectedNodes(emptyList(), result as? NodeTreeResult.Failure)
-    val out = ArrayList<NodeSnapshot>()
-    fun walk(node: NodeSnapshot) {
-        if (predicate(node)) out.add(node)
-        node.children.forEach(::walk)
+    var totalDumpMs = 0L
+    var attempts = 0
+    var lastCount = 0
+    var lastRoot: NodeSnapshot? = null
+    while (attempts < UI_MISS_RETRIES) {
+        attempts++
+        val started = System.nanoTime()
+        val result = probeTree(TREE_PROBE_BUDGET_MS)
+        totalDumpMs += (System.nanoTime() - started) / 1_000_000L
+        val root = result.rootOrNull() ?: return CollectedNodes(
+            nodes = emptyList(),
+            failure = result as? NodeTreeResult.Failure,
+            nodeCount = lastCount,
+            dumpMs = totalDumpMs,
+            attempts = attempts,
+        )
+        lastCount = countNodes(root)
+        lastRoot = root
+        val out = ArrayList<NodeSnapshot>()
+        fun walk(node: NodeSnapshot) {
+            if (predicate(node)) out.add(node)
+            node.children.forEach(::walk)
+        }
+        walk(root)
+        if (out.isNotEmpty()) {
+            return CollectedNodes(
+                out,
+                nodeCount = lastCount,
+                dumpMs = totalDumpMs,
+                attempts = attempts,
+                root = root,
+            )
+        }
+        // 0 命中可能是界面过渡帧或 dump 拿到旧树；只在失败路径上多取一次。
+        if (attempts < UI_MISS_RETRIES) sleepQuietly(UI_MISS_RETRY_DELAY_MS)
     }
-    walk(root)
-    return CollectedNodes(out)
+    return CollectedNodes(
+        nodes = emptyList(),
+        nodeCount = lastCount,
+        dumpMs = totalDumpMs,
+        attempts = attempts,
+        root = lastRoot,
+    )
 }
 
 internal fun AgentTools.collectNodes(predicate: (NodeSnapshot) -> Boolean): List<NodeSnapshot> =
@@ -265,11 +341,19 @@ internal fun AgentTools.coordinate(args: JSONObject, key: String, normalized: Bo
     if (!args.has(key)) return null
     val raw = args.optDouble(key, Double.NaN)
     if (!raw.isFinite()) return null
-    return if (normalized) raw * axisSize(key) else raw
+    return if (normalized) raw * axisSize(args, key) else raw
 }
 
-private fun AgentTools.axisSize(key: String): Int =
-    if (key == "x" || key == "x1" || key == "x2") deviceApi.screenWidth() else deviceApi.screenHeight()
+private fun AgentTools.axisSize(args: JSONObject, key: String): Int {
+    val main = ScreenTarget.from(args.optString("target")) == ScreenTarget.MAIN
+    val horizontal = key == "x" || key == "x1" || key == "x2"
+    return when {
+        horizontal && main -> deviceApi.mainScreenWidth()
+        horizontal -> deviceApi.screenWidth()
+        main -> deviceApi.mainScreenHeight()
+        else -> deviceApi.screenHeight()
+    }
+}
 
 // ---- 结果构造 ----
 

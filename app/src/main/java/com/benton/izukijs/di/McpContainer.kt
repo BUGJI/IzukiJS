@@ -28,6 +28,7 @@ class McpContainer(
     logBus: LogBus,
     private val deviceApiBundle: DeviceApiBundle,
     private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
+    private val mainNodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
     private val scriptRepository: ScriptRepository,
     private val scriptExecutionManager: ScriptExecutionManager,
     private val logFileStore: LogFileStore,
@@ -69,6 +70,7 @@ class McpContainer(
             McpToolRegistry(
                 bundle = deviceApiBundle,
                 nodeTreeProvider = nodeTreeProvider,
+                mainNodeTreeProvider = mainNodeTreeProvider,
                 scriptRepository = scriptRepository,
                 executionManager = scriptExecutionManager,
                 operations = operations,

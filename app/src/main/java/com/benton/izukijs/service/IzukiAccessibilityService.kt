@@ -2,11 +2,13 @@ package com.benton.izukijs.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.Notification
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
 import android.os.Bundle
 import android.view.Display
+import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.annotation.RequiresApi
@@ -24,8 +26,11 @@ import java.util.concurrent.TimeUnit
  */
 class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHandle {
 
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     override fun onServiceConnected() {
         setInstance(this)
+        ToastObserver.setConnected(true)
         (application as? IzukiApp)?.container?.controllerManager?.register(
             AccessibilityController { instance }
         )
@@ -35,6 +40,7 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
         (application as? IzukiApp)?.container?.controllerManager?.unregister(
             ControlMode.ACCESSIBILITY
         )
+        ToastObserver.setConnected(false)
         setInstance(null)
         return super.onUnbind(intent)
     }
@@ -43,11 +49,83 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
         (application as? IzukiApp)?.container?.controllerManager?.unregister(
             ControlMode.ACCESSIBILITY
         )
+        ToastObserver.setConnected(false)
         setInstance(null)
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
+    /**
+     * 从无障碍事件中提取 toast。
+     *
+     * 系统通知也走 `TYPE_NOTIFICATION_STATE_CHANGED`，但 `parcelableData` 是
+     * [Notification]；只有不是通知的事件才当作 toast。解析失败时静默忽略，
+     * 不影响无障碍控制本身。
+     */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event == null) return
+        val eventPackage = event.packageName?.toString()
+        val className = event.className?.toString()
+        val texts = event.text.map { it?.toString() }.filterNotNull()
+        val joinedText = texts.joinToString(" ")
+        val contentDescription = event.contentDescription?.toString()
+        val parcelableIsNotification = runCatching {
+            event.parcelableData is Notification
+        }.getOrDefault(false)
+
+        val eventType = when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> "window_state"
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> "window_content"
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> "windows_changed"
+            AccessibilityEvent.TYPE_VIEW_SCROLLED -> "view_scrolled"
+            AccessibilityEvent.TYPE_VIEW_CLICKED -> "view_clicked"
+            AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> "text_changed"
+            AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED ->
+                if (parcelableIsNotification) "notification" else "toast"
+            else -> null
+        }
+        if (eventType != null) {
+            AccessibilityEventStore.record(
+                type = eventType,
+                packageName = eventPackage,
+                className = className,
+                text = joinedText,
+                contentDescription = contentDescription,
+                windowId = event.windowId,
+                time = event.eventTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            )
+        }
+
+        if (event.eventType != ToastRules.TYPE_NOTIFICATION_STATE_CHANGED) return
+        ToastObserver.recordFrom(
+            eventType = event.eventType,
+            parcelableIsNotification = parcelableIsNotification,
+            packageName = eventPackage,
+            ownPackage = packageName,
+            texts = event.text.map { it?.toString() },
+            className = className,
+        )
+    }
+
+    /**
+     * 按键只记录不拦截：返回 false 让系统继续处理按键。
+     *
+     * 需要在无障碍配置里声明 `flagRequestFilterKeyEvents` 才能收到回调。
+     */
+    override fun onKeyEvent(event: KeyEvent?): Boolean {
+        val keyEvent = event ?: return false
+        val type = when (keyEvent.action) {
+            KeyEvent.ACTION_DOWN -> "key_down"
+            KeyEvent.ACTION_UP -> "key_up"
+            else -> return false
+        }
+        AccessibilityEventStore.record(
+            type = type,
+            text = KeyEvent.keyCodeToString(keyEvent.keyCode),
+            time = keyEvent.eventTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
+            keyCode = keyEvent.keyCode,
+        )
+        return false
+    }
 
     override fun onInterrupt() = Unit
 
@@ -186,19 +264,23 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         val latch = CountDownLatch(1)
         var result: Bitmap? = null
-        takeScreenshotInternal { bitmap ->
-            result = bitmap
+        runCatching {
+            takeScreenshotInternal(attempt = 0) { bitmap ->
+                result = bitmap
+                latch.countDown()
+            }
+        }.onFailure {
             latch.countDown()
         }
         return try {
-            if (latch.await(5, TimeUnit.SECONDS)) result else null
+            if (latch.await(SCREENSHOT_TIMEOUT_MS, TimeUnit.MILLISECONDS)) result else null
         } catch (t: Throwable) {
             null
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.R)
-    private fun takeScreenshotInternal(onResult: (Bitmap?) -> Unit) {
+    private fun takeScreenshotInternal(attempt: Int, onResult: (Bitmap?) -> Unit) {
         takeScreenshot(
             Display.DEFAULT_DISPLAY,
             mainExecutor,
@@ -217,13 +299,28 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
                 }
 
                 override fun onFailure(errorCode: Int) {
-                    onResult(null)
+                    // 系统对无障碍截图有频率限制，连续调用时短暂等待后重试。
+                    if (errorCode == ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT &&
+                        attempt < MAX_SCREENSHOT_RETRIES
+                    ) {
+                        mainHandler.postDelayed(
+                            { takeScreenshotInternal(attempt + 1, onResult) },
+                            SCREENSHOT_RETRY_DELAY_MS,
+                        )
+                    } else {
+                        onResult(null)
+                    }
                 }
-            }
+            },
         )
     }
 
     companion object {
+        /** 无障碍截图等待回调的上限；覆盖 60 次限流重试。 */
+        private const val SCREENSHOT_TIMEOUT_MS = 5_000L
+        private const val MAX_SCREENSHOT_RETRIES = 60
+        private const val SCREENSHOT_RETRY_DELAY_MS = 50L
+
         /**
          * 用弱引用持有已连接的服务实例，避免静态字段延长 Service（Context）生命周期；
          * 系统在绑定期间仍持有强引用，因此正常使用不会提前被回收。

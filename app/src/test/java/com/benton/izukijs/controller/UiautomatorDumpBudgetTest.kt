@@ -25,14 +25,14 @@ class UiautomatorDumpBudgetTest {
 
     @Test
     fun effectiveBudgetIsCapped() {
-        assertEquals(10_000L, UiautomatorDumpBudget.effectiveBudgetFor(60_000L))
+        assertEquals(4_500L, UiautomatorDumpBudget.effectiveBudgetFor(60_000L))
     }
 
     @Test
     fun retryAmplifiesFirstAttemptWhenNoBaseline() {
         assertEquals(3_750L, UiautomatorDumpBudget.retryBudgetFor(1_500L, 0L))
         assertEquals(3_000L, UiautomatorDumpBudget.retryBudgetFor(1_200L, 0L))
-        assertEquals(6_250L, UiautomatorDumpBudget.retryBudgetFor(2_500L, 0L))
+        assertEquals(4_500L, UiautomatorDumpBudget.retryBudgetFor(2_500L, 0L))
     }
 
     @Test
@@ -52,6 +52,7 @@ class UiautomatorDumpBudgetTest {
         assertEquals(1_000L, UiautomatorDumpBudget.nextBaselineFor(0L, 1_000L))
         assertEquals(1_250L, UiautomatorDumpBudget.nextBaselineFor(1_000L, 2_000L))
         assertEquals(1_000L, UiautomatorDumpBudget.nextBaselineFor(1_000L, 0L))
+        assertEquals(750L, UiautomatorDumpBudget.nextBaselineFor(1_000L, 500L))
     }
 
     @Test

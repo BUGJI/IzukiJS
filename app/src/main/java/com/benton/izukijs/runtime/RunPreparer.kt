@@ -55,6 +55,7 @@ class RunPreparer(
         needs: Set<String>?,
         onStarted: (scriptName: String, scriptId: String, runId: String) -> Unit,
         isActive: () -> Boolean = { true },
+        runModeOverride: RunMode? = null,
     ): PreparedRun {
         // 解析脚本头部声明的运行参数，按「默认值 < 全局变量 < 脚本变量 < 本次传入值」合并。
         val useGlobal = scriptEnvRepository.useGlobalEnv(scriptId)
@@ -79,7 +80,7 @@ class RunPreparer(
             logBus.info("⚙ 运行参数: " + resolved.keys.sorted().joinToString(", "))
         }
         val virtualSettings = virtualScreenSettings.current()
-        val plannedRunMode = resolveRunMode(resolved, virtualSettings)
+        val plannedRunMode = runModeOverride ?: resolveRunMode(resolved, virtualSettings)
 
         onStarted(scriptName, scriptId, runId)
         runHistoryRepository.record(scriptId, scriptName)

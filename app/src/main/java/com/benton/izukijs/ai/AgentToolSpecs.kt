@@ -32,15 +32,23 @@ internal fun buildAgentToolSpecs(shellAvailable: Boolean): List<ToolSpec> = buil
     add(
         ToolSpec(
             "ui_dump",
-            "读取当前界面的控件树（含文本、控件 id、内容描述与屏幕坐标）。返回 JSON（tree 为缩进文本）；持续动画界面会快速降级而不是白等。当 OCR 不够精确时使用。",
-            objectSchema(emptyMap()),
+            "读取当前界面的控件树（含文本、控件 id、内容描述与屏幕坐标）。返回 JSON（tree 为缩进文本）；持续动画界面会快速降级而不是白等。当 OCR 不够精确时使用。" +
+                "selector 可传选择器 DSL 或条件对象，返回 explain（逐条件命中数）与 codegen（更稳定的选择器）。",
+            objectSchema(
+                mapOf(
+                    "selector" to stringProp("选择器 DSL 或 JSON 条件；例如 text=登录 clickable=true"),
+                    "dsl" to stringProp("selector 的别名"),
+                    "explain" to booleanProp("仅为 true 且 selector 非空时返回 explain"),
+                ),
+            ),
         ),
     )
     add(
         ToolSpec(
             "find",
             "查找屏幕元素并返回匹配项（中心坐标 + 边界）。text 先按 OCR 行聚合做模糊包含匹配（同一行的多个 OCR 块会拼接），未命中再按编辑距离容错；也可用 by=id|desc + value 精确匹配控件。" +
-                "纯文字查找建议 source=auto（默认）：优先走 OCR（约 0.6~1s），未命中再回退控件树；source=ocr 最快，source=ui 只读控件树（较慢但精确），source=both 双源交叉验证。",
+                "纯文字查找建议 source=auto（默认）：优先走 OCR（约 0.6~1s），未命中再回退控件树；source=ocr 最快，source=ui 只读控件树（较慢但精确），source=both 双源交叉验证。" +
+                "未命中时附带 explain（逐条件命中数）；UI 命中时附带 selector_dsl / selector_js，可直接用于 selector.click。",
             objectSchema(
                 mapOf(
                     "text" to stringProp("要查找的文字（模糊包含）"),
@@ -80,17 +88,62 @@ internal fun buildAgentToolSpecs(shellAvailable: Boolean): List<ToolSpec> = buil
     add(
         ToolSpec(
             "notifications",
-            "读取通知栏（需在「通知使用权」中开启本应用，只读）。action=list：当前通知列表，支持 package / limit / since_ms / exclude_ongoing 过滤；" +
-                "action=latest：等待 package 指定的应用在本次调用后出现的新通知（用于抓取验证码 / 消息）。",
+            "读取通知栏或 Toast（只读）。action=list：当前通知列表，需「通知使用权」，支持 package / limit / since_ms / exclude_ongoing 过滤；" +
+                "action=latest：等待 package 指定的应用在本次调用后出现的新通知（用于抓取验证码 / 消息）。" +
+                "action=toast_list：最近的 Toast 列表；action=toast_latest：等待匹配的新 Toast。Toast 需要无障碍服务，不需要通知使用权。",
             objectSchema(
                 mapOf(
-                    "action" to enumProp("操作", listOf("list", "latest")),
+                    "action" to enumProp(
+                        "操作",
+                        listOf("list", "latest", "toast_list", "toast_latest"),
+                    ),
                     "package" to stringProp("按应用包名过滤；action=latest 时必填"),
-                    "limit" to numberProp("action=list 最多返回条数（默认 20，上限 200）"),
+                    "contains" to stringProp("toast_latest 只接受文本包含该片段的 Toast"),
+                    "limit" to numberProp("action=list / toast_list 最多返回条数（默认 20，上限 200）"),
                     "since_ms" to numberProp("只返回 postTime 不早于该时间戳的通知"),
                     "exclude_ongoing" to booleanProp("忽略常驻 / 进行中的通知，默认 false"),
                     "detail" to booleanProp("action=list 是否返回完整字段（默认 false，只返回精简字段）"),
-                    "timeout_ms" to numberProp("action=latest 的等待超时（毫秒），默认 10000"),
+                    "timeout_ms" to numberProp("action=latest / toast_latest 的等待超时（毫秒），默认 10000"),
+                ),
+            ),
+        ),
+    )
+    add(
+        ToolSpec(
+            "notification_action",
+            "对通知执行写操作（需「通知使用权」）。action=click 触发通知的 contentIntent，可能打开敏感页面；" +
+                "action=delete 优先触发应用自己的 deleteIntent，否则系统取消。需要先用 notifications(action=list, detail=true) 取得 key。",
+            objectSchema(
+                mapOf(
+                    "action" to enumProp("操作", listOf("click", "delete")),
+                    "key" to stringProp("通知 key；不是包名"),
+                ),
+                required = listOf("action", "key"),
+            ),
+        ),
+    )
+
+    add(
+        ToolSpec(
+            "events",
+            "读取无障碍事件（需无障碍服务）。action=list：最近事件，新的在前；action=wait：等待匹配事件；" +
+                "action=idle：等待界面安静；action=window：最近窗口信息；action=status：缓冲状态。" +
+                "事件类型：window_state / window_content / windows_changed / view_scrolled / view_clicked / text_changed / notification / toast / key_down / key_up。",
+            objectSchema(
+                mapOf(
+                    "action" to enumProp("操作", listOf("list", "wait", "idle", "window", "status")),
+                    "type" to stringProp("单个事件类型，例如 window_state"),
+                    "types" to JSONObject().apply {
+                        put("type", "array")
+                        put("description", "事件类型数组；与 type 二选一")
+                        put("items", JSONObject().put("type", "string"))
+                    },
+                    "package" to stringProp("只匹配该包名的事件"),
+                    "text_contains" to stringProp("只匹配 text / desc 包含该片段的事件"),
+                    "since_seq" to numberProp("只读取序号大于该值的事件"),
+                    "limit" to numberProp("action=list 最多返回条数（默认 50，上限 200）"),
+                    "timeout_ms" to numberProp("action=wait / idle 的超时（毫秒），默认 10000"),
+                    "quiet_ms" to numberProp("action=idle 的安静时长（毫秒），默认 500"),
                 ),
             ),
         ),

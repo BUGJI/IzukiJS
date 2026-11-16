@@ -116,7 +116,8 @@
 - 目标应用已在主屏运行时，后台启动会先强停再迁移到虚拟屏；启动后不做周期离屏看护。
 - 虚拟屏激活后，截图 / 找图 / OCR / 点击默认自动定向到虚拟屏；可用
   `virtualScreen.target('main')` 临时切回主屏，或 `captureScreen(path, 'main'|'virtual')`
-  一次性指定捕获来源。虚拟屏截图会等待最多 1 秒首帧。
+  一次性指定捕获来源。虚拟屏截图会等待最多 1 秒首帧。MCP 的 `ui_dump` / `find` /
+  `ocr` / `click` / `wait` 支持 `target=main`，可显式读取或操作主屏。
 - 虚拟屏上不支持 `selector.*` / 无障碍控件树，请改用 `capture` / `ocr` / 坐标输入。
 - 脚本结束时会自动销毁本次创建的虚拟屏；`virtualScreen.stop()` 可在脚本内提前释放。
 - 虚拟屏采集与 PiP 预览都在 App 进程内完成；Shizuku 特权服务只负责创建/销毁
@@ -171,6 +172,14 @@
 
 - **通知监听**：开启「通知使用权」后，脚本可用 `notify.*` 读取通知标题 / 内容 / 包名、
   等待新通知、清除通知（只读，不点击、不回复）。
+- **Toast 读取**：`notify.toasts()` / `notify.latestToast()` 依赖无障碍服务而不是通知使用权；
+  无障碍未开启时返回空数组 / `null`。只读取文本与包名，不拦截或点击 toast。
+- **通知操作**：`notify.click(key)` / `notify.delete(key)` 与 MCP `notification_action` 可触发
+  通知点击或删除；点击可能打开敏感页面，`key` 来自 `notify.list()` 或 `notifications(detail=true)`。
+- **无障碍事件**：`events.*` 读取窗口 / 内容变化 / 滚动 / 通知 / Toast / 按键事件；按键只记录，
+  不拦截，也不会阻止系统处理。事件依赖无障碍服务。
+- **脚本悬浮窗**：`floaty.*` 需要在「权限与能力」中授予悬浮窗权限；窗口由脚本前台服务保活，
+  脚本停止或新 run 启动时自动清理，截图 / 点击前会临时隐藏。
 - **使用情况访问**：读取前台应用与使用时长，供 `app.foreground()` / `app.lastUsed()` /
   `app.usageStats()` 使用。
 - **应用列表**：一项应用层开关（对应 `QUERY_ALL_PACKAGES`），控制脚本能否用 `app.list()` /

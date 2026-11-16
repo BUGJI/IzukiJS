@@ -106,13 +106,28 @@ class ControllerManager {
      * 为某项能力选择一个已就绪的控制后端，优先使用该能力的偏好模式，其次全局偏好。
      */
     fun controllerFor(capability: Capability): DeviceController? {
+        val target = targetDisplayId
+        return controllerFor(capability, ignoreDisplayTarget = target == null)
+    }
+
+    /**
+     * 主屏专用查询：忽略虚拟屏 display 定向过滤。
+     *
+     * 虚拟屏激活时 `controllerFor(NODE_TREE)` 会刻意排除无障碍，但主屏控件树 /
+     * 主屏截图仍然是可用且必要的；这里提供显式主屏路径，避免把「当前操作目标是
+     * 虚拟屏」误判成「主屏读取能力不可用」。
+     */
+    fun controllerForMain(capability: Capability): DeviceController? =
+        controllerFor(capability, ignoreDisplayTarget = true)
+
+    private fun controllerFor(capability: Capability, ignoreDisplayTarget: Boolean): DeviceController? {
         val ordered = order(capability)
         val target = targetDisplayId
         return ordered.firstOrNull {
             !isDisabled(it.mode) &&
                 it.isReady() &&
                 capability in it.capabilities() &&
-                (target == null || it.supportsDisplayTarget())
+                (ignoreDisplayTarget || target == null || it.supportsDisplayTarget())
         }
     }
 

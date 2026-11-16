@@ -76,7 +76,7 @@ class AccessibilityController(
     override fun nodeTree(): NodeSnapshot? {
         val root = service?.rootNode() ?: return null
         return try {
-            root.toSnapshot(depth = 0)
+            root.toSnapshot(depth = 0, indexInParent = 0)
         } finally {
             root.releaseNode()
         }
@@ -127,14 +127,14 @@ class AccessibilityController(
         return result
     }
 
-    private fun AccessibilityNodeInfo.toSnapshot(depth: Int): NodeSnapshot {
+    private fun AccessibilityNodeInfo.toSnapshot(depth: Int, indexInParent: Int): NodeSnapshot {
         val rect = android.graphics.Rect()
         getBoundsInScreen(rect)
         val children = if (depth < MAX_DEPTH) {
             (0 until childCount).mapNotNull { i ->
                 val child = getChild(i) ?: return@mapNotNull null
                 try {
-                    child.toSnapshot(depth + 1)
+                    child.toSnapshot(depth + 1, i)
                 } finally {
                     child.releaseNode()
                 }
@@ -154,6 +154,12 @@ class AccessibilityController(
             clickable = isClickable,
             editable = isEditable,
             children = children,
+            packageName = packageName?.toString(),
+            scrollable = isScrollable,
+            enabled = isEnabled,
+            visible = isVisibleToUser,
+            indexInParent = indexInParent,
+            depth = depth,
         )
     }
 
@@ -168,6 +174,9 @@ class AccessibilityController(
         val className: String? = null,
         val clickable: Boolean? = null,
         val editable: Boolean? = null,
+        val scrollable: Boolean? = null,
+        val enabled: Boolean? = null,
+        val visible: Boolean? = null,
         val packageName: String? = null,
     ) {
         private val textPattern = textRegex?.let { Regex(it) }
@@ -181,7 +190,25 @@ class AccessibilityController(
             if (className != null && node.className?.toString() != className) return false
             if (clickable != null && node.isClickable != clickable) return false
             if (editable != null && node.isEditable != editable) return false
+            if (scrollable != null && node.isScrollable != scrollable) return false
+            if (enabled != null && node.isEnabled != enabled) return false
+            if (visible != null && node.isVisibleToUser != visible) return false
             if (packageName != null && node.packageName?.toString() != packageName) return false
+            return true
+        }
+
+        /** 纯快照匹配，用于 explain / codegen 与 JVM 测试。 */
+        fun matchesSnapshot(node: NodeSnapshot): Boolean {
+            if (viewId != null && node.viewId != viewId) return false
+            if (!matchesNodeValue(node.text, text, textContains, textPattern)) return false
+            if (!matchesNodeValue(node.contentDescription, desc, descContains, descPattern)) return false
+            if (className != null && node.className != className) return false
+            if (clickable != null && node.clickable != clickable) return false
+            if (editable != null && node.editable != editable) return false
+            if (scrollable != null && node.scrollable != scrollable) return false
+            if (enabled != null && node.enabled != enabled) return false
+            if (visible != null && node.visible != visible) return false
+            if (packageName != null && node.packageName != packageName) return false
             return true
         }
     }
@@ -195,6 +222,16 @@ class AccessibilityController(
             android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS
         const val GLOBAL_NOTIFICATIONS =
             android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS
+        const val GLOBAL_QUICK_SETTINGS =
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS
+        const val GLOBAL_POWER_DIALOG =
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG
+        const val GLOBAL_SPLIT_SCREEN =
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN
+        const val GLOBAL_LOCK_SCREEN =
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN
+        const val GLOBAL_DISMISS_NOTIFICATION_SHADE =
+            android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE
     }
 }
 

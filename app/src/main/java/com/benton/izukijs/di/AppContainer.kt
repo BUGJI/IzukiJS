@@ -7,6 +7,7 @@ import com.benton.izukijs.ai.AiConfigRepository
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.ControllerSettingsRepository
 import com.benton.izukijs.controller.NodeTreeResult
+import com.benton.izukijs.virtualscreen.ScreenTarget
 import com.benton.izukijs.controller.UiautomatorDumper
 import com.benton.izukijs.controller.adb.AdbManager
 import com.benton.izukijs.controller.hid.HidManager
@@ -249,11 +250,27 @@ class AppContainer(val application: Application) {
             controllerManager,
             logBus,
             timeoutMs,
-        ) {
-            com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
-                capture = { screenCapture.capture() },
-            )
-        }
+            animationProbe = {
+                com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
+                    capture = { screenCapture.capture() },
+                )
+            },
+        )
+    }
+
+    /** 显式主屏控件树：虚拟屏激活时仍按默认显示屏 dump，供 MCP target=main 使用。 */
+    private val mainNodeTreeProvider: (Long) -> NodeTreeResult = { timeoutMs ->
+        UiautomatorDumper.read(
+            controllerManager,
+            logBus,
+            timeoutMs,
+            animationProbe = {
+                com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
+                    capture = { screenCapture.capture() },
+                )
+            },
+            target = ScreenTarget.MAIN,
+        )
     }
 
     private val runPreparer = RunPreparer(
@@ -303,6 +320,7 @@ class AppContainer(val application: Application) {
         logBus = logBus,
         deviceApiBundle = deviceApiBundle,
         nodeTreeProvider = nodeTreeProvider,
+        mainNodeTreeProvider = mainNodeTreeProvider,
         scriptRepository = scriptRepository,
         scriptExecutionManager = scriptExecutionManager,
         logFileStore = logFileStore,

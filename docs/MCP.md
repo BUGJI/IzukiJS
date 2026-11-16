@@ -107,17 +107,19 @@ adb forward tcp:8765 tcp:8765
 | `virtual_screen` | 后台虚拟屏：`action=start\|stop\|status\|capture\|launch`。`start` 可传 `width` / `height` / `dpi`，`capture` 返回虚拟屏图像块（可传 `wait_next_frame` + `after_frame` 等待新帧，或 `wait_stable` + `stable_ms` 等待过渡帧结束），文本 meta 含当前 `frameSeq`；`launch` 按 `package` 拉起应用；`status` 含 `lastStopReason` / `lastStopAt`。每次调用自带 target，不改变脚本的全局操作目标 |
 | `virtual_screen_input` | 在虚拟屏上输入：`action=tap\|long_press\|swipe\|key`；坐标使用相对虚拟屏的 0~1 归一化值。输入成功后默认等待画面重绘（`wait_frame=true`，`frame_timeout_ms` 默认 600），响应含 `frameSeq` / `frameAdvanced`。`key` 支持 back / recents / enter / esc 或键码；虚拟屏无 launcher，`home` 会返回明确错误 |
 | `screenshot` | 截图，返回图像块及 `{image_size, screen_size}`（带 region 时附 `region`）；可用 `scale` / `quality` / `region=[l,t,r,b]` / `format=jpeg\|webp` 控制体积，`target=auto\|main\|virtual` 选择目标屏（默认 auto） |
-| `ocr` | 识别整屏文字，返回结构化文本块（含中心 x/y、宽高、真实 `left/top/right/bottom`、置信度与 `image` 尺寸）。x/y 是**中心**，越界判断请用四边而非 `x+w`；越界块会被裁剪并标 `suspicious`。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证。`lines=true` 时按行聚合（同行多块合并，按阅读顺序），可配 `max_gap_y` / `max_gap_x`；`target=virtual` 可识别后台虚拟屏 |
-| `ui_dump` | 控件树（无障碍优先；Shizuku / 无线调试 / Root 下走 `uiautomator dump` 兜底）。返回 JSON（`tree` 字段为缩进文本）；dump 前会用两帧差快速识别持续动画并调整预算，首次预算默认 1.5s，超时自动放大重试一次并按本机实测耗时自适应。`target=virtual` 会明确返回「虚拟屏不支持控件树」 |
-| `find` | 查找元素并返回匹配项（中心坐标 + 边界）。`text` 会先按 OCR 行聚合（同一行多个块拼接）再匹配，精确失败后按编辑距离容错（`fuzzy` 默认 true，可用 `min_conf` 过滤低置信块），或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证）。`ok` 表示是否命中，并附 `matched`。`target=virtual` 暂不支持，请改用 `ocr(target=virtual)` + 坐标输入 |
-| `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true`；控件树不可用时返回 `hit_checked=false` + `hit_reason`。`by=text` 在无障碍不可用时会用 OCR 行匹配兜底 |
+| `ocr` | 识别整屏文字，返回结构化文本块（含中心 x/y、宽高、真实 `left/top/right/bottom`、置信度与 `image` 尺寸）。x/y 是**中心**，越界判断请用四边而非 `x+w`；越界块会被裁剪并标 `suspicious`。本地 OCR 有精度边界：`0/O`、`I/l`、简繁、生僻字形易混，置信度常为 0.5~0.8，**不要**用其文本做精确匹配或关键分支，优先用 `ui_dump` / `find(source=ui)` 的控件文本交叉验证。`lines=true` 时按行聚合（同行多块合并，按阅读顺序），可配 `max_gap_y` / `max_gap_x`；`roi` 非全屏时额外返回 `region`，但 `image` 与坐标仍是全屏空间。`target=virtual` 可识别后台虚拟屏，`target=main` 固定识别主屏 |
+| `ui_dump` | 控件树（无障碍优先；Shizuku / 无线调试 / Root 下走 `uiautomator dump` 兜底）。返回 JSON（`tree` 字段为缩进文本）；dump 前会用两帧差快速识别持续动画并调整预算，首次预算默认 1.5s，超时自动放大重试一次并按本机实测耗时自适应，硬上限 4.5s 且向下快速收敛。`selector` / `dsl` 传入选择器 DSL 或条件对象时额外返回 `explain` 与 `codegen`；`target=main` 在虚拟屏激活时仍读取主屏，只有 `target=virtual` 会明确返回「虚拟屏不支持控件树」 |
+| `find` | 查找元素并返回匹配项（中心坐标 + 边界）。`text` 会先按 OCR 行聚合（同一行多个块拼接）再匹配，精确失败后按编辑距离容错（`fuzzy` 默认 true，可用 `min_conf` 过滤低置信块），或 `by=id\|desc` + `value`。`source=auto`（默认，先 OCR 未命中再回退控件树）\| `ocr`（最快）\| `ui`（较慢但精确）\| `both`（双源交叉验证）。控件树成功但 0 命中时会二次取树；失败结果附带 `tree_nodes` / `dump_ms` / `tree_attempts` / `tree_error`。未命中时附带 `explain`（逐条件命中数 / firstEmpty / nearMisses）；UI 命中时附带 `selector_dsl` 与 `selector_js`。`target=main` 固定查主屏，`target=virtual` 暂不支持，请改用 `ocr(target=virtual)` + 坐标输入 |
+| `click` | 点击 / 长按。`by=coord`（默认，x/y 像素）、`normalized=true`（0~1，推荐）或 `by=text\|id\|desc`；支持 `long` / `settle` / `dry_run` / `hit` / `target=main`。坐标点击默认不做命中校验（返回 `hit_checked=false`），传 `hit=true` 才返回命中元素并置 `hit_checked=true`；命中测试优先取最深可点击祖先，只命中根节点时返回 `hit=null` + `hit_reason`。`by=text/id/desc` 在无障碍不可用时回退控件树坐标点击，`by=text` 再回退 OCR 行匹配；失败结果附带 `tree_nodes` / `dump_ms` / `tree_error`。`target=virtual` 请改用 `virtual_screen_input` |
 | `swipe` | 滑动（支持 `normalized`） |
 | `gesture` | 复杂轨迹（曲线 / 多段 / 多指 / 停顿）。Root / Shizuku 等不支持完整轨迹的后端会降级：连续移动段合并为一次滑动，中间点 / 曲线 / 多指同时性丢失；只需直线滑动请用 `swipe` |
 | `text` | 输入文本；`by=id` + `value` 时给指定控件设值；`method` 选 `auto`/`input`/`clipboard`/`broadcast`（无障碍优先，Shizuku/无线调试/Root 下用控件树定位并聚焦后输入）；`dismiss_ime=true` 输入后收起软键盘 |
 | `press` | 按键：`key` 为 back / home / recents / enter / esc，或 Android KeyEvent 键码；收软键盘用 esc（`back` 通常收不掉） |
-| `wait` | 等待：`for=text` 等文字出现，`for=idle` 等界面稳定。`ok` 表示是否等到；`for=idle` 无控件树时返回 `ok=false, degraded=true`。总耗时受 `timeout_ms` 硬约束 |
+| `wait` | 等待：`for=text` 等文字出现，`for=idle` 等界面稳定。`ok` 表示是否等到；`for=idle` 无控件树、或单次 dump 预算已不小于 `timeout_ms` 时返回 `ok=false, degraded=true` + `message`。总耗时受 `timeout_ms` 硬约束。`target=main` 固定等待主屏 |
 | `info` | 设备信息：`what=device\|battery\|current_app\|foreground\|usage`；`target=auto\|main\|virtual` 指定前台包名的屏幕，auto 在虚拟屏激活时同时返回虚拟屏与主屏包名 |
-| `notifications` | `action=list` 支持 `package` / `limit`（默认 20）/ `since_ms` / `exclude_ongoing` / `detail`；`action=latest` 等待指定应用的新通知 |
+| `notifications` | `action=list` 支持 `package` / `limit`（默认 20）/ `since_ms` / `exclude_ongoing` / `detail`；`action=latest` 等待指定应用的新通知。返回 `listener_connected` / `rebind_attempted` / `empty_reason`，权限已授予但服务未绑定时会请求一次重绑并有限等待。`action=toast_list` / `toast_latest` 读取或等待 Toast，支持 `package` / `contains` / `limit` / `timeout_ms`；Toast 走无障碍服务，不需要通知使用权 |
+| `notification_action` | 通知写操作：`action=click` 触发 contentIntent，`action=delete` 优先触发应用 deleteIntent；需要 `key`（由 `notifications(detail=true)` 返回）。该工具不是只读工具 |
+| `events` | 读取无障碍事件：`action=list`（新的在前）/ `wait` / `idle` / `window` / `status`；支持 `type` / `types` / `package` / `text_contains` / `since_seq` / `timeout_ms` / `quiet_ms`。`wait` 与 `idle` 会阻塞，超时返回失败 JSON |
 | `app` | `action=launch`（package；命中黑名单则拒绝）或 `action=open_url`（url） |
 | `batch` | 一次调用顺序执行多个动作：`actions=[{tool,arguments}]`；默认失败即停并回传每步结果（含 `elapsed_ms`） |
 | `get_result` / `list_operations` | 查询异步操作结果 / 列出最近操作 |
@@ -130,7 +132,7 @@ adb forward tcp:8765 tcp:8765
 | 工具 | 开关 | 说明 |
 |---|---|---|
 | `shell` | 允许 Shell | 执行 Shell 命令（需 Shizuku / 无线调试 / Root），返回 `{ok, stdout, stderr, exit_code, elapsed_ms}`；高危命令默认拦截 |
-| `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理；`read_script` 支持 `offset` / `limit` / `line_numbers` / `meta` 分页读取并返回 `sha256`；`run_script` 立即启动时返回 `run_id`，按忙时策略排队 / 终止时返回 `queued` / `terminating` 且暂无 `run_id`，用 `get_run_log` 取回配对输出；`stop_script` 同时取消排队项 |
+| `list_scripts` / `read_script` / `run_script` / `stop_script` / `running_script` | 允许运行脚本 | 脚本管理；`read_script` 支持 `offset` / `limit` / `line_numbers` / `meta` 分页读取并返回 `sha256`；`run_script` 立即启动时返回 `run_id`，按忙时策略排队 / 终止时返回 `queued` / `terminating` 且暂无 `run_id`，用 `get_run_log` 取回配对输出；可选 `run_mode=auto\|foreground\|background`、`wake`、`unlock`、`reuse_virtual_screen`（默认 true）覆盖本次运行的点亮屏幕 / 自动解锁 / 虚拟屏归属；`stop_script` 同时取消排队项 |
 | `script_write` | 允许运行脚本 | 新建或覆盖脚本源码（上限 1 MiB）；覆盖前旧内容进入历史，返回真实脚本 id |
 | `script_edit` | 允许运行脚本 | 增量编辑：按顺序用 `newText` 精确替换 `oldText`，支持多编辑原子应用、`dry_run` 预演与 `expectedSha256` 并发校验；失败返回 `reason` 与候选行 |
 | `script_search` | 允许运行脚本 | 在单个或全部脚本中搜索文本（`literal` / `regex`），返回行号、列号与上下文；建议先搜索定位再编辑 |

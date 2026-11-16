@@ -22,9 +22,10 @@ internal val READ_ONLY_SHARED = setOf(
     "find",
     "info",
     "notifications",
+    "events",
 )
 
-internal val TARGETED_SHARED = setOf("ocr", "ui_dump", "find")
+internal val TARGETED_SHARED = setOf("ocr", "ui_dump", "find", "click", "wait")
 
 /** 执行前可按需自动解锁的主屏工具；虚拟屏 / 脚本 / 查询类工具不在此列。 */
 internal val AUTO_UNLOCK_TOOLS = setOf(

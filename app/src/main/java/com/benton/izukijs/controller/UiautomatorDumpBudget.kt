@@ -5,9 +5,10 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * `uiautomator dump` 的按设备自适应预算。
  *
- * 不同机型 / ROM 的 dump 耗时差异可达 2~3 倍（实测 0.4s ~ 3.5s），单一固定预算必然在部分
+ * 不同机型 / ROM 的 dump 耗时差异可达 2~3 倍（实测 0.4s ~ 4.1s），单一固定预算必然在部分
  * 设备上持续超时。这里记录本进程内观测到的成功耗时，并把 `实测 × 1.6` 作为后续读取的建议
- * 预算；首次尚未观测到时，由调用方在超时后按 [retryBudgetMs] 放大重试一次。
+ * 预算，同时用 [MAX_BUDGET_MS] 设硬上限，避免慢界面把预算单调推到无意义的高度；
+ * 首次尚未观测到时，由调用方在超时后按 [retryBudgetMs] 放大重试一次。
  *
  * 只保存进程内数据：重启后的第一次读取仍会走「超时 → 放大重试 → 记录」的一次性学习成本，
  * 避免为这个局部数据引入额外的持久化与备份语义。
@@ -54,7 +55,12 @@ object UiautomatorDumpBudget {
     internal fun nextBaselineFor(currentMs: Long, measuredMs: Long): Long {
         if (measuredMs <= 0L) return currentMs
         if (currentMs <= 0L) return measuredMs
-        return (currentMs * (SMOOTHING_DIVISOR - 1) + measuredMs) / SMOOTHING_DIVISOR
+        // 向下调整更快：慢界面的一次抖动不应把后续预算长期钉在高位。
+        return if (measuredMs < currentMs) {
+            (currentMs + measuredMs) / 2
+        } else {
+            (currentMs * (SMOOTHING_DIVISOR - 1) + measuredMs) / SMOOTHING_DIVISOR
+        }
     }
 
     internal fun retryBudgetFor(attemptedMs: Long, baselineMs: Long): Long? {
@@ -70,6 +76,6 @@ object UiautomatorDumpBudget {
     private const val RETRY_DENOMINATOR = 2L
     private const val SMOOTHING_DIVISOR = 4L
     private const val MIN_EFFECTIVE_MS = 1_500L
-    private const val MAX_BUDGET_MS = 10_000L
+    private const val MAX_BUDGET_MS = 4_500L
     private const val NO_RETRY_BUDGET_MS = 3_000L
 }

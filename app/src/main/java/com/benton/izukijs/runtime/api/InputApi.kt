@@ -1,5 +1,6 @@
 package com.benton.izukijs.runtime.api
 
+import android.os.Build
 import android.view.KeyEvent
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.ControllerManager
@@ -55,6 +56,17 @@ class InputApi(
         return ok
     }
 
+    /** 显式点击主屏；用于虚拟屏目标激活时的 `target=main`。 */
+    fun clickOnMainDisplay(x: Double, y: Double): Boolean {
+        consecutiveBacks = 0
+        val controller = mainDisplayController()
+        val ok = controller?.let {
+            OverlayCoordinator.withoutOverlay { it.clickForDisplay(x.toFloat(), y.toFloat(), MAIN_DISPLAY) }
+        } ?: false
+        logBus.debug("点击主屏 (${x.toInt()}, ${y.toInt()})${controller.resultTag(ok)}")
+        return ok
+    }
+
     @JavascriptInterface
     fun longClick(x: Double, y: Double, durationMillis: Double): Boolean {
         consecutiveBacks = 0
@@ -69,6 +81,35 @@ class InputApi(
         )
         return ok
     }
+
+    /** 显式长按主屏；用于虚拟屏目标激活时的 `target=main`。 */
+    fun longClickOnMainDisplay(x: Double, y: Double, durationMillis: Double): Boolean {
+        consecutiveBacks = 0
+        val controller = mainDisplayController()
+        val ok = controller?.let {
+            OverlayCoordinator.withoutOverlay {
+                it.longClickForDisplay(
+                    x.toFloat(),
+                    y.toFloat(),
+                    durationMillis.toLong(),
+                    MAIN_DISPLAY,
+                )
+            }
+        } ?: false
+        logBus.debug(
+            "长按主屏 (${x.toInt()}, ${y.toInt()}) ${durationMillis.toLong()}ms" +
+                controller.resultTag(ok),
+        )
+        return ok
+    }
+
+    private fun mainDisplayController(): DeviceController? =
+        controllers.all().firstOrNull {
+            !controllers.isDisabled(it.mode) &&
+                it.isReady() &&
+                Capability.GESTURE in it.capabilities() &&
+                it.supportsDisplayTarget()
+        }
 
     @JavascriptInterface
     fun swipe(
@@ -402,6 +443,39 @@ class InputApi(
     @JavascriptInterface
     fun recents(): Boolean = globalAction(GLOBAL_RECENTS, "最近任务")
 
+    /** 展开通知栏。 */
+    @JavascriptInterface
+    fun notifications(): Boolean = globalAction(GLOBAL_NOTIFICATIONS, "通知栏")
+
+    /** 展开快捷设置。 */
+    @JavascriptInterface
+    fun quickSettings(): Boolean = globalAction(GLOBAL_QUICK_SETTINGS, "快捷设置")
+
+    /** 打开电源菜单。 */
+    @JavascriptInterface
+    fun powerDialog(): Boolean = globalAction(GLOBAL_POWER_DIALOG, "电源菜单")
+
+    /** 进入分屏（Android 7+）。 */
+    @JavascriptInterface
+    fun splitScreen(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        return globalAction(GLOBAL_SPLIT_SCREEN, "分屏")
+    }
+
+    /** 锁定屏幕（Android 9+，需要无障碍服务）。 */
+    @JavascriptInterface
+    fun lockScreen(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return false
+        return globalAction(GLOBAL_LOCK_SCREEN, "锁屏")
+    }
+
+    /** 收起通知栏（Android 12+）。 */
+    @JavascriptInterface
+    fun dismissNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return false
+        return globalAction(GLOBAL_DISMISS_NOTIFICATION_SHADE, "收起通知栏")
+    }
+
     private fun globalAction(action: Int, label: String): Boolean {
         val controller = controllers.controllerFor(Capability.GLOBAL_ACTION)
         val ok = controller?.globalAction(action) ?: false
@@ -425,6 +499,15 @@ class InputApi(
         const val GLOBAL_BACK = 1 // AccessibilityService.GLOBAL_ACTION_BACK
         const val GLOBAL_HOME = 2 // AccessibilityService.GLOBAL_ACTION_HOME
         const val GLOBAL_RECENTS = 3 // AccessibilityService.GLOBAL_ACTION_RECENTS
+        const val GLOBAL_NOTIFICATIONS = 4
+        const val GLOBAL_QUICK_SETTINGS = 5
+        const val GLOBAL_POWER_DIALOG = 6
+        const val GLOBAL_SPLIT_SCREEN = 7
+        const val GLOBAL_LOCK_SCREEN = 8
+        const val GLOBAL_DISMISS_NOTIFICATION_SHADE = 12
+
+        /** 主屏 displayId；Android 的默认显示屏固定为 0。 */
+        const val MAIN_DISPLAY = 0
 
         /** 输入后等待画面重绘的默认/最大时长。 */
         const val DEFAULT_VERIFY_TIMEOUT_MS = 800

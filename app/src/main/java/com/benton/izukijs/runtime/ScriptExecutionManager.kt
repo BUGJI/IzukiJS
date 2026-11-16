@@ -130,6 +130,7 @@ class ScriptExecutionManager(
         onFinished: ((Boolean) -> Unit)? = null,
         onCompletion: ((RunCompletion) -> Unit)? = null,
         trigger: RunTrigger = RunTrigger.MANUAL,
+        overrides: RunOverrides = RunOverrides(),
     ): RunStartResult {
         val needs = ScriptNeeds.parse(source)
         if (needs != null) {
@@ -149,6 +150,7 @@ class ScriptExecutionManager(
             onCompletion = onCompletion,
             trigger = trigger,
             terminate = false,
+            overrides = overrides,
         )
         return submit(request)
     }
@@ -323,6 +325,7 @@ class ScriptExecutionManager(
                                 }
                             },
                             isActive = { gate.isActive(session.runId) },
+                            runModeOverride = request.overrides.runMode,
                         )
                     }
                 } catch (t: Throwable) {
@@ -355,13 +358,15 @@ class ScriptExecutionManager(
     ) {
         val startedAt = System.currentTimeMillis()
         var failure: Throwable? = null
+        var virtualOwned = false
         val settings = runtimeSettings.current()
         if (!gate.isActive(session.runId)) {
             finishAbandonedBeforeStart(session, request)
             return
         }
         try {
-            if (screenUnlock.isEnabled()) {
+            val autoUnlock = request.overrides.autoUnlock ?: true
+            if (autoUnlock && screenUnlock.isEnabled()) {
                 val result = screenUnlock.ensureUnlocked()
                 if (result != UnlockResult.OK &&
                     result != UnlockResult.ALREADY_UNLOCKED &&
@@ -371,7 +376,7 @@ class ScriptExecutionManager(
                 }
             }
             if (settings.keepAwake) session.acquireWakeLock()
-            if (settings.wakeScreen) {
+            if (request.overrides.wakeScreen ?: settings.wakeScreen) {
                 runCatching { controllers.controllerFor(Capability.KEY)?.pressKey(KEYCODE_WAKEUP) }
             }
             if (!gate.isActive(session.runId)) {
@@ -390,15 +395,23 @@ class ScriptExecutionManager(
                             "（${hinted.width}x${hinted.height}@${hinted.dpi}）",
                     )
                 }
-                val started = virtualScreen.start(
-                    VirtualScreenOptions(hinted ?: prepared.virtualSettings.resolution),
-                    ownerRunId = session.runId,
-                    // 只有仍持有运行位的 run 才能接管旧实例，避免终止超时后的旧脚本抢回。
-                    isRequesterCurrent = { gate.isActive(session.runId) },
-                )
-                if (!started) {
-                    logBus.warn("后台虚拟屏启动失败，本次回退前台模式")
-                    effectiveRunMode = RunMode.FOREGROUND
+                if (request.overrides.reuseVirtualScreen && virtualScreen.isActive()) {
+                    // 用户手动启动的虚拟屏不应被本次脚本接管 / 收尾停止；脚本仍可用
+                    // virtualScreen.stop() 显式释放（该接口允许停止无主实例）。
+                    logBus.debug("复用已运行的虚拟屏（display=${virtualScreen.displayId()}），本次运行不持有归属")
+                } else {
+                    val started = virtualScreen.start(
+                        VirtualScreenOptions(hinted ?: prepared.virtualSettings.resolution),
+                        ownerRunId = session.runId,
+                        // 只有仍持有运行位的 run 才能接管旧实例，避免终止超时后的旧脚本抢回。
+                        isRequesterCurrent = { gate.isActive(session.runId) },
+                    )
+                    if (started) {
+                        virtualOwned = true
+                    } else {
+                        logBus.warn("后台虚拟屏启动失败，本次回退前台模式")
+                        effectiveRunMode = RunMode.FOREGROUND
+                    }
                 }
             }
             virtualScreen.resetTarget(effectiveRunMode)
@@ -474,8 +487,9 @@ class ScriptExecutionManager(
                     (session.engine?.exitRequested == true || isExitThrowable(failure))
                 clearEngine(session)
                 if (virtualScreen.isActive()) {
-                    val autoStop = virtualScreenSettings.current().autoStopAfterRun
-                    if (autoStop) {
+                    if (!virtualOwned) {
+                        logBus.debug("虚拟屏属于用户或其他运行，本次收尾不停止")
+                    } else if (virtualScreenSettings.current().autoStopAfterRun) {
                         val stopped = runCatching {
                             virtualScreen.stopIfOwned(
                                 session.runId,
@@ -881,6 +895,8 @@ class ScriptExecutionManager(
         val terminate: Boolean,
         /** 终止超时接管时置 true：启动前释放旧脚本仍持有的录制。 */
         val releasesScriptRecording: Boolean = false,
+        /** MCP 等调用方对本次运行的显式覆盖。 */
+        val overrides: RunOverrides = RunOverrides(),
     )
 
     /** 一次运行的资源与状态句柄；所有释放操作都幂等，供异常路径复用。 */

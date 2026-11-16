@@ -4,7 +4,9 @@ import com.benton.izukijs.core.log.RunLogRegistry
 import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.data.ScriptStaleException
 import com.benton.izukijs.data.ScriptUpdateResult
+import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.runtime.RunOverrides
 import java.nio.file.Files
 import java.nio.file.attribute.BasicFileAttributes
 import org.json.JSONArray
@@ -336,7 +338,8 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
     },
     McpTool(
         name = "run_script",
-        description = "运行指定脚本。立即启动时返回 run_id；若按忙时策略排队或终止当前脚本，返回 queued / terminating 且暂无 run_id。",
+        description = "运行指定脚本。立即启动时返回 run_id；若按忙时策略排队或终止当前脚本，返回 queued / terminating 且暂无 run_id。" +
+            "可用 run_mode / wake / unlock / reuse_virtual_screen 覆盖本次运行的唤醒、解锁与虚拟屏归属。",
         inputSchema = McpSchemas.objectSchema(
             mapOf(
                 "id" to McpSchemas.string("脚本 id"),
@@ -344,6 +347,15 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
                     .put("type", "object")
                     .put("description", "可选的运行参数（字符串键值对）")
                     .put("additionalProperties", JSONObject().put("type", "string")),
+                "run_mode" to McpSchemas.enum(
+                    "运行模式；auto 跟随脚本 @env 与默认设置",
+                    listOf("auto", "foreground", "background"),
+                ),
+                "wake" to McpSchemas.boolean("是否点亮屏幕；省略时跟随设置"),
+                "unlock" to McpSchemas.boolean("是否自动解锁；省略时跟随设置"),
+                "reuse_virtual_screen" to McpSchemas.boolean(
+                    "虚拟屏已运行时复用而不接管；默认 true",
+                ),
             ),
             required = listOf("id"),
         ),
@@ -353,12 +365,25 @@ internal fun McpToolRegistry.scriptTools(): List<McpTool> = listOf(
         val values = args.optJSONObject("values")?.let { obj ->
             obj.keys().asSequence().associateWith { obj.optString(it) }
         } ?: emptyMap()
+        val rawMode = args.optString("run_mode").trim()
+        val runMode = when {
+            rawMode.isEmpty() || rawMode.equals("auto", ignoreCase = true) -> null
+            else -> RunMode.from(rawMode)
+                ?: return@McpTool McpToolResult.error("run_script: run_mode 只能是 auto/foreground/background")
+        }
+        val overrides = RunOverrides(
+            wakeScreen = if (args.has("wake")) args.optBoolean("wake") else null,
+            autoUnlock = if (args.has("unlock")) args.optBoolean("unlock") else null,
+            reuseVirtualScreen = args.optBoolean("reuse_virtual_screen", true),
+            runMode = runMode,
+        )
         val result = executionManager.run(
             script.id,
             script.name,
             scriptRepository.read(script),
             values,
             trigger = com.benton.izukijs.runtime.RunTrigger.MCP,
+            overrides = overrides,
         )
         when (result) {
             is com.benton.izukijs.runtime.RunStartResult.Rejected -> {

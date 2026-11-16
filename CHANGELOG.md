@@ -5,6 +5,50 @@
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [未发布]
+
+### 新增
+
+- 脚本 `notify` 命名空间新增 Toast 读取：`notify.toasts()` / `notify.latestToast()` /
+  `notify.toastStatus()` / `notify.clearToasts()`。Toast 从无障碍
+  `TYPE_NOTIFICATION_STATE_CHANGED` 事件解析，只需无障碍服务，不需要通知使用权；
+  支持按包名与文本包含等待，最多保留最近 50 条，阻塞等待会响应脚本停止。
+- MCP `notifications` 工具新增 `action=toast_list` / `toast_latest`，与脚本共用同一份
+  Toast 缓冲。
+- 选择器可靠性：点击 / 长按会自动向上寻找可点击祖先，新增
+  `selector.scrollForward` / `scrollBackward`（优先最大可滚动祖先）。
+- 通知动作：`notify.click(key)` / `notify.delete(key)`；MCP 新增写操作工具
+  `notification_action`，与只读的 `notifications` 分开。
+- 无障碍截图在系统限流时自动重试；`input` 新增通知栏、快捷设置、电源菜单、分屏、
+  锁屏与收起通知栏动作。
+- 新增 `events` 命名空间：窗口 / 内容变化 / 滚动 / 通知 / Toast / 按键事件，
+  支持 `list` / `wait` / `waitIdle` / `currentWindow`；按键只观察不拦截。选择器
+  `waitFor` / `waitGone` 改为事件唤醒，静态页面不再空转轮询。
+- 新增 `floaty` 脚本悬浮窗：JSON 内容与文字 / 按钮 / 开关 / 进度 / 图片 / 容器，
+  按钮与开关动作通过 `actions` / `waitAction` 队列消费；窗口按 runId 归属，
+  脚本停止或新 run 启动时自动清理，并接入截图 / 注入前的悬浮层隐藏。
+- 选择器新增字符串 DSL（`text=登录 clickable=true`、`text~=登`、`text=/.../i`）、
+  `selector.parse` / `explain` / `codegen`；MCP `find` 未命中附带解释，UI 命中附带
+  `selector_dsl` / `selector_js`，`ui_dump` 支持 `selector` / `explain`。
+
+### 修复
+
+- MCP `target=main` 在虚拟屏激活时恢复可用：`ui_dump` / `find` / `ocr` / `click` /
+  `wait` 可显式读取或操作主屏，只有 `target=virtual` 才拒绝控件树。
+- `click` 在无障碍不可用时回退控件树坐标点击，`by=text` 再回退 OCR；控件树成功但
+  0 命中时二次取树，并返回 `tree_nodes` / `dump_ms` / `tree_error` 等诊断。
+- `click(hit=true)` 改为返回最深可点击祖先；只命中根节点时返回 `hit=null` +
+  `hit_reason`，不再拿根 FrameLayout 冒充命中。
+- QuickJS 桥接层按方法形参个数适配实参，`log("x", i, y)` 等多参数调用不再把整个
+  脚本运行时打崩。
+- `ui_dump` 自适应预算增加 4.5s 硬上限并加快向下收敛；`wait(for=idle)` 在单次
+  dump 预算不小于 `timeout_ms` 时直接降级为固定等待。
+- 通知监听在权限已授予但服务未绑定时主动 `requestRebind` 并有限等待，列表结果
+  返回 `listener_connected` / `rebind_attempted` / `empty_reason`。
+- `ocr` 的 ROI 结果新增 `region`，并明确 `image` 与块坐标始终是全屏空间。
+- `run_script` 新增 `run_mode` / `wake` / `unlock` / `reuse_virtual_screen` 覆盖项；
+  复用已有虚拟屏时不再接管归属或自动停止。
+
 ## [1.2.4] - 2026-11-15
 
 ### 新增

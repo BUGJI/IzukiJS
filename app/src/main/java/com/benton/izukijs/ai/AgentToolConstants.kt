@@ -25,6 +25,10 @@ internal val HIT_PROBE_BUDGET_MS: Long
         UiautomatorDumpBudget.effectiveBaselineMs(),
     )
 internal const val MIN_PROBE_MS = 120L
+
+/** 控件树读取成功但 0 命中时的二次核对次数与间隔。 */
+internal const val UI_MISS_RETRIES = 2
+internal const val UI_MISS_RETRY_DELAY_MS = 80L
 internal const val DEFAULT_NOTIFICATION_LIMIT = 20
 internal const val MAX_NOTIFICATION_LIMIT = 200
 

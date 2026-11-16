@@ -1,6 +1,8 @@
 package com.benton.izukijs.service
 
 import android.app.Notification
+import android.content.ComponentName
+import android.content.Context
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,10 +31,21 @@ class NotificationListener : NotificationListenerService() {
     override fun onListenerConnected() {
         instance = this
         Store.setConnected(true)
-        // 连接时用当前活动通知预热缓冲，避免刚开启漏掉已在通知栏的项。
-        runCatching {
-            activeNotifications.orEmpty().forEach { Store.onPosted(it, prepend = false) }
-        }
+        // 连接时用当前活动通知重建缓冲，避免系统重绑后只拿到增量而丢掉已在通知栏的项。
+        refreshActive()
+    }
+
+    /**
+     * 用系统当前活动通知重建内存缓冲，返回实际读取到的条数。
+     *
+     * 服务未连接或系统拒绝读取时返回 0，调用方应结合 [Store.connected] 判断是
+     * 「真的没有通知」还是「监听未绑定」。
+     */
+    fun refreshActive(): Int {
+        if (instance !== this) return 0
+        val active = runCatching { activeNotifications }.getOrNull().orEmpty()
+        Store.replaceAll(active)
+        return active.size
     }
 
     override fun onListenerDisconnected() {
@@ -59,11 +72,58 @@ class NotificationListener : NotificationListenerService() {
         true
     }.getOrDefault(false)
 
+    /** 点击通知的 contentIntent；通知已消失或没有点击意图时返回 false。 */
+    fun click(key: String): Boolean = runCatching {
+        val sbn = activeNotifications?.firstOrNull { it.key == key } ?: return@runCatching false
+        val intent = sbn.notification?.contentIntent ?: return@runCatching false
+        intent.send()
+        true
+    }.getOrDefault(false)
+
+    /**
+     * 删除通知：优先触发应用自己的 deleteIntent（与用户划掉通知一致），
+     * 没有时退回系统取消。
+     */
+    fun delete(key: String): Boolean = runCatching {
+        val sbn = activeNotifications?.firstOrNull { it.key == key }
+        val intent = sbn?.notification?.deleteIntent
+        if (intent != null) {
+            intent.send()
+            true
+        } else {
+            cancel(key)
+        }
+    }.getOrDefault(false)
+
     companion object {
         @Volatile
         private var instance: NotificationListener? = null
 
         internal fun cancelByKey(key: String): Boolean = instance?.cancel(key) ?: false
+
+        internal fun clickByKey(key: String): Boolean = instance?.click(key) ?: false
+
+        internal fun deleteByKey(key: String): Boolean = instance?.delete(key) ?: false
+
+        /** 当前服务实例是否已与系统建立监听连接。 */
+        fun isConnected(): Boolean = Store.connected.value
+
+        /** 用系统活动通知刷新缓冲；未连接时返回 0。 */
+        fun refreshActive(): Int = instance?.refreshActive() ?: 0
+
+        /**
+         * 请求系统重新绑定监听服务。
+         *
+         * Android 在部分 ROM 上会在进程重启 / 后台限制后保留授权状态但不恢复连接，
+         * 此时仅检查权限会误判为「已开启」，需要主动触发一次重绑。
+         */
+        fun requestRebind(context: Context) {
+            runCatching {
+                NotificationListenerService.requestRebind(
+                    ComponentName(context.applicationContext, NotificationListener::class.java),
+                )
+            }
+        }
     }
 
     /** 最近通知的内存缓冲，容量 [MAX_ITEMS]。 */
@@ -82,6 +142,14 @@ class NotificationListener : NotificationListenerService() {
         }
 
         fun snapshot(): List<NotificationItem> = _items.value
+
+        /** 用系统当前活动通知整体替换缓冲，保持与通知栏一致。 */
+        @Synchronized
+        fun replaceAll(sbns: Array<out StatusBarNotification>) {
+            _items.value = sbns.mapNotNull { it.toItem() }
+                .sortedByDescending { it.postTime }
+                .take(MAX_ITEMS)
+        }
 
         @Synchronized
         fun onPosted(sbn: StatusBarNotification, prepend: Boolean = true) {

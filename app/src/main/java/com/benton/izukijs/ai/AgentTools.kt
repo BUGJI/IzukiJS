@@ -50,11 +50,13 @@ class AgentTools(
         return when (name) {
             "ocr" -> doOcr(args)
 
-            "ui_dump" -> doUiDump()
+            "ui_dump" -> doUiDump(args)
             "find" -> doFind(args)
             "screenshot" -> screenshotPathProvider()?.let { "截图已保存：$it" } ?: "截图失败"
             "info" -> doInfo(args)
             "notifications" -> doNotifications(args)
+            "notification_action" -> doNotificationAction(args)
+            "events" -> doEvents(args)
             "click" -> doClick(args)
             "swipe" -> doSwipe(args)
             "gesture" -> doGesture(args)

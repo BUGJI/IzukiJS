@@ -94,6 +94,7 @@ class OcrApi(
                 JSONObject().apply {
                     put("text", result.text)
                     put("image", JSONObject().put("w", bitmap.width).put("h", bitmap.height))
+                    if (!isFull(roi, bitmap)) put("region", roi.toJson())
                     put("blocks", blocks)
                     if (blocks.length() == 0) {
                         put("empty", true)
@@ -227,6 +228,7 @@ class OcrApi(
                 JSONObject().apply {
                     put("text", result.text)
                     put("image", JSONObject().put("w", bitmap.width).put("h", bitmap.height))
+                    if (!isFull(roi, bitmap)) put("region", roi.toJson())
                     put("lines", array)
                     if (array.length() == 0) {
                         put("empty", true)
@@ -263,6 +265,14 @@ class OcrApi(
 
     private fun isFull(roi: Box, bitmap: Bitmap): Boolean =
         roi.left == 0 && roi.top == 0 && roi.width == bitmap.width && roi.height == bitmap.height
+
+    /** ROI 是屏幕坐标空间的一部分；image 仍报告全屏尺寸，避免调用方误把块坐标当裁剪图坐标。 */
+    private fun Box.toJson(): JSONObject = JSONObject().apply {
+        put("x", left)
+        put("y", top)
+        put("w", width)
+        put("h", height)
+    }
 
     /** 查找包含指定文字的元素，返回 "x,y,width,height"（包围盒中心）。 */
     @JavascriptInterface

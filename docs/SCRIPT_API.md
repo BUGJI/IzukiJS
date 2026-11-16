@@ -12,6 +12,8 @@
 - [`device`](#device)
 - [`app`](#app)
 - [`notify`（通知监听 + 脚本进度通知）](#notify通知监听--脚本进度通知)
+- [`events`（无障碍事件）](#events无障碍事件)
+- [`floaty`（脚本悬浮窗）](#floaty脚本悬浮窗)
 - [`push`（发送通知）](#push发送通知)
 - [`fs`（文件读写）](#fs文件读写)
 - [`http`（需启用「脚本网络」）](#http需启用脚本网络)
@@ -43,6 +45,8 @@
 | `sleep(ms)` | 休眠，可被「停止」中断 |
 | `waitUntil(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回真值，并返回该值；超时返回 `null` |
 | `waitUntilGone(condition, timeoutMs=10000, intervalMs=200)` | 轮询直到 `condition()` 返回假值，返回是否在超时前消失 |
+| `waitForPackage(packageName, timeoutMs=10000)` | 等待前台包名变为指定值，返回是否在超时前命中（需无障碍或使用情况访问） |
+| `waitForActivity(activity, timeoutMs=10000)` | 等待窗口类名包含指定 Activity 名；尽力而为，部分界面只能拿到视图类名 |
 | `exit()` | 立即结束脚本 |
 | `captureScreen(path, source?, options?)` | 截图并存为 PNG；`path` 传 `""` 时存到缓存目录，返回文件路径（失败返回 `null`）；`source` 可为 `auto` / `virtual` / `main`；`options` 支持 `{waitNextFrame, afterFrame, waitStable, stableMs, timeoutMs}` |
 
@@ -69,6 +73,11 @@
 | `inputWithMethod(text, method)` | 指定输入方式：`auto` / `input` / `clipboard` / `broadcast` |
 | `inputInfo(text, options?)` | 结构化输入结果：`{delivered, ok, focused, method, screenChanged, frameSeq?, clipboardRestored, message?}`；`options.verify=true` 时尽量校验焦点 / 画面是否变化 |
 | `back()` / `home()` / `recents()` | 返回 / 主页 / 最近任务 |
+| `input.notifications()` / `input.quickSettings()` | 展开通知栏 / 快捷设置 |
+| `input.powerDialog()` | 打开电源菜单 |
+| `input.splitScreen()` | 进入分屏（Android 7+） |
+| `input.lockScreen()` | 锁定屏幕（Android 9+，需无障碍） |
+| `input.dismissNotifications()` | 收起通知栏（Android 12+） |
 
 > 底层由控制模式提供：无障碍 / Shizuku / 无线调试 / Root / 蓝牙 HID。具体能力见「控制模式」。
 >
@@ -152,6 +161,7 @@ gesture([
 ## `notify`（通知监听 + 脚本进度通知）
 
 读取 / 等待 / 清除通知需在「权限与能力」页开启「通知监听（通知使用权）」。
+Toast 读取走无障碍服务，只需开启「无障碍」，不需要通知使用权。
 `notify.progress` / `notify.update` / `notify.reset` 更新的是脚本运行通知，需要
 `POST_NOTIFICATIONS`，并受「设置 → 脚本运行 → 通知」控制。
 使用 `// @need notify` 时才会暴露 `notify` 命名空间。
@@ -162,8 +172,30 @@ gesture([
 |---|---|
 | `notify.available()` | 是否已授予通知使用权 |
 | `notify.list()` | 当前通知数组 `[{key,package,title,text,subText,postTime,ongoing}]` |
+| `notify.status()` | `{available, connected, count}`；区分未授权、监听未绑定与真的没有通知 |
 | `notify.latest(pkg, timeoutMs=10000)` | 等待 `pkg` 在调用之后出现的新通知，返回该通知对象；超时返回 `null` |
 | `notify.clear(key)` | 清除指定通知 |
+| `notify.click(key)` | 触发通知的 contentIntent；通知已消失或没有点击意图返回 `false` |
+| `notify.delete(key)` | 优先触发应用 deleteIntent，否则系统取消通知 |
+
+> `notify.click` 可能打开敏感页面；`key` 需要 `notify.list()`（或 MCP `notifications` 的 `detail=true`）返回。
+
+### Toast 读取
+
+Toast 不会进入通知栏，也不经过 `NotificationListenerService`；这里从无障碍
+`TYPE_NOTIFICATION_STATE_CHANGED` 事件中解析，因此需要开启「无障碍」，与「通知使用权」无关。
+只保留最近 50 条，新的在前。未开启无障碍时返回空数组 / `null`，不会抛异常。
+
+| 方法 | 说明 |
+|---|---|
+| `notify.toastAvailable()` | 无障碍服务是否已连接 |
+| `notify.toastStatus()` | `{available, connected, count}`；区分未开启无障碍与已连接但还没有 toast |
+| `notify.toasts(limit=20)` | 最近的 toast 数组 `[{package,text,texts,className,time}]` |
+| `notify.latestToast(options)` | 等待调用之后出现、匹配 `{package?, contains?, timeoutMs?}` 的 toast；超时返回 `null` |
+| `notify.latestToast(pkg, contains, timeoutMs=10000)` | 上面的位置参数写法；`contains` 可省略 |
+| `notify.clearToasts()` | 清空 toast 缓冲 |
+
+`contains` 对 `texts` 中任意一条做子串匹配；本应用自己弹出的 toast 不会被记录。
 
 ### 进度通知
 
@@ -218,6 +250,74 @@ notify.progress({
 notify.update({ text: "正在收尾", stage: "第 3/5 阶段" });
 notify.reset();
 ```
+
+## `events`（无障碍事件）
+
+从无障碍服务读取窗口、内容变化、滚动、通知、Toast 与按键事件。需要开启无障碍；
+使用 `// @need events` 时才会暴露命名空间。QuickJS 不支持跨线程回调，因此没有
+`events.on(...)`，统一用 `list` / `wait` / `waitIdle`。
+
+| 方法 | 说明 |
+|---|---|
+| `events.available()` | 无障碍服务是否已连接 |
+| `events.status()` | `{available, connected, seq, count}` |
+| `events.list({types?, sinceSeq?, limit?})` | 最近事件数组，新的在前；类型如 `window_state` / `window_content` / `view_scrolled` / `notification` / `toast` / `key_down` |
+| `events.wait({types?, package?, textContains?, sinceSeq?, timeoutMs?})` | 阻塞等待第一条匹配事件，超时返回 `null` |
+| `events.waitIdle({quietMs=500, timeoutMs=5000, types?})` | 等待界面安静，返回 `{ok, quietMs, elapsedMs, seq}` |
+| `events.currentWindow()` | 最近窗口 `{package, className, windowId, time}`；无窗口事件返回 `null` |
+| `events.clear()` | 清空事件缓冲 |
+
+事件字段：`{seq, type, package, className, text, desc, windowId, time, keyCode?}`。
+`key_down` / `key_up` 只记录不拦截，按键会继续交给系统。
+
+```js
+// 点击后等待界面安静再做 OCR
+click(540, 1200);
+events.waitIdle({ quietMs: 300, timeoutMs: 5000 });
+
+// 等待某个包名的窗口事件
+var e = events.wait({ types: ["window_state"], package: "com.example.app", timeoutMs: 8000 });
+```
+
+## `floaty`（脚本悬浮窗）
+
+需要「悬浮窗」权限；使用 `// @need floaty` 时才会暴露。悬浮窗复用脚本前台服务保活，
+脚本停止或新 run 启动时会自动清理旧窗口。截图 / 触摸注入前会经 `OverlayCoordinator`
+临时隐藏。
+
+| 方法 | 说明 |
+|---|---|
+| `floaty.available()` | 悬浮窗权限与服务是否就绪 |
+| `floaty.show(options)` | 创建窗口，返回 `{ok, id}` |
+| `floaty.update(id, options)` | 更新位置 / 大小 / 可见性 / 文本 / 选中 / 进度 |
+| `floaty.close(id)` / `floaty.closeAll()` | 关闭窗口 |
+| `floaty.actions(id)` | 取出按钮 / 开关动作队列 |
+| `floaty.waitAction(id, timeoutMs=10000)` | 阻塞等待下一个动作，超时返回 `null` |
+| `floaty.status(id)` | 当前窗口状态 |
+
+内容使用 JSON 描述，不实现 XML / JS 回调。组件：`text` / `button` / `switch` /
+`progress` / `image` / `row` / `column` / `spacer`。
+
+```js
+var w = floaty.show({
+  x: 40, y: 200, width: 520, height: 280,
+  touchable: true,
+  content: [
+    { type: "text", text: "脚本运行中", color: "#FFFFFF" },
+    { type: "button", id: "stop", text: "停止" },
+    { type: "switch", id: "auto", text: "自动", checked: true },
+    { type: "progress", id: "progress", value: 30, max: 100 }
+  ]
+});
+if (w.ok) {
+  var action = floaty.waitAction(w.id, 5000);
+  if (action && action.id === "stop") exit();
+  floaty.close(w.id);
+}
+```
+
+按钮点击产生 `{id, type:"click"}`，开关变化产生 `{id, type:"change", checked}`；
+脚本用 `waitAction` / `actions` 消费。
 
 ## `push`（发送通知）
 
@@ -363,7 +463,7 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `desc` / `description` | 描述完全相等 |
 | `descContains` / `descRegex` | 描述包含 / 正则 |
 | `className` / `class` | 类名完全相等 |
-| `clickable` / `editable` | 布尔属性 |
+| `clickable` / `editable` / `scrollable` / `enabled` / `visible` | 布尔属性 |
 | `package` / `packageName` | 包名 |
 
 | 方法 | 说明 |
@@ -376,8 +476,46 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `selector.waitFor(criteria, timeoutMs=5000, intervalMs=200, index=0)` | 等待出现，返回元素或 `null` |
 | `selector.waitGone(criteria, timeoutMs=5000, intervalMs=200)` | 等待消失，返回是否成功 |
 | `selector.scrollIntoView(criteria, index=0)` | 尝试滚动到可见区域 |
+| `selector.scrollForward(criteria, index=0)` / `selector.scrollBackward(criteria, index=0)` | 向前 / 向后滚动匹配元素或最大的可滚动祖先 |
+| `selector.parse(dsl)` | 把选择器 DSL 解析成条件对象 |
+| `selector.explain(criteria)` | 逐条件统计命中数，报告第一个筛空条件与 near miss |
+| `selector.codegen(criteria)` | 为当前匹配项生成更稳定的选择器 DSL / JS 代码 |
 
 元素对象字段：`{id,text,desc,className,package,left,top,right,bottom,x,y,width,height,clickable,longClickable,editable,scrollable,enabled,index}`。
+
+### 选择器 DSL
+
+`selector.find` / `findAll` / `click` / `waitFor` 等方法的条件参数既可以是对象，也可以
+是字符串 DSL；字符串不含操作符时仍按 `text` 精确匹配，兼容旧写法。
+
+```js
+selector.click("text=登录 clickable=true");
+selector.waitFor("text~=加载中", 5000);
+selector.find("text=/^同意.*/i");
+```
+
+| 写法 | 说明 |
+|---|---|
+| `text=登录` / `desc=关闭` | 精确匹配 |
+| `text~=登` / `desc~=关闭` | 包含 |
+| `text^=登` / `text$=录` | 前缀 / 后缀 |
+| `text=/^登.*录$/i` | 正则，支持 `i` / `m` / `s` |
+| `id=...` / `class=...` / `package=...` | 完整值 |
+| `clickable` / `!clickable` | 布尔真 / 假 |
+| `clickable=true` 等 | 显式布尔 |
+| `text="立即 登录"` | 含空格的值用引号 |
+
+多个条件以空格分隔，语义为 AND。非法 DSL 会返回 `{ok:false,error}` 或使查询返回空。
+
+### `explain` 与 `codegen`
+
+```js
+var why = selector.explain("text=登录 clickable=true");
+// {ok, totalNodes, conditions:[{key,value,before,matches}], firstEmpty, nearMisses, samples}
+
+var code = selector.codegen("text=登录");
+// {ok, dsl:"id=com.example:id/login", js:"selector.click(...)", matches:1, unique:true, confidence:0.95}
+```
 
 `selector.waitForText(text, ...)` / `selector.waitForId(id, ...)` /
 `selector.waitForTextContains` / `selector.waitForTextRegex` 是 `waitFor` 的便捷包装；
@@ -692,6 +830,8 @@ log(result.ok + " steps=" + result.steps);
 - 坐标均为全分辨率屏幕像素；`x` / `y` 是包围盒**中心**，不是左上角。结构化的 `blocks` 额外提供
   `left / top / right / bottom`，判断越界请用四边而不是 `x + w`。
 - 结构化结果还包含 `image: {w, h}`；超出图像的块会被裁剪并标记 `suspicious`。
+  `image` 始终是坐标空间（全屏）尺寸；使用 `roi` 裁剪时额外返回 `region: {x, y, w, h}`，
+  不要把块坐标当成裁剪图内坐标。
 
 | 方法 | 说明 |
 |---|---|

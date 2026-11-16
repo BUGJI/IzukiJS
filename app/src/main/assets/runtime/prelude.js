@@ -392,9 +392,20 @@
   }
   // ---- selector ----
   if (typeof selector !== 'undefined' && selector.findRaw) {
+    selector.parse = function (dsl) {
+      var raw = selector.parseDslRaw(String(dsl));
+      try { return JSON.parse(raw); } catch (e) { return { ok: false, error: String(e) }; }
+    };
+    var __selDslKeys = /^(text|desc|description|contentDescription|textContains|textRegex|descContains|descRegex|id|viewId|class|className|package|packageName|clickable|editable|scrollable|enabled|visible)([~^$]?=|\s|$)/;
     var __selCriteria = function (criteria) {
       if (criteria == null) return {};
-      if (typeof criteria === 'string') return { text: criteria };
+      if (typeof criteria === 'string') {
+        if (__selDslKeys.test(criteria) || /^!\w/.test(criteria)) {
+          var parsed = selector.parse(criteria);
+          if (parsed && parsed.ok !== false) return parsed;
+        }
+        return { text: criteria };
+      }
       return criteria;
     };
     var __selJson = function (criteria) {
@@ -403,6 +414,20 @@
     var __selParse = function (raw) {
       if (!raw) return null;
       try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    selector.explain = function (criteria) {
+      try {
+        return JSON.parse(selector.explainRaw(__selJson(criteria)));
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    };
+    selector.codegen = function (criteria) {
+      try {
+        return JSON.parse(selector.codegenRaw(__selJson(criteria)));
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
     };
     selector.find = function (criteria, index) {
       return __selParse(selector.findRaw(__selJson(criteria), index == null ? 0 : index));
@@ -427,6 +452,12 @@
     };
     selector.scrollIntoView = function (criteria, index) {
       return selector.scrollIntoViewRaw(__selJson(criteria), index == null ? 0 : index);
+    };
+    selector.scrollForward = function (criteria, index) {
+      return selector.scrollForwardRaw(__selJson(criteria), index == null ? 0 : index);
+    };
+    selector.scrollBackward = function (criteria, index) {
+      return selector.scrollBackwardRaw(__selJson(criteria), index == null ? 0 : index);
     };
     selector.waitFor = function (criteria, timeoutMs, intervalMs, index) {
       var result = __selParse(selector.waitForRaw(
@@ -545,7 +576,139 @@
         return notify.updateRaw(JSON.stringify(options || {}));
       };
     }
+    if (typeof notify.toasts === 'function') {
+      var __notifyToasts = notify.toasts;
+      notify.toasts = function (limit) {
+        try {
+          return JSON.parse(__notifyToasts(limit == null ? 20 : limit));
+        } catch (e) {
+          return [];
+        }
+      };
+      if (typeof notify.latestToastRaw === 'function') {
+        notify.latestToast = function (pkg, contains, timeoutMs) {
+          var options;
+          if (pkg != null && typeof pkg === 'object') {
+            options = pkg;
+          } else {
+            if (typeof contains === 'number' && timeoutMs == null) {
+              timeoutMs = contains;
+              contains = null;
+            }
+            options = {
+              package: pkg,
+              contains: contains,
+              timeoutMs: timeoutMs
+            };
+          }
+          var raw = notify.latestToastRaw(JSON.stringify(options || {}));
+          if (!raw) return null;
+          try { return JSON.parse(raw); } catch (e) { return null; }
+        };
+      }
+    }
   }
+  if (typeof events !== 'undefined' && events.listRaw) {
+    events.list = function (options) {
+      try {
+        return JSON.parse(events.listRaw(JSON.stringify(options || {})));
+      } catch (e) {
+        return [];
+      }
+    };
+    events.wait = function (options) {
+      var raw = events.waitRaw(JSON.stringify(options || {}));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    events.waitIdle = function (options) {
+      try {
+        return JSON.parse(events.waitIdleRaw(JSON.stringify(options || {})));
+      } catch (e) {
+        return { ok: false, reason: String(e) };
+      }
+    };
+    events.currentWindow = function () {
+      var raw = events.currentWindowRaw();
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    var __eventsStatus = events.status;
+    events.status = function () {
+      try { return JSON.parse(__eventsStatus()); } catch (e) { return null; }
+    };
+  }
+  // ---- floaty 悬浮窗 ----
+  if (typeof floaty !== 'undefined' && floaty.showRaw) {
+    floaty.show = function (options) {
+      try {
+        return JSON.parse(floaty.showRaw(JSON.stringify(options || {})));
+      } catch (e) {
+        return { ok: false, error: String(e) };
+      }
+    };
+    floaty.update = function (id, options) {
+      return floaty.updateRaw(String(id), JSON.stringify(options || {}));
+    };
+    floaty.waitAction = function (id, timeoutMs) {
+      var raw = floaty.waitActionRaw(String(id), timeoutMs == null ? 10000 : timeoutMs);
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+    var __floatyActions = floaty.actions;
+    floaty.actions = function (id) {
+      try { return JSON.parse(__floatyActions(String(id))); } catch (e) { return []; }
+    };
+    var __floatyStatus = floaty.status;
+    floaty.status = function (id) {
+      var raw = __floatyStatus(String(id));
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
+    };
+  }
+  // ---- 等待前台包名 / 窗口 ----
+  global.waitForPackage = function (pkg, timeoutMs) {
+    var target = String(pkg == null ? '' : pkg);
+    var timeout = timeoutMs == null ? 10000 : Number(timeoutMs);
+    if (!isFinite(timeout) || timeout < 0) timeout = 10000;
+    var deadline = Date.now() + timeout;
+    for (;;) {
+      if (typeof app !== 'undefined' && typeof app.currentPackage === 'function' &&
+          app.currentPackage() === target) {
+        return true;
+      }
+      if (typeof events !== 'undefined' && typeof events.currentWindow === 'function') {
+        var win = events.currentWindow();
+        if (win && win.package === target) return true;
+      }
+      if (typeof shouldExit === 'function' && shouldExit()) {
+        throw new Error('IZUKI_SCRIPT_EXIT');
+      }
+      var remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      sleep(Math.min(200, remaining));
+    }
+  };
+  global.waitForActivity = function (activity, timeoutMs) {
+    var target = String(activity == null ? '' : activity);
+    var timeout = timeoutMs == null ? 10000 : Number(timeoutMs);
+    if (!isFinite(timeout) || timeout < 0) timeout = 10000;
+    var deadline = Date.now() + timeout;
+    for (;;) {
+      if (typeof events !== 'undefined' && typeof events.currentWindow === 'function') {
+        var win = events.currentWindow();
+        if (win && win.className && String(win.className).indexOf(target) >= 0) {
+          return true;
+        }
+      }
+      if (typeof shouldExit === 'function' && shouldExit()) {
+        throw new Error('IZUKI_SCRIPT_EXIT');
+      }
+      var remaining = deadline - Date.now();
+      if (remaining <= 0) return false;
+      sleep(Math.min(200, remaining));
+    }
+  };
   if (typeof env !== 'undefined' && env.allRaw) {
     env.get = function (key, fallback) {
       if (fallback === undefined || fallback === null) return env.getRaw(key);

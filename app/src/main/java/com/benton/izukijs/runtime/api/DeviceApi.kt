@@ -36,6 +36,11 @@ class DeviceApi(
     @JavascriptInterface
     fun screenHeight(): Int = virtualResolution()?.height ?: realMetrics().heightPixels
 
+    /** 主屏真实宽高；不受虚拟屏目标影响，供 target=main 的归一化坐标换算。 */
+    fun mainScreenWidth(): Int = realMetrics().widthPixels
+
+    fun mainScreenHeight(): Int = realMetrics().heightPixels
+
     /**
      * 当前屏幕旋转：0 = 0°，1 = 90°，2 = 180°，3 = 270°。
      *

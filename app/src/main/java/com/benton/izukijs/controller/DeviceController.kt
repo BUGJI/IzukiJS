@@ -71,6 +71,12 @@ data class NodeSnapshot(
     val clickable: Boolean,
     val editable: Boolean,
     val children: List<NodeSnapshot>,
+    val packageName: String? = null,
+    val scrollable: Boolean = false,
+    val enabled: Boolean = true,
+    val visible: Boolean = true,
+    val indexInParent: Int = 0,
+    val depth: Int = 0,
 )
 
 /** 坐标点击与滑动能力。 */
@@ -175,4 +181,20 @@ interface DeviceController :
      * 目前只有 Shizuku / 无线调试 / Root 这类 Shell 后端支持；无障碍与 HID 固定操作主屏。
      */
     fun supportsDisplayTarget(): Boolean = false
+
+    /** 显式指定 display 的点击；默认后端不支持时返回 false。 */
+    fun clickForDisplay(x: Float, y: Float, displayId: Int): Boolean = false
+
+    /** 显式指定 display 的长按；默认后端不支持时返回 false。 */
+    fun longClickForDisplay(x: Float, y: Float, durationMs: Long, displayId: Int): Boolean = false
+
+    /** 显式指定 display 的滑动；默认后端不支持时返回 false。 */
+    fun swipeForDisplay(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        durationMs: Long,
+        displayId: Int,
+    ): Boolean = false
 }

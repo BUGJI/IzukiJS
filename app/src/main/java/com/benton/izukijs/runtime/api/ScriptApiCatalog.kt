@@ -32,7 +32,8 @@ object ScriptApiCatalog {
             kind = Kind.GLOBAL,
             suggestions = listOf(
                 "log(", "debug(", "warn(", "error(", "toast(", "sleep(",
-                "waitUntil(", "waitUntilGone(", "captureScreen(", "require(", "exit(",
+                "waitUntil(", "waitUntilGone(", "waitForPackage(", "waitForActivity(",
+                "captureScreen(", "require(", "exit(",
             ),
         ),
         Entry(
@@ -41,6 +42,8 @@ object ScriptApiCatalog {
             suggestions = listOf(
                 "click(", "longClick(", "swipe(", "gesture(", "press(",
                 "input(", "inputWithMethod(", "inputInfo(", "back(", "home(", "recents(",
+                "notifications(", "quickSettings(", "powerDialog(", "splitScreen(",
+                "lockScreen(", "dismissNotifications(",
             ),
         ),
     )
@@ -141,8 +144,27 @@ object ScriptApiCatalog {
             kind = Kind.NAMESPACE,
             need = "notify",
             suggestions = listOf(
-                "available(", "list(", "latest(", "clear(",
+                "available(", "list(", "latest(", "clear(", "click(", "delete(",
+                "toastAvailable(", "toastStatus(", "toasts(", "latestToast(", "clearToasts(",
                 "progress(", "update(", "reset(", "progressEnabled(",
+            ),
+        ),
+        Entry(
+            name = "events",
+            kind = Kind.NAMESPACE,
+            need = "events",
+            suggestions = listOf(
+                "available(", "status(", "list(", "wait(", "waitIdle(",
+                "currentWindow(", "clear(",
+            ),
+        ),
+        Entry(
+            name = "floaty",
+            kind = Kind.NAMESPACE,
+            need = "floaty",
+            suggestions = listOf(
+                "available(", "show(", "update(", "close(", "closeAll(",
+                "actions(", "waitAction(", "status(",
             ),
         ),
         Entry(
@@ -166,7 +188,9 @@ object ScriptApiCatalog {
             need = "selector",
             suggestions = listOf(
                 "find(", "findAll(", "nth(", "exists(", "count(", "click(", "longClick(",
-                "waitFor(", "waitGone(", "scrollIntoView(", "findByText(", "findAllByText(",
+                "parse(", "explain(", "codegen(",
+                "waitFor(", "waitGone(", "scrollIntoView(", "scrollForward(", "scrollBackward(",
+                "findByText(", "findAllByText(",
                 "findByTextContains(", "findByTextRegex(", "findByDesc(", "findByDescContains(",
                 "findByDescRegex(", "waitForText(", "waitForTextContains(", "waitForTextRegex(",
                 "waitForId(", "existsById(", "existsByText(", "existsByDesc(", "countByText(",

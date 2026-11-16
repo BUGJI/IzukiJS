@@ -51,6 +51,8 @@ class ScriptApiEnvironment(
     private val isRunActive: () -> Boolean = { true },
 ) : Closeable {
 
+    private val bridge = com.benton.izukijs.runtime.QuickJsBridge(logBus)
+
     private val screenshotStore = ScreenshotStore(
         context = context,
         settingsProvider = { captureSettingsRepository.current() },
@@ -87,11 +89,12 @@ class ScriptApiEnvironment(
         val ocrApi = runBundle.ocrApi
         val selectorApi = runBundle.selectorApi
 
-        ctx.appendJavascriptInterface(globalApi)
-        ctx.appendJavascriptInterface(inputApi)
-        ctx.addJavascriptInterface(deviceApi, "device")
-        ctx.addJavascriptInterface(ConsoleApi(logBus, runId), "console")
-        ctx.addJavascriptInterface(
+        bridge.appendGlobal(ctx, globalApi)
+        bridge.appendGlobal(ctx, inputApi)
+        bridge.addNamespace(ctx, deviceApi, "device")
+        bridge.addNamespace(ctx, ConsoleApi(logBus, runId), "console")
+        bridge.addNamespace(
+            ctx,
             PermissionsApi(
                 context,
                 controllers,
@@ -103,12 +106,13 @@ class ScriptApiEnvironment(
             ),
             "permissions",
         )
-        ctx.addJavascriptInterface(EnvApi(scriptEnv), "env")
-        ctx.addJavascriptInterface(StateApi(scriptEnv), "state")
-        ctx.addJavascriptInterface(ModuleApi(moduleSourceProvider), "modules")
+        bridge.addNamespace(ctx, EnvApi(scriptEnv), "env")
+        bridge.addNamespace(ctx, StateApi(scriptEnv), "state")
+        bridge.addNamespace(ctx, ModuleApi(moduleSourceProvider), "modules")
 
         if (allowed(needs, "virtualScreen") && virtualScreen != null) {
-            ctx.addJavascriptInterface(
+            bridge.addNamespace(
+                ctx,
                 VirtualScreenApi(
                     manager = virtualScreen,
                     runModeProvider = { runMode },
@@ -121,14 +125,15 @@ class ScriptApiEnvironment(
                 "virtualScreen",
             )
         }
-        if (allowed(needs, "app")) ctx.addJavascriptInterface(appApi, "app")
-        if (allowed(needs, "shell")) ctx.addJavascriptInterface(shellApi, "shell")
+        if (allowed(needs, "app")) bridge.addNamespace(ctx, appApi, "app")
+        if (allowed(needs, "shell")) bridge.addNamespace(ctx, shellApi, "shell")
         if (allowed(needs, "images")) {
-            ctx.addJavascriptInterface(imageApi, "images")
+            bridge.addNamespace(ctx, imageApi, "images")
         }
-        if (allowed(needs, "ocr")) ctx.addJavascriptInterface(ocrApi, "ocr")
+        if (allowed(needs, "ocr")) bridge.addNamespace(ctx, ocrApi, "ocr")
         if (allowed(needs, "pipeline")) {
-            ctx.addJavascriptInterface(
+            bridge.addNamespace(
+                ctx,
                 PipelineApi(
                     screenshotProvider = runBundle.screenshotProvider,
                     screenSizeProvider = { deviceApi.width() to deviceApi.height() },
@@ -146,13 +151,24 @@ class ScriptApiEnvironment(
         if (allowed(needs, "record") && recordingSession != null) {
             val api = RecordApi(recordingSession, logBus)
             recordApi = api
-            ctx.addJavascriptInterface(api, "record")
+            bridge.addNamespace(ctx, api, "record")
         }
         if (allowed(needs, "notify")) {
-            ctx.addJavascriptInterface(runBundle.notificationApi.forRun(runId), "notify")
+            bridge.addNamespace(
+                ctx,
+                runBundle.notificationApi.forRun(runId, exitRequested),
+                "notify",
+            )
+        }
+        if (allowed(needs, "events")) {
+            bridge.addNamespace(ctx, EventsApi(exitRequested), "events")
+        }
+        if (allowed(needs, "floaty")) {
+            bridge.addNamespace(ctx, FloatyApi(runId, exitRequested), "floaty")
         }
         if (allowed(needs, "push") && pushDispatcher != null) {
-            ctx.addJavascriptInterface(
+            bridge.addNamespace(
+                ctx,
                 PushApi(
                     dispatcher = pushDispatcher,
                     logBus = logBus,
@@ -162,19 +178,21 @@ class ScriptApiEnvironment(
                 "push",
             )
         }
-        if (allowed(needs, "fs")) ctx.addJavascriptInterface(FileApi(logBus), "fs")
-        if (allowed(needs, "selector")) ctx.addJavascriptInterface(selectorApi, "selector")
+        if (allowed(needs, "fs")) bridge.addNamespace(ctx, FileApi(logBus), "fs")
+        if (allowed(needs, "selector")) bridge.addNamespace(ctx, selectorApi, "selector")
         if (allowed(needs, "clipboard")) {
-            ctx.addJavascriptInterface(ClipboardApi(context, logBus), "clipboard")
+            bridge.addNamespace(ctx, ClipboardApi(context, logBus), "clipboard")
         }
         if (allowed(needs, "http")) {
-            ctx.addJavascriptInterface(
+            bridge.addNamespace(
+                ctx,
                 HttpApi(logBus) { httpSettingsRepository.current() },
                 "http",
             )
         }
         if (allowed(needs, "ai")) {
-            ctx.addJavascriptInterface(
+            bridge.addNamespace(
+                ctx,
                 AiApi(
                     configRepository = aiConfigRepository,
                     inputApi = inputApi,
@@ -195,6 +213,7 @@ class ScriptApiEnvironment(
     }
 
     override fun close() {
+        runCatching { com.benton.izukijs.service.ScriptOverlayManager.closeAll(runId) }
         runCatching { recordApi?.close() }
         recordApi = null
         if (imageApiDelegate.isInitialized()) runCatching { imageApi.close() }

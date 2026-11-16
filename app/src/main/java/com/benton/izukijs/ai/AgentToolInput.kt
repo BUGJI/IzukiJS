@@ -1,6 +1,7 @@
 package com.benton.izukijs.ai
 
 import android.view.KeyEvent
+import com.benton.izukijs.virtualscreen.ScreenTarget
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -12,19 +13,21 @@ internal fun AgentTools.doClick(args: JSONObject): String {
     val duration = args.optDouble("duration_ms", DEFAULT_LONG_CLICK_MS)
     val fuzzy = args.optBoolean("fuzzy", true)
     val minConf = args.optDouble("min_conf", 0.0).coerceIn(0.0, 1.0)
+    val target = ScreenTarget.from(args.optString("target"))
 
     if (by == "text" || by == "id" || by == "desc") {
         val value = args.optString("value")
         if (value.isBlank()) return errorJson("click: by=$by 需要 value")
         if (args.optBoolean("dry_run", false)) {
-            val matches = search(
+            val outcome = search(
                 by = by,
                 value = value,
                 text = null,
                 source = if (by == "text") SOURCE_AUTO else SOURCE_UI,
                 fuzzy = fuzzy,
                 minConfidence = minConf,
-            ).matches
+            )
+            val matches = outcome.matches
             return jsonOf {
                 put("ok", matches.length() > 0)
                 put("matched", matches.length() > 0)
@@ -33,24 +36,55 @@ internal fun AgentTools.doClick(args: JSONObject): String {
                 put("value", value)
                 put("count", matches.length())
                 put("matches", matches)
+                outcome.treeFailure?.let { put("tree_error", it.message) }
+                outcome.treeNodes?.let { put("tree_nodes", it) }
+                outcome.dumpMs?.let { put("dump_ms", it) }
+                if (outcome.treeAttempts > 0) put("tree_attempts", outcome.treeAttempts)
             }
         }
-        val uiClicked = when (by) {
+
+        // 无障碍可用时优先走原生点击；Shizuku-only 或树短暂不全时用控件树 / OCR 兜底。
+        var clicked = when (by) {
             "text" -> if (long) selectorApi.longClickByText(value) else selectorApi.clickByText(value)
             "id" -> if (long) selectorApi.longClickById(value) else selectorApi.clickById(value)
             else -> selectorApi.clickByDesc(value)
         }
-        var clicked = uiClicked
-        var matchSource = if (uiClicked) "ui" else null
-        if (!uiClicked && by == "text") {
-            // 无障碍不可用或控件树没有文本时，用 OCR 行匹配兜底，避免直接返回失败。
+        var matchSource = if (clicked) "ui" else null
+        var treeNodes: Int? = null
+        var dumpMs: Long? = null
+        var treeAttempts = 0
+        var treeError: String? = null
+        var ocrChecked = false
+
+        if (!clicked) {
+            val collected = collectNodesResult { node ->
+                when (by) {
+                    "text" -> node.text?.contains(value) == true ||
+                        node.contentDescription?.contains(value) == true
+                    "id" -> node.viewId == value
+                    else -> node.contentDescription?.contains(value) == true
+                }
+            }
+            treeNodes = collected.nodeCount
+            dumpMs = collected.dumpMs
+            treeAttempts = collected.attempts
+            treeError = collected.failure?.message
+            // 同一段文字可能同时出现在容器和可点击子控件上，优先点可点击节点。
+            val node = collected.nodes.firstOrNull { it.clickable } ?: collected.nodes.firstOrNull()
+            if (node != null) {
+                val cx = ((node.left + node.right) / 2).toDouble()
+                val cy = ((node.top + node.bottom) / 2).toDouble()
+                clicked = performClick(cx, cy, long, duration, target)
+                if (clicked) matchSource = "ui_tree"
+            }
+        }
+
+        if (!clicked && by == "text") {
+            // 无障碍与控件树都不可用时，用 OCR 行匹配兜底，避免直接返回失败。
+            ocrChecked = true
             val line = ocrLineMatches(value, fuzzy, minConf).firstOrNull()?.line
             if (line != null) {
-                clicked = if (long) {
-                    inputApi.longClick(line.x.toDouble(), line.y.toDouble(), duration)
-                } else {
-                    inputApi.click(line.x.toDouble(), line.y.toDouble())
-                }
+                clicked = performClick(line.x.toDouble(), line.y.toDouble(), long, duration, target)
                 if (clicked) matchSource = "ocr"
             }
         }
@@ -63,13 +97,18 @@ internal fun AgentTools.doClick(args: JSONObject): String {
             put("value", value)
             put("long", long)
             matchSource?.let { put("match_source", it) }
-            // 与坐标点击保持一致：明确区分「未校验」「校验通过」「无可校验控件」。
-            put("hit_checked", matchSource == "ui")
+            put("hit_checked", matchSource == "ui" || matchSource == "ui_tree")
             when {
                 matchSource == "ocr" -> put("hit_reason", "文本匹配来自 OCR，无控件可校验")
-                matchSource == "ui" -> put("hit_reason", "控件树匹配成功")
+                matchSource == "ui" -> put("hit_reason", "无障碍控件匹配成功")
+                matchSource == "ui_tree" -> put("hit_reason", "控件树匹配成功")
                 else -> put("hit_reason", "未匹配到控件或 OCR 文字")
             }
+            treeNodes?.let { put("tree_nodes", it) }
+            dumpMs?.let { put("dump_ms", it) }
+            if (treeAttempts > 0) put("tree_attempts", treeAttempts)
+            treeError?.let { put("tree_error", it) }
+            if (ocrChecked) put("ocr_checked", true)
             if (!clicked) put("message", "未匹配到控件或 OCR 文字")
         }
     }
@@ -92,7 +131,7 @@ internal fun AgentTools.doClick(args: JSONObject): String {
             probe?.reason?.let { put("hit_reason", it) }
         }
     }
-    val ok = if (long) inputApi.longClick(x, y, duration) else inputApi.click(x, y)
+    val ok = performClick(x, y, long, duration, target)
     if (ok && args.optBoolean("settle", false)) waitIdle(SETTLE_DEFAULT_MS)
     return jsonOf {
         put("ok", ok)
@@ -104,6 +143,20 @@ internal fun AgentTools.doClick(args: JSONObject): String {
         probe?.hit?.let { put("hit", it) }
         probe?.reason?.let { put("hit_reason", it) }
     }
+}
+
+private fun AgentTools.performClick(
+    x: Double,
+    y: Double,
+    long: Boolean,
+    duration: Double,
+    target: ScreenTarget?,
+): Boolean = when {
+    target == ScreenTarget.MAIN -> {
+        if (long) inputApi.longClickOnMainDisplay(x, y, duration) else inputApi.clickOnMainDisplay(x, y)
+    }
+
+    else -> if (long) inputApi.longClick(x, y, duration) else inputApi.click(x, y)
 }
 
 // ---- swipe ----
@@ -246,6 +299,21 @@ internal fun AgentTools.doWait(args: JSONObject): String {
 
     // idle：等待控件树连续两次相同并保持 settle_ms。每次探测都受总 deadline 约束，
     // 单次 dump 预算不超过剩余时间，避免外层 timeout 被一次慢 dump 大幅超支。
+    // 如果单次 dump 预算已经不小于 timeout，本轮不可能拿到两次树，直接降级为固定等待。
+    if (timeout > 0 && TREE_PROBE_BUDGET_MS >= timeout) {
+        sleepQuietly(minOf(settleMs, timeout))
+        return jsonOf {
+            put("ok", false)
+            put("matched", false)
+            put("degraded", true)
+            put("elapsed_ms", System.currentTimeMillis() - started)
+            put(
+                "message",
+                "单次控件树读取预算 ${TREE_PROBE_BUDGET_MS}ms 不低于 timeout ${timeout}ms，" +
+                    "已降级为固定等待 ${minOf(settleMs, timeout)}ms",
+            )
+        }
+    }
     val first = treeProbe(deadline)
     val firstRoot = first?.rootOrNull()
     if (firstRoot == null) {

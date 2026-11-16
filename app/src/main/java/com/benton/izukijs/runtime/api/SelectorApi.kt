@@ -5,8 +5,14 @@ import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.JavascriptInterface
 import com.benton.izukijs.controller.accessibility.AccessibilityController
+import com.benton.izukijs.controller.accessibility.SelectorCodegen
+import com.benton.izukijs.controller.accessibility.SelectorDsl
+import com.benton.izukijs.controller.accessibility.SelectorExplain
+import com.benton.izukijs.controller.accessibility.findActionableAncestor
+import com.benton.izukijs.controller.accessibility.findLargestScrollableAncestor
 import com.benton.izukijs.controller.accessibility.releaseNode
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.service.AccessibilityEventStore
 import com.benton.izukijs.service.OverlayCoordinator
 import org.json.JSONArray
 import org.json.JSONObject
@@ -208,6 +214,7 @@ class SelectorApi(
         val timeout = timeoutMs.toLong().coerceIn(0L, MAX_WAIT_MS)
         val interval = intervalMs.toLong().coerceIn(MIN_POLL_MS, MAX_POLL_MS)
         val started = System.currentTimeMillis()
+        var afterSeq = AccessibilityEventStore.sequence()
         while (true) {
             if (isExitRequested()) return null
             val node = controller.findFirst(criteria, target)
@@ -224,7 +231,9 @@ class SelectorApi(
                 return null
             }
             val sleepMs = minOf(interval, timeout - elapsed).coerceAtLeast(1L)
-            runCatching { Thread.sleep(sleepMs) }
+            // 界面有变化时立即醒来重新查询；静态页面按原间隔超时。
+            AccessibilityEventStore.awaitChange(afterSeq, sleepMs)
+            afterSeq = AccessibilityEventStore.sequence()
         }
     }
 
@@ -236,6 +245,7 @@ class SelectorApi(
         val timeout = timeoutMs.toLong().coerceIn(0L, MAX_WAIT_MS)
         val interval = intervalMs.toLong().coerceIn(MIN_POLL_MS, MAX_POLL_MS)
         val started = System.currentTimeMillis()
+        var afterSeq = AccessibilityEventStore.sequence()
         while (true) {
             if (isExitRequested()) return false
             val node = controller.findFirst(criteria, 0)
@@ -247,7 +257,43 @@ class SelectorApi(
                 logBus.debug("选择器等待消失 ${criteria.summary()} → 超时 ${timeout}ms ✗")
                 return false
             }
-            runCatching { Thread.sleep(minOf(interval, timeout - elapsed).coerceAtLeast(1L)) }
+            AccessibilityEventStore.awaitChange(
+                afterSeq,
+                minOf(interval, timeout - elapsed).coerceAtLeast(1L),
+            )
+            afterSeq = AccessibilityEventStore.sequence()
+        }
+    }
+
+    /** 向前滚动匹配元素自身或最大的可滚动祖先。 */
+    @JavascriptInterface
+    fun scrollForwardRaw(criteriaJson: String, index: Int): Boolean =
+        scrollRawInternal(criteriaJson, index, forward = true)
+
+    /** 向后滚动匹配元素自身或最大的可滚动祖先。 */
+    @JavascriptInterface
+    fun scrollBackwardRaw(criteriaJson: String, index: Int): Boolean =
+        scrollRawInternal(criteriaJson, index, forward = false)
+
+    private fun scrollRawInternal(criteriaJson: String, index: Int, forward: Boolean): Boolean {
+        val criteria = parseCriteria(criteriaJson) ?: return false
+        val target = index.coerceAtLeast(0)
+        val node = controller()?.findFirst(criteria, target) ?: return false
+        return try {
+            val action = if (forward) {
+                AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
+            } else {
+                AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
+            }
+            if (node.isScrollable && node.performAction(action)) {
+                return true
+            }
+            val ancestor = node.findLargestScrollableAncestor()
+            val ok = ancestor?.performAction(action) == true
+            ancestor?.releaseNode()
+            ok
+        } finally {
+            node.releaseNode()
         }
     }
 
@@ -266,9 +312,68 @@ class SelectorApi(
         }
     }
 
+    /** 把选择器 DSL 解析成条件 JSON，供 prelude 统一处理字符串条件。 */
+    @JavascriptInterface
+    fun parseDslRaw(dsl: String): String = runCatching {
+        SelectorDsl.parse(dsl).toJson().toString()
+    }.getOrElse {
+        logBus.warn("选择器 DSL 解析失败: ${it.message}")
+        errorJson(it.message ?: "选择器 DSL 解析失败")
+    }
+
+    /** 解释选择器在每一层条件上的命中数，定位第一个筛空条件。 */
+    @JavascriptInterface
+    fun explainRaw(optionsJson: String): String {
+        val criteria = criteriaFromJsonOrDsl(optionsJson)
+            ?: return errorJson("选择器条件无效")
+        val tree = controller()?.nodeTree()
+            ?: return errorJson("无法读取控件树，需开启无障碍")
+        return SelectorExplain.explain(tree, criteria).toString()
+    }
+
+    /** 为当前匹配项生成更稳定的选择器 DSL。 */
+    @JavascriptInterface
+    fun codegenRaw(optionsJson: String): String {
+        val criteria = criteriaFromJsonOrDsl(optionsJson)
+            ?: return errorJson("选择器条件无效")
+        val tree = controller()?.nodeTree()
+            ?: return errorJson("无法读取控件树，需开启无障碍")
+        return SelectorCodegen.generate(tree, criteria).toString()
+    }
+
     // ---- 内部实现 ----
 
     private fun controller(): AccessibilityController? = controllerProvider()
+
+    private fun criteriaFromJsonOrDsl(input: String): AccessibilityController.NodeCriteria? {
+        val trimmed = input.trim()
+        if (trimmed.isEmpty() || trimmed.startsWith("{")) return parseCriteria(trimmed)
+        return runCatching { SelectorDsl.parse(trimmed) }
+            .onFailure { logBus.warn("选择器 DSL 解析失败: ${it.message}") }
+            .getOrNull()
+    }
+
+    private fun AccessibilityController.NodeCriteria.toJson(): JSONObject = JSONObject().apply {
+        viewId?.let { put("id", it) }
+        text?.let { put("text", it) }
+        textContains?.let { put("textContains", it) }
+        textRegex?.let { put("textRegex", it) }
+        desc?.let { put("desc", it) }
+        descContains?.let { put("descContains", it) }
+        descRegex?.let { put("descRegex", it) }
+        className?.let { put("class", it) }
+        clickable?.let { put("clickable", it) }
+        editable?.let { put("editable", it) }
+        scrollable?.let { put("scrollable", it) }
+        enabled?.let { put("enabled", it) }
+        visible?.let { put("visible", it) }
+        packageName?.let { put("package", it) }
+    }
+
+    private fun errorJson(message: String): String = JSONObject().apply {
+        put("ok", false)
+        put("error", message)
+    }.toString()
 
     private fun findById(viewId: String) =
         controller()?.findFirst(AccessibilityController.NodeCriteria(viewId = viewId), 0)
@@ -289,16 +394,20 @@ class SelectorApi(
         if (node == null) return false
         return try {
             if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
-                true
-            } else {
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                controller()?.let { target ->
-                    OverlayCoordinator.withoutOverlay {
-                        target.click(rect.exactCenterX(), rect.exactCenterY())
-                    }
-                } ?: false
+                return true
             }
+            // 列表行 / 卡片 / 按钮内部文字通常不可点击，向上找真正可点击的祖先。
+            val ancestor = node.findActionableAncestor { it.isClickable }
+            val ancestorClicked = ancestor?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true
+            ancestor?.releaseNode()
+            if (ancestorClicked) return true
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            controller()?.let { target ->
+                OverlayCoordinator.withoutOverlay {
+                    target.click(rect.exactCenterX(), rect.exactCenterY())
+                }
+            } ?: false
         } finally {
             node.releaseNode()
         }
@@ -308,20 +417,23 @@ class SelectorApi(
         if (node == null) return false
         return try {
             if (node.isLongClickable && node.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)) {
-                true
-            } else {
-                val rect = Rect()
-                node.getBoundsInScreen(rect)
-                controller()?.let { target ->
-                    OverlayCoordinator.withoutOverlay {
-                        target.longClick(
-                            rect.exactCenterX(),
-                            rect.exactCenterY(),
-                            DEFAULT_LONG_CLICK_MS,
-                        )
-                    }
-                } ?: false
+                return true
             }
+            val ancestor = node.findActionableAncestor { it.isLongClickable }
+            val ancestorClicked = ancestor?.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK) == true
+            ancestor?.releaseNode()
+            if (ancestorClicked) return true
+            val rect = Rect()
+            node.getBoundsInScreen(rect)
+            controller()?.let { target ->
+                OverlayCoordinator.withoutOverlay {
+                    target.longClick(
+                        rect.exactCenterX(),
+                        rect.exactCenterY(),
+                        DEFAULT_LONG_CLICK_MS,
+                    )
+                }
+            } ?: false
         } finally {
             node.releaseNode()
         }
@@ -375,6 +487,10 @@ class SelectorApi(
 
     private fun parseCriteria(json: String): AccessibilityController.NodeCriteria? = try {
         val obj = if (json.isBlank()) JSONObject() else JSONObject(json)
+        if (obj.has("ok") && !obj.optBoolean("ok", true)) {
+            logBus.warn("选择器参数无效: ${obj.optString("error").ifBlank { "ok=false" }}")
+            return null
+        }
         val textRegex = obj.optionalString("textRegex")
         val descRegex = obj.optionalString("descRegex")
         validateRegex("textRegex", textRegex)
@@ -390,6 +506,9 @@ class SelectorApi(
             className = obj.optionalString("className", "class"),
             clickable = obj.optionalBoolean("clickable"),
             editable = obj.optionalBoolean("editable"),
+            scrollable = obj.optionalBoolean("scrollable"),
+            enabled = obj.optionalBoolean("enabled"),
+            visible = obj.optionalBoolean("visible"),
             packageName = obj.optionalString("package", "packageName"),
         )
     } catch (t: Throwable) {
@@ -431,6 +550,9 @@ class SelectorApi(
             className?.let { "class=$it" },
             clickable?.let { "clickable=$it" },
             editable?.let { "editable=$it" },
+            scrollable?.let { "scrollable=$it" },
+            enabled?.let { "enabled=$it" },
+            visible?.let { "visible=$it" },
             packageName?.let { "package=$it" },
         )
         append(parts.joinToString(","))

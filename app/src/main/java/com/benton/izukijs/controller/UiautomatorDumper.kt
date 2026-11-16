@@ -6,6 +6,7 @@ import android.util.Xml
 import com.benton.izukijs.controller.record.RecordingSuppression
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.virtualscreen.ScreenTarget
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,11 +32,22 @@ object UiautomatorDumper {
         logBus: LogBus,
         timeoutMs: Long = DUMP_TIMEOUT_MS,
         animationProbe: (() -> Boolean)? = null,
+        target: ScreenTarget? = null,
     ): NodeTreeResult {
-        if (controllers.targetDisplayId != null) {
+        // 虚拟屏没有可供无障碍 / uiautomator 读取的窗口；只有显式 virtual 才拒绝。
+        // 主屏 dump 默认走默认显示屏，虚拟屏激活期间仍然可用。
+        if (target == ScreenTarget.VIRTUAL) {
             return NodeTreeResult.Failure("后台虚拟屏不支持控件树，请改用 capture / ocr / 坐标输入")
         }
-        val accessibility = controllers.controllerFor(Capability.NODE_TREE)
+        val mainOnly = target == ScreenTarget.MAIN
+        if (!mainOnly && target == null && controllers.targetDisplayId != null) {
+            return NodeTreeResult.Failure("后台虚拟屏不支持控件树，请改用 capture / ocr / 坐标输入")
+        }
+        val accessibility = if (mainOnly) {
+            controllers.controllerForMain(Capability.NODE_TREE)
+        } else {
+            controllers.controllerFor(Capability.NODE_TREE)
+        }
         if (accessibility != null) {
             accessibility.nodeTree()?.let { return NodeTreeResult.Success(it) }
         }
@@ -45,6 +57,7 @@ object UiautomatorDumper {
             accessibilityAvailable = accessibility != null,
             timeoutMs = timeoutMs.coerceAtLeast(MIN_DUMP_TIMEOUT_MS),
             animationProbe = animationProbe,
+            mainOnly = mainOnly,
         )
     }
 
@@ -54,13 +67,17 @@ object UiautomatorDumper {
         accessibilityAvailable: Boolean,
         timeoutMs: Long,
         animationProbe: (() -> Boolean)?,
+        mainOnly: Boolean,
     ): NodeTreeResult {
-        val shell = controllers.controllerFor(Capability.SHELL)
-            ?: return if (accessibilityAvailable) {
-                NodeTreeResult.Failure("无障碍读取为空，且无 Shell 后端可回退")
-            } else {
-                NodeTreeResult.NoBackend
-            }
+        val shell = (if (mainOnly) {
+            controllers.controllerForMain(Capability.SHELL)
+        } else {
+            controllers.controllerFor(Capability.SHELL)
+        }) ?: return if (accessibilityAvailable) {
+            NodeTreeResult.Failure("无障碍读取为空，且无 Shell 后端可回退")
+        } else {
+            NodeTreeResult.NoBackend
+        }
 
         // 界面持续动画时 uiautomator 会一直等 idle。两帧差只用于「调整预算」而非直接放弃：
         // 小动效（光标闪烁 / 进度圈）的界面往往仍能 dump 成功，只是慢一点。
@@ -165,7 +182,8 @@ object UiautomatorDumper {
         while (event != XmlPullParser.END_DOCUMENT) {
             when (event) {
                 XmlPullParser.START_TAG -> if (parser.name == "node") {
-                    val node = readNode(parser, depth)
+                    val index = stack.lastOrNull()?.children?.size ?: 0
+                    val node = readNode(parser, depth, index)
                     if (root == null) root = node
                     stack.lastOrNull()?.children?.add(node)
                     stack.addLast(node)
@@ -182,7 +200,7 @@ object UiautomatorDumper {
         return root?.toSnapshot()
     }
 
-    private fun readNode(parser: XmlPullParser, depth: Int): Builder = Builder(
+    private fun readNode(parser: XmlPullParser, depth: Int, indexInParent: Int): Builder = Builder(
         className = parser.getAttributeValue(null, "class"),
         text = parser.getAttributeValue(null, "text"),
         viewId = parser.getAttributeValue(null, "resource-id"),
@@ -191,6 +209,10 @@ object UiautomatorDumper {
         editable = parser.getAttributeValue(null, "class")?.contains("EditText") == true,
         depth = depth,
         bounds = parseBounds(parser.getAttributeValue(null, "bounds")),
+        packageName = parser.getAttributeValue(null, "package"),
+        scrollable = parser.getAttributeValue(null, "scrollable")?.toBoolean() ?: false,
+        enabled = parser.getAttributeValue(null, "enabled")?.toBoolean() ?: true,
+        indexInParent = indexInParent,
     )
 
     private fun parseBounds(raw: String?): IntArray {
@@ -209,6 +231,10 @@ object UiautomatorDumper {
         val editable: Boolean,
         val depth: Int,
         val bounds: IntArray,
+        val packageName: String?,
+        val scrollable: Boolean,
+        val enabled: Boolean,
+        val indexInParent: Int,
     ) {
         val children = mutableListOf<Builder>()
 
@@ -224,6 +250,12 @@ object UiautomatorDumper {
             clickable = clickable,
             editable = editable,
             children = if (depth >= MAX_DEPTH) emptyList() else children.map { it.toSnapshot() },
+            packageName = packageName,
+            scrollable = scrollable,
+            enabled = enabled,
+            visible = true,
+            indexInParent = indexInParent,
+            depth = depth,
         )
     }
 

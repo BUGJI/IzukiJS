@@ -20,6 +20,7 @@ import org.json.JSONObject
 class McpToolRegistry(
     internal val bundle: DeviceApiBundle,
     internal val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
+    internal val mainNodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
     internal val scriptRepository: ScriptRepository,
     internal val executionManager: ScriptExecutionManager,
     internal val operations: OperationRegistry,
@@ -79,8 +80,20 @@ class McpToolRegistry(
                 blockedPackages = config.blockedPackages,
             ),
         )
+        val mainAgentTools = AgentTools(
+            inputApi = bundle.inputApi,
+            selectorApi = bundle.selectorApi,
+            ocrApi = bundle.mainOcrApi,
+            appApi = bundle.appApi,
+            shellApi = bundle.shellApi,
+            deviceApi = bundle.deviceApi,
+            notificationApi = bundle.notificationApi,
+            screenshotPathProvider = { null },
+            nodeTreeProvider = mainNodeTreeProvider,
+            policy = agentTools.policy,
+        )
         val catalog = buildList {
-            addAll(sharedTools(agentTools))
+            addAll(sharedTools(agentTools, mainAgentTools))
             add(screenshotTool())
             virtualScreen?.let { manager ->
                 add(virtualScreenTool(manager, config))
@@ -104,7 +117,7 @@ class McpToolRegistry(
 
     // ---- 复用 AgentTools 的工具 ----
 
-    private fun sharedTools(agentTools: AgentTools): List<McpTool> =
+    private fun sharedTools(agentTools: AgentTools, mainAgentTools: AgentTools): List<McpTool> =
         agentTools.specs()
             .filter { it.name != "screenshot" && it.name != "batch" }
             .map { spec ->
@@ -117,7 +130,7 @@ class McpToolRegistry(
                         spec.parameters
                     },
                     readOnly = spec.name in READ_ONLY_SHARED,
-                ) { args -> runShared(agentTools, spec.name, args) }
+                ) { args -> runShared(agentTools, mainAgentTools, spec.name, args) }
             }
 
     /** MCP 侧额外支持 per-call `target=main|virtual` 的共用工具。 */
@@ -125,7 +138,7 @@ class McpToolRegistry(
         val copy = JSONObject(schema.toString())
         copy.getJSONObject("properties").put(
             "target",
-            McpSchemas.enum("读取目标屏幕；省略时跟随当前脚本目标", listOf("main", "virtual")),
+            McpSchemas.enum("目标屏幕；省略时跟随当前脚本目标", listOf("main", "virtual")),
         )
         return copy
     }
@@ -133,11 +146,12 @@ class McpToolRegistry(
     /** 共用工具的执行入口；安全护栏（危险 shell / 敏感 App）已在 [AgentTools] 内部统一处理。 */
     private fun runShared(
         agentTools: AgentTools,
+        mainAgentTools: AgentTools,
         name: String,
         args: JSONObject,
     ): McpToolResult {
-        if (args.optString("target").equals("virtual", ignoreCase = true)) {
-            when (name) {
+        when (args.optString("target").lowercase()) {
+            "virtual" -> when (name) {
                 "ocr" -> return virtualOcr(args)
                 "ui_dump" -> return McpToolResult.error(
                     "后台虚拟屏不支持控件树，请改用 capture / ocr / 坐标输入",
@@ -145,7 +159,12 @@ class McpToolRegistry(
                 "find" -> return McpToolResult.error(
                     "虚拟屏暂不支持 find，请先用 ocr(target=virtual) 获取文字坐标，再按坐标输入",
                 )
+                "click", "wait" -> return McpToolResult.error(
+                    "虚拟屏不支持 $name(target=virtual)，请使用 virtual_screen_input / ocr(target=virtual)",
+                )
             }
+
+            "main" -> return McpToolResult.text(mainAgentTools.execute(name, args.toString()))
         }
         return McpToolResult.text(agentTools.execute(name, args.toString()))
     }

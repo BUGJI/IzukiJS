@@ -52,13 +52,25 @@ abstract class CommandDeviceController(
         android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
 
     override fun click(x: Float, y: Float): Boolean =
-        exec("input ${displayOption()}tap ${x.toInt()} ${y.toInt()}")
+        clickForDisplay(x, y, displayIdProvider() ?: NO_DISPLAY)
 
-    override fun longClick(x: Float, y: Float, durationMs: Long): Boolean {
+    override fun clickForDisplay(x: Float, y: Float, displayId: Int): Boolean =
+        exec("input ${displayOption(displayId)}tap ${x.toInt()} ${y.toInt()}")
+
+    override fun longClick(x: Float, y: Float, durationMs: Long): Boolean =
+        longClickForDisplay(x, y, durationMs, displayIdProvider() ?: NO_DISPLAY)
+
+    override fun longClickForDisplay(
+        x: Float,
+        y: Float,
+        durationMs: Long,
+        displayId: Int,
+    ): Boolean {
         val ix = x.toInt()
         val iy = y.toInt()
         return exec(
-            "input ${displayOption()}swipe $ix $iy $ix $iy ${durationMs.coerceAtLeast(400L)}",
+            "input ${displayOption(displayId)}swipe $ix $iy $ix $iy " +
+                "${durationMs.coerceAtLeast(400L)}",
         )
     }
 
@@ -68,8 +80,17 @@ abstract class CommandDeviceController(
         x2: Float,
         y2: Float,
         durationMs: Long,
+    ): Boolean = swipeForDisplay(x1, y1, x2, y2, durationMs, displayIdProvider() ?: NO_DISPLAY)
+
+    override fun swipeForDisplay(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        durationMs: Long,
+        displayId: Int,
     ): Boolean = exec(
-        "input ${displayOption()}swipe ${x1.toInt()} ${y1.toInt()} " +
+        "input ${displayOption(displayId)}swipe ${x1.toInt()} ${y1.toInt()} " +
             "${x2.toInt()} ${y2.toInt()} ${durationMs.coerceAtLeast(1L)}",
     )
 
@@ -201,6 +222,10 @@ abstract class CommandDeviceController(
     private fun displayOption(): String =
         displayIdProvider()?.takeIf { it >= 0 }?.let { "-d $it " } ?: ""
 
+    /** 显式 display 覆盖；[NO_DISPLAY] 表示沿用全局目标屏。 */
+    private fun displayOption(displayId: Int): String =
+        if (displayId == NO_DISPLAY) displayOption() else "-d $displayId "
+
     private fun escapeForInputText(text: String): String {
         val replaced = text.replace(" ", "%s")
         return "'" + replaced.replace("'", "'\\''") + "'"
@@ -221,6 +246,9 @@ abstract class CommandDeviceController(
         const val KEYCODE_PASTE = 279
 
         const val CLIPBOARD_LABEL = "izuki"
+
+        /** 显式 display 覆盖时表示「不覆盖」，沿用 displayIdProvider。 */
+        const val NO_DISPLAY = Int.MIN_VALUE
 
         /** 粘贴事件投递后等待目标应用读取剪贴板的时长，随后恢复原内容。 */
         const val CLIPBOARD_RESTORE_DELAY_MS = 250L
