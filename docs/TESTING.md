@@ -64,12 +64,12 @@ Instrumentation 测试需要连接设备：
 | 文本 / 参数 / 时间 | `ScriptEnvSpecTest`、`EnvTextTest`、`JsJsonTest`、`TimeFormatTest` |
 | 通知 / 安全 | `NotifySigningTest`、`NotifyCryptoTest`、`SecretCipherTest` |
 | 视觉缓存 | `RegexCacheTest`、`RoiResolverTest`、`VisionSpecParserTest` |
-| 运行时 / API | `ColorRegionAccumulatorTest`、`GestureFallbackTest`、`HttpAllowlistTest` |
+| 运行时 / API | `ColorRegionAccumulatorTest`、`GestureFallbackTest`、`InputApiMainDisplayTest`、`HttpAllowlistTest`、`EventsApiTest`、`SelectorApiWithTreeTest`、`A11yEventSanitizerTest` |
 | OCR | `OcrGeometryTest`、`OcrLineSynthesisTest` |
 | MCP | `McpConfigTest`、`HttpServerTest`、`OperationRegistryTest`、`ScriptEditEngineTest`、`ScriptTextDiffTest` |
 | 通知 | `NotifyCryptoTest`、`NotifyModelsTest`、`ScriptNotificationOptionsTest` |
 | 数据 / 安全 | `AtomicFileTest`、`ScriptNameResolverTest`、`ConfigBackupManagerTest`、`EnvTextTest`、`UnlockRecordingParserTest` |
-| AI | `BatchRunnerTest`、`ShellGuardTest`、`ToolPolicyTest` |
+| AI | `BatchRunnerTest`、`ShellGuardTest`、`ToolPolicyTest`、`EventsOptionsTest` |
 | 特权 / 录制解析 | `InputEventReaderTest`、`MultiTouchParserTest`、`TouchCoordMapperTest`、`DisplayPackageResolverTest` |
 | 定时 / 编排 | `CronExpressionTest`、`FlowPlannerTest` |
 
@@ -171,6 +171,13 @@ private class FakeActions(
 | 触发方式 | 手动、快捷磁贴、定时、编排、MCP |
 | 忙时策略 | 拒绝 / 排队 / 终止；覆盖手动、磁贴、定时、编排、MCP；停止时清空排队、后到覆盖 |
 | 权限 | 首次授权、已授权、撤销后重进、未授权降级 |
+
+### 内置自检脚本
+
+`app/src/main/assets/scripts/self_test.js` 在授权后按能力一次性回归设备信息、截图、
+OCR / OpenCV、控件树、事件、通知 / Toast、悬浮窗、虚拟屏与文件读写等链路，并把
+PASS / FAIL / WARN / SKIP 写入应用日志。`ROUNDS` 控制截图 / 识别重复次数，
+`RESTORE=0` 可跳过恢复原前台应用；`@need` 已声明全部可选命名空间。
 
 重点回归：
 

@@ -200,6 +200,45 @@ class ControllerManagerTest {
     }
 
     @Test
+    fun controllerForMainIgnoresDisplayTargetFilter() {
+        val manager = ControllerManager()
+        val accessibility = controller(ControlMode.ACCESSIBILITY, setOf(Capability.GESTURE), displayTarget = false)
+        val shizuku = controller(ControlMode.SHIZUKU, setOf(Capability.GESTURE), displayTarget = true)
+        manager.register(accessibility)
+        manager.register(shizuku)
+        manager.targetDisplayId = 2
+
+        // 虚拟屏激活时普通查询只保留可定向后端；主屏专用查询仍可选无障碍。
+        assertSame(shizuku, manager.controllerFor(Capability.GESTURE))
+        assertSame(accessibility, manager.controllerForMain(Capability.GESTURE))
+    }
+
+    @Test
+    fun controllerForMainStillRequiresCapabilityReadyAndEnabled() {
+        val manager = ControllerManager()
+        val accessibility = controller(
+            ControlMode.ACCESSIBILITY,
+            setOf(Capability.SCREENSHOT),
+            ready = false,
+            displayTarget = false,
+        )
+        manager.register(accessibility)
+        manager.targetDisplayId = 2
+
+        assertNull(manager.controllerForMain(Capability.GESTURE))
+
+        accessibility.setCapabilities(setOf(Capability.GESTURE))
+        assertNull(manager.controllerForMain(Capability.GESTURE))
+
+        accessibility.setReady(true)
+        assertSame(accessibility, manager.controllerForMain(Capability.GESTURE))
+
+        manager.setDisabledModes(setOf(ControlMode.ACCESSIBILITY))
+        assertNull(manager.controllerForMain(Capability.GESTURE))
+    }
+
+
+    @Test
     fun capabilitiesByModeReflectsDeclaredCapabilities() {
         val manager = ControllerManager()
         manager.register(controller(ControlMode.ACCESSIBILITY, setOf(Capability.GESTURE)))

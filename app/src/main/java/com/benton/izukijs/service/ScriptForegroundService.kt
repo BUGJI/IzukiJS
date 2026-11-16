@@ -56,7 +56,7 @@ class ScriptForegroundService : Service() {
             ACTION_START -> {
                 scriptName = intent.getStringExtra(EXTRA_SCRIPT_NAME).orEmpty()
                     .ifBlank { getString(R.string.nav_scripts) }
-                ScriptOverlayManager.attach(this)
+                ScriptOverlayManager.attach(this, this)
                 if (!ScriptNotificationCenter.isActive) {
                     ScriptNotificationCenter.begin(scriptName)
                 }
@@ -85,7 +85,7 @@ class ScriptForegroundService : Service() {
 
     override fun onDestroy() {
         observeJob = null
-        ScriptOverlayManager.detach(this)
+        ScriptOverlayManager.detach(this, this)
         serviceScope.cancel()
         super.onDestroy()
     }

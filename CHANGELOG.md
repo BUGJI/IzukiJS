@@ -9,6 +9,12 @@
 
 ### 新增
 
+### 修复
+
+## [1.2.5] - 2026-11-16
+
+### 新增
+
 - 脚本 `notify` 命名空间新增 Toast 读取：`notify.toasts()` / `notify.latestToast()` /
   `notify.toastStatus()` / `notify.clearToasts()`。Toast 从无障碍
   `TYPE_NOTIFICATION_STATE_CHANGED` 事件解析，只需无障碍服务，不需要通知使用权；
@@ -30,6 +36,10 @@
 - 选择器新增字符串 DSL（`text=登录 clickable=true`、`text~=登`、`text=/.../i`）、
   `selector.parse` / `explain` / `codegen`；MCP `find` 未命中附带解释，UI 命中附带
   `selector_dsl` / `selector_js`，`ui_dump` 支持 `selector` / `dsl` 并附带 `explain` / `codegen`。
+- 内置自检脚本 `self_test.js` 补全回归项：`events` 状态 / 列表 / 等待超时、`floaty`
+  创建 / 更新 / 关闭与「更新开关不产生自造 change」、`selector.parse` / `explain` /
+  `codegen` / 滚动接口、Toast 读取、`notify.status` 与不存在 key 的 click/delete 失败返回；
+  `@need` 同步声明 `events` / `floaty`。
 
 ### 修复
 

@@ -1,8 +1,8 @@
 // Izuki JS 完整自检脚本
-// 检测已开启的权限 / 能力 -> 回到桌面 -> 按能力执行截图、OCR、OpenCV、控件树等测试
-// -> 计量耗时 -> 输出结构化日志报告（只写应用日志，不生成报告文件）
+// 检测已开启的权限 / 能力 -> 回到桌面 -> 按能力执行截图、OCR、OpenCV、控件树、事件、
+// 悬浮窗等测试 -> 计量耗时 -> 输出结构化日志报告（只写应用日志，不生成报告文件）
 //
-// @need app, shell, images, ocr, selector, clipboard, http, notify, virtualscreen, fs
+// @need app, shell, images, ocr, selector, clipboard, http, notify, events, floaty, virtualscreen, fs
 // @env ROUNDS=3            截图 / 识别重复次数（1-5）
 // @env RESTORE=1           测试后恢复原前台应用（1/0）
 // @env TEST_HTTP_URL=none   可选：HTTP 连通性测试地址（none 表示不发起网络请求）
@@ -335,6 +335,73 @@ function testNotification() {
   };
 }
 
+function testNotifyStatus() {
+  var status = notify.status();
+  if (!status) return { status: "FAIL", detail: "notify.status 返回 null" };
+  return {
+    status: "PASS",
+    detail: "connected=" + status.connected + " 通知数量=" + status.count
+  };
+}
+
+function testNotifyToast() {
+  var available = safeBool(function () { return notify.toastAvailable(); });
+  var status = notify.toastStatus();
+  var list = parseArray(notify.toasts(5));
+  if (!list) return { status: "FAIL", detail: "notify.toasts 返回值不是数组" };
+  // 不存在的目标 + 0ms 超时必须立即返回 null，不能卡住脚本。
+  var late = notify.latestToast({ contains: "__izuki_selftest_missing__", timeoutMs: 0 });
+  return {
+    status: available ? "PASS" : "WARN",
+    detail: "toastAvailable=" + available +
+      " connected=" + (status ? status.connected : "null") +
+      " 数量=" + list.length +
+      " latestToast(0ms)=" + (late === null ? "null" : "意外命中")
+  };
+}
+
+function testNotificationActions() {
+  // 用不可能存在的 key 验证 click / delete 的失败返回，不触碰真实通知。
+  var missing = "__izuki_selftest_missing_" + startedAt + "__";
+  var clicked = notify.click(missing);
+  var deleted = notify.delete(missing);
+  return {
+    status: clicked === false && deleted === false ? "PASS" : "WARN",
+    detail: "不存在 key: click=" + clicked + " delete=" + deleted
+  };
+}
+
+function testEvents() {
+  var status = events.status();
+  if (!status) return { status: "FAIL", detail: "events.status 返回 null" };
+  var list = events.list({ limit: 5 });
+  if (!Array.isArray(list)) return { status: "FAIL", detail: "events.list 返回值不是数组" };
+  var window = events.currentWindow();
+  var idle = events.waitIdle({ quietMs: 50, timeoutMs: 300 });
+  return {
+    status: "PASS",
+    detail: "available=" + status.available +
+      " seq=" + status.seq +
+      " 缓冲=" + status.count +
+      " 最近=" + list.length +
+      " 窗口=" + (window ? (window["package"] || "?") : "无") +
+      " waitIdle.ok=" + (idle && idle.ok === true)
+  };
+}
+
+function testEventsTimeout() {
+  var status = events.status();
+  var seq = status ? status.seq : 0;
+  // 以当前序号为起点等待 0ms：没有新事件时必须立即返回 null，不能卡住脚本。
+  var hit = events.wait({ sinceSeq: seq, timeoutMs: 0 });
+  return {
+    status: hit === null ? "PASS" : "WARN",
+    detail: hit === null
+      ? "sinceSeq=当前、timeoutMs=0 正常返回 null"
+      : "timeoutMs=0 意外返回事件: " + brief(JSON.stringify(hit), 160)
+  };
+}
+
 function testShell() {
   if (!shell.available()) {
     return { status: "SKIP", detail: "Shell 后端未就绪" };
@@ -559,6 +626,90 @@ function testSelector() {
   };
 }
 
+function testSelectorDsl() {
+  var single = selector.parse("clickable=true");
+  if (!single || single.clickable !== true) {
+    return { status: "FAIL", detail: "clickable=true 解析结果=" + brief(JSON.stringify(single), 200) };
+  }
+  var combined = selector.parse("text~=登录 clickable=true");
+  if (!combined || combined.textContains !== "登录" || combined.clickable !== true) {
+    return {
+      status: "FAIL",
+      detail: "组合 DSL 解析结果=" + brief(JSON.stringify(combined), 200)
+    };
+  }
+  return { status: "PASS", detail: "单条件 / 组合条件均解析成功" };
+}
+
+function testSelectorDiagnostics() {
+  var criteria = { clickable: true };
+  var explain = selector.explain(criteria);
+  if (!explain || explain.ok !== true) {
+    return { status: "FAIL", detail: "explain=" + brief(JSON.stringify(explain), 240) };
+  }
+  var codegen = selector.codegen(criteria);
+  return {
+    status: "PASS",
+    detail: "explain.totalNodes=" + explain.totalNodes +
+      " codegen=" + (codegen && codegen.ok
+        ? (codegen.unique ? "唯一" : "多个匹配")
+        : "无候选")
+  };
+}
+
+function testSelectorScrollApi() {
+  // 用确定不存在的目标验证接口绑定与失败返回，避免实际滚动改变当前界面。
+  var missing = { text: "__izuki_selftest_missing__" };
+  var forward = selector.scrollForward(missing) === true;
+  var backward = selector.scrollBackward(missing) === true;
+  return {
+    status: !forward && !backward ? "PASS" : "WARN",
+    detail: "无匹配目标时 forward=" + forward + " backward=" + backward + "（未实际滚动）"
+  };
+}
+
+function testFloaty() {
+  if (!floaty.available()) {
+    return { status: "SKIP", detail: "悬浮窗不可用（未授权或前台服务未运行）" };
+  }
+  var id = "izuki_selftest_" + startedAt;
+  var shown = floaty.show({
+    id: id,
+    x: 24,
+    y: 120,
+    width: 420,
+    height: 220,
+    touchable: false,
+    content: [
+      { type: "text", text: "Izuki 自检", color: "#FFFFFF" },
+      { type: "button", id: "btn", text: "测试" },
+      { type: "switch", id: "sw", text: "开关", checked: false },
+      { type: "progress", id: "pv", value: 20, max: 100 }
+    ]
+  });
+  if (!shown || shown.ok !== true) {
+    return { status: "FAIL", detail: "show=" + brief(JSON.stringify(shown), 200) };
+  }
+  try {
+    var updated = floaty.update(id, { x: 32, views: { sw: true, pv: 60 } });
+    var status = floaty.status(id);
+    // 脚本同步开关选中态不应产生自造的 change 动作。
+    var actions = floaty.actions(id);
+    var waitNone = floaty.waitAction(id, 0);
+    var views = status && Array.isArray(status.views) ? status.views.length : -1;
+    var selfChange = Array.isArray(actions) && actions.length === 0 && waitNone === null;
+    return {
+      status: updated === true && selfChange ? "PASS" : "FAIL",
+      detail: "update=" + updated +
+        " 视图=" + views +
+        " 更新开关后动作数=" + (Array.isArray(actions) ? actions.length : "?") +
+        " 自造change=" + !selfChange
+    };
+  } finally {
+    floaty.close(id);
+  }
+}
+
 function testVirtualScreen() {
   var available = virtualScreen.available();
   var active = virtualScreen.active();
@@ -611,7 +762,10 @@ function logSuggestions() {
     suggestions.push("未检测到截图来源：请开启无障碍（Android 11+）、Shizuku/无线调试/Root，或持续录屏");
   }
   if (!capabilities.accessibility) {
-    suggestions.push("selector 控件树测试已跳过：需要无障碍服务");
+    suggestions.push("selector / events / toast 相关测试已跳过：需要无障碍服务");
+  }
+  if (!capabilities.overlay) {
+    suggestions.push("悬浮窗 floaty 测试已跳过：可在权限与能力页开启悬浮窗权限");
   }
   if (!capabilities.notificationListener) {
     suggestions.push("通知读取未测试：可在权限与能力页开启通知使用权");
@@ -714,6 +868,25 @@ function main() {
     skip("通知读取 notify.list", "notify 命名空间不可用");
   } else {
     run("通知读取 notify.list", testNotification);
+  }
+
+  if (typeof notify === "undefined") {
+    skip("通知状态 notify.status", "notify 命名空间不可用");
+    skip("通知动作 notify.click/delete", "notify 命名空间不可用");
+    skip("Toast 读取 notify.toasts", "notify 命名空间不可用");
+  } else {
+    if (!capabilities.notificationListener) {
+      skip("通知状态 notify.status", "未开启通知使用权");
+      skip("通知动作 notify.click/delete", "未开启通知使用权");
+    } else {
+      run("通知状态 notify.status", testNotifyStatus);
+      run("通知动作 notify.click/delete", testNotificationActions);
+    }
+    if (!capabilities.accessibility) {
+      skip("Toast 读取 notify.toasts", "未开启无障碍");
+    } else {
+      run("Toast 读取 notify.toasts", testNotifyToast);
+    }
   }
 
   if (!(capabilities.shizuku || capabilities.adb || capabilities.root)) {
@@ -835,14 +1008,44 @@ function main() {
     }
   }
 
-  if (!capabilities.accessibility) {
-    skip("控件树 selector.count", "未开启无障碍");
-  } else if (runMode === "background" || virtualActive) {
-    skip("控件树 selector.count", "后台 / 虚拟屏模式不支持控件树");
-  } else if (typeof selector === "undefined") {
+  if (typeof selector === "undefined") {
     skip("控件树 selector.count", "selector 命名空间不可用");
+    skip("选择器 DSL selector.parse", "selector 命名空间不可用");
+    skip("选择器诊断 selector.explain/codegen", "selector 命名空间不可用");
+    skip("选择器滚动 selector.scrollForward/Backward", "selector 命名空间不可用");
   } else {
-    run("控件树 selector.count", testSelector);
+    if (!capabilities.accessibility) {
+      skip("控件树 selector.count", "未开启无障碍");
+    } else if (runMode === "background" || virtualActive) {
+      skip("控件树 selector.count", "后台 / 虚拟屏模式不支持控件树");
+    } else {
+      run("控件树 selector.count", testSelector);
+    }
+
+    // DSL 解析是纯逻辑，不依赖控件树。
+    run("选择器 DSL selector.parse", testSelectorDsl);
+
+    if (!capabilities.accessibility) {
+      skip("选择器诊断 selector.explain/codegen", "未开启无障碍");
+      skip("选择器滚动 selector.scrollForward/Backward", "未开启无障碍");
+    } else if (runMode === "background" || virtualActive) {
+      skip("选择器诊断 selector.explain/codegen", "后台 / 虚拟屏模式不支持控件树");
+      skip("选择器滚动 selector.scrollForward/Backward", "后台 / 虚拟屏模式不支持控件树");
+    } else {
+      run("选择器诊断 selector.explain/codegen", testSelectorDiagnostics);
+      run("选择器滚动 selector.scrollForward/Backward", testSelectorScrollApi);
+    }
+  }
+
+  if (typeof events === "undefined") {
+    skip("事件状态与列表 events", "events 命名空间不可用");
+    skip("事件等待超时 events.wait", "events 命名空间不可用");
+  } else if (!capabilities.accessibility) {
+    skip("事件状态与列表 events", "未开启无障碍");
+    skip("事件等待超时 events.wait", "未开启无障碍");
+  } else {
+    run("事件状态与列表 events", testEvents);
+    run("事件等待超时 events.wait", testEventsTimeout);
   }
 
   if (!capabilities.virtualScreen) {
@@ -851,6 +1054,14 @@ function main() {
     skip("虚拟屏状态", "virtualScreen 命名空间不可用");
   } else {
     run("虚拟屏状态", testVirtualScreen);
+  }
+
+  if (typeof floaty === "undefined") {
+    skip("悬浮窗 floaty.show/update/close", "floaty 命名空间不可用");
+  } else if (!capabilities.overlay) {
+    skip("悬浮窗 floaty.show/update/close", "未授权悬浮窗");
+  } else {
+    run("悬浮窗 floaty.show/update/close", testFloaty);
   }
 
   if (!restoreAfterTest) {

@@ -18,15 +18,17 @@ class EventsApi(
     private val isExitRequested: () -> Boolean = { false },
     /** 本次 run 的起点；默认从创建时开始，MCP 可传 0 读取最近缓冲。 */
     private val startSeq: Long = AccessibilityEventStore.sequence(),
+    /** 无障碍是否可用；抽成 lambda 便于脱离 Android 单测等待类接口的失败返回。 */
+    private val isAvailable: () -> Boolean = { IzukiAccessibilityService.isConnected },
 ) {
 
     @JavascriptInterface
-    fun available(): Boolean = IzukiAccessibilityService.isConnected
+    fun available(): Boolean = isAvailable()
 
     @JavascriptInterface
     fun status(): String = JSONObject().apply {
         put("available", available())
-        put("connected", IzukiAccessibilityService.isConnected)
+        put("connected", isAvailable())
         put("seq", AccessibilityEventStore.sequence())
         put("count", AccessibilityEventStore.snapshot(0L, null, MAX_LIMIT).size)
     }.toString()

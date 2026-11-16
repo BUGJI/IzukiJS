@@ -103,13 +103,18 @@ internal fun AgentTools.doUiDump(args: JSONObject): String {
             val out = StringBuilder()
             appendNode(result.root, 0, out)
             val criteria = args.optString("selector").ifBlank { args.optString("dsl") }
+            // 复用刚取到的控件树；Shizuku-only 场景也能做 explain/codegen。
             val explain = if (criteria.isNotBlank()) {
-                runCatching { JSONObject(selectorApi.explainRaw(criteria)) }.getOrNull()
+                runCatching {
+                    JSONObject(selectorApi.explainRawWithTree(result.root, criteria))
+                }.getOrNull()
             } else {
                 null
             }
             val codegen = if (criteria.isNotBlank()) {
-                runCatching { JSONObject(selectorApi.codegenRaw(criteria)) }.getOrNull()
+                runCatching {
+                    JSONObject(selectorApi.codegenRawWithTree(result.root, criteria))
+                }.getOrNull()
             } else {
                 null
             }
@@ -256,14 +261,7 @@ internal fun AgentTools.doEvents(args: JSONObject): String {
         return errorJson("事件读取需要无障碍服务，请先在「权限与能力」中开启无障碍")
     }
     val action = args.optString("action", "list").ifBlank { "list" }
-    val options = JSONObject(args.toString())
-    options.remove("action")
-    if (options.has("timeout_ms")) options.put("timeoutMs", options.optDouble("timeout_ms", 10_000.0))
-    if (options.has("quiet_ms")) options.put("quietMs", options.optLong("quiet_ms", 500L))
-    if (options.has("text_contains")) options.put("textContains", options.optString("text_contains"))
-    options.remove("timeout_ms")
-    options.remove("quiet_ms")
-    options.remove("text_contains")
+    val options = eventsOptions(args)
     return when (action) {
         "status" -> api.status()
 
@@ -283,6 +281,23 @@ internal fun AgentTools.doEvents(args: JSONObject): String {
 
         else -> errorJson("events: 未知 action（支持 list / wait / idle / window / status）")
     }
+}
+
+/**
+ * 把 MCP / AI 的 snake_case 参数转换成 `EventsApi` 的 camelCase 选项。
+ *
+ * 抽成纯函数便于单测，调用方不用重复处理别名清理。
+ */
+internal fun eventsOptions(args: JSONObject): JSONObject {
+    val options = JSONObject(args.toString())
+    options.remove("action")
+    if (options.has("timeout_ms")) options.put("timeoutMs", options.optDouble("timeout_ms", 10_000.0))
+    if (options.has("quiet_ms")) options.put("quietMs", options.optLong("quiet_ms", 500L))
+    if (options.has("text_contains")) options.put("textContains", options.optString("text_contains"))
+    options.remove("timeout_ms")
+    options.remove("quiet_ms")
+    options.remove("text_contains")
+    return options
 }
 
 internal fun AgentTools.doNotificationAction(args: JSONObject): String {

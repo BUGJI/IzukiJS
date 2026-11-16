@@ -107,27 +107,6 @@ class InputApi(
     private fun mainDisplayController(): DeviceController? =
         controllers.controllerForMain(Capability.GESTURE)
 
-    /**
-     * 把点击 / 长按下发到主屏。
-     *
-     * 能定向 display 的后端（Shizuku / Root / 无线调试）显式传主屏 id；不能定向的
-     * 后端（无障碍 / HID）直接走普通点击，它的默认目标就是主屏。
-     */
-    private fun injectOnMainDisplay(
-        controller: DeviceController,
-        x: Float,
-        y: Float,
-        durationMs: Long? = null,
-    ): Boolean = if (controller.supportsDisplayTarget()) {
-        if (durationMs == null) {
-            controller.clickForDisplay(x, y, MAIN_DISPLAY)
-        } else {
-            controller.longClickForDisplay(x, y, durationMs, MAIN_DISPLAY)
-        }
-    } else {
-        if (durationMs == null) controller.click(x, y) else controller.longClick(x, y, durationMs)
-    }
-
     @JavascriptInterface
     fun swipe(
         x1: Double,
@@ -523,13 +502,34 @@ class InputApi(
         const val GLOBAL_LOCK_SCREEN = 8
         const val GLOBAL_DISMISS_NOTIFICATION_SHADE = 12
 
-        /** 主屏 displayId；Android 的默认显示屏固定为 0。 */
-        const val MAIN_DISPLAY = 0
-
         /** 输入后等待画面重绘的默认/最大时长。 */
         const val DEFAULT_VERIFY_TIMEOUT_MS = 800
         const val MAX_VERIFY_TIMEOUT_MS = 5_000
     }
+}
+
+/**
+ * 把点击 / 长按下发到主屏。
+ *
+ * 能定向 display 的后端（Shizuku / Root / 无线调试）显式传主屏 id；不能定向的
+ * 后端（无障碍 / HID）直接走普通点击，它的默认目标就是主屏。
+ *
+ * 抽成顶层函数以便脱离 Android 做单元测试（与 [applyGestureFallback] 一致）。
+ */
+internal fun injectOnMainDisplay(
+    controller: DeviceController,
+    x: Float,
+    y: Float,
+    durationMs: Long? = null,
+    displayId: Int = 0,
+): Boolean = if (controller.supportsDisplayTarget()) {
+    if (durationMs == null) {
+        controller.clickForDisplay(x, y, displayId)
+    } else {
+        controller.longClickForDisplay(x, y, durationMs, displayId)
+    }
+} else {
+    if (durationMs == null) controller.click(x, y) else controller.longClick(x, y, durationMs)
 }
 
 /** 降级执行的手势统计，用于日志告知脚本作者轨迹是否被压缩失真。 */

@@ -85,8 +85,10 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
         }
         // 密码框的文字变化不记录内容：脚本 / MCP 拿到的是「发生过输入」这一事实，
         // 而不是用户实际键入的字符。
-        val passwordInput = eventType == "text_changed" &&
-            runCatching { event.isPassword }.getOrDefault(false)
+        val passwordInput = shouldRedactA11yText(
+            eventType = eventType,
+            isPassword = runCatching { event.isPassword }.getOrDefault(false),
+        )
         if (eventType != null) {
             AccessibilityEventStore.record(
                 type = eventType,

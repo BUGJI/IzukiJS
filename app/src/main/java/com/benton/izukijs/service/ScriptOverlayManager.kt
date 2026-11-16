@@ -43,15 +43,22 @@ object ScriptOverlayManager {
     @Volatile
     private var appContext: Context? = null
 
-    fun attach(context: Context) {
+    /** 当前持有悬浮窗的服务实例；applicationContext 相同，必须用实例区分新旧服务。 */
+    @Volatile
+    private var attachedOwner: Any? = null
+
+    fun attach(context: Context, owner: Any) {
         appContext = context.applicationContext
+        attachedOwner = owner
     }
 
     /** 只允许当前服务实例清理，避免旧服务 onDestroy 关掉新 run 的悬浮窗。 */
-    fun detach(context: Context) {
+    fun detach(context: Context, owner: Any) {
+        if (attachedOwner !== owner) return
         if (appContext !== context.applicationContext) return
         closeAll(null)
         appContext = null
+        attachedOwner = null
     }
 
     fun available(): Boolean {
@@ -79,7 +86,12 @@ object ScriptOverlayManager {
                     error("悬浮窗 id 已存在: $id")
                 } else {
                     val window = Window(context, runId, id, options)
-                    window.show()
+                    try {
+                        window.show()
+                    } catch (t: Throwable) {
+                        window.close()
+                        throw t
+                    }
                     windows[id] = window
                     JSONObject().apply {
                         put("ok", true)
@@ -200,7 +212,7 @@ object ScriptOverlayManager {
                 setStroke(1, Color.parseColor("#33FFFFFF"))
             }
         }
-        private val views = HashMap<String, View>()
+        private val views = ConcurrentHashMap<String, View>()
         private val actions = ArrayDeque<JSONObject>()
         private val listener = object : OverlayCoordinator.Listener {
             override fun hide() {
@@ -220,8 +232,9 @@ object ScriptOverlayManager {
         fun show() {
             buildContent(options.optJSONArray("content"))
             windowManager.addView(root, params)
-            OverlayCoordinator.register(listener)
+            // 先标记已显示：后续 register 抛错时 close() 仍能移除窗口。
             shown = true
+            OverlayCoordinator.register(listener)
         }
 
         fun update(options: JSONObject) {
@@ -229,10 +242,10 @@ object ScriptOverlayManager {
             if (options.has("y")) params.y = options.optInt("y", params.y)
             if (options.has("width")) params.width = options.optInt("width", params.width)
             if (options.has("height")) params.height = options.optInt("height", params.height)
-            if (options.has("touchable")) {
-                params.flags = flagsOf(options)
-            }
-            if (options.has("focusable")) {
+            if (options.has("touchable") ||
+                options.has("focusable") ||
+                options.has("coverStatusBar")
+            ) {
                 params.flags = flagsOf(options)
             }
             runCatching { windowManager.updateViewLayout(root, params) }
