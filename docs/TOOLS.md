@@ -171,7 +171,7 @@
 「附加能力 → 脚本能力」：
 
 - **通知监听**：开启「通知使用权」后，脚本可用 `notify.*` 读取通知标题 / 内容 / 包名、
-  等待新通知、清除通知（只读，不点击、不回复）。
+  等待新通知、清除通知；其中点击 / 删除属于写操作，见下方「通知操作」。
 - **Toast 读取**：`notify.toasts()` / `notify.latestToast()` 依赖无障碍服务而不是通知使用权；
   无障碍未开启时返回空数组 / `null`。只读取文本与包名，不拦截或点击 toast。
 - **通知操作**：`notify.click(key)` / `notify.delete(key)` 与 MCP `notification_action` 可触发

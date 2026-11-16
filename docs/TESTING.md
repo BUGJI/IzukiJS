@@ -64,7 +64,7 @@ Instrumentation 测试需要连接设备：
 | 文本 / 参数 / 时间 | `ScriptEnvSpecTest`、`EnvTextTest`、`JsJsonTest`、`TimeFormatTest` |
 | 通知 / 安全 | `NotifySigningTest`、`NotifyCryptoTest`、`SecretCipherTest` |
 | 视觉缓存 | `RegexCacheTest`、`RoiResolverTest`、`VisionSpecParserTest` |
-| 运行时 / API | `ColorRegionAccumulatorTest`、`GestureFallbackTest`、`InputApiMainDisplayTest`、`HttpAllowlistTest`、`EventsApiTest`、`SelectorApiWithTreeTest`、`A11yEventSanitizerTest` |
+| 运行时 / API | `ColorRegionAccumulatorTest`、`GestureFallbackTest`、`InputApiMainDisplayTest`、`HttpAllowlistTest`、`EventsApiTest`、`EventsOptionsTest`、`SelectorApiWithTreeTest`、`SelectorDslTest`、`SelectorExplainTest`、`HitChainTest`、`A11yEventSanitizerTest`、`AccessibilityEventStoreTest`、`ToastObserverTest` |
 | OCR | `OcrGeometryTest`、`OcrLineSynthesisTest` |
 | MCP | `McpConfigTest`、`HttpServerTest`、`OperationRegistryTest`、`ScriptEditEngineTest`、`ScriptTextDiffTest` |
 | 通知 | `NotifyCryptoTest`、`NotifyModelsTest`、`ScriptNotificationOptionsTest` |

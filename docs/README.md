@@ -41,6 +41,8 @@
 | 写一个能跑起来的脚本 | [README 快速开始](../README.md#快速开始) → [SCRIPT_API.md](SCRIPT_API.md) |
 | 把程序介绍给别的 AI Agent / 查某个开关有什么用 | [AGENT_OVERVIEW.md](AGENT_OVERVIEW.md) |
 | 知道某个权限能做什么、有什么风险 | [CONTROL_MODES.md](CONTROL_MODES.md) → [TOOLS.md](TOOLS.md) |
+| 读取通知 / Toast / 无障碍事件 | [SCRIPT_API.md](SCRIPT_API.md#notify通知监听--脚本进度通知) → [SCRIPT_API.md](SCRIPT_API.md#events无障碍事件) |
+| 给脚本加悬浮窗、按钮或进度条 | [SCRIPT_API.md](SCRIPT_API.md#floaty脚本悬浮窗) |
 | 理解脚本从点击运行到结束发生了什么 | [ARCHITECTURE.md](ARCHITECTURE.md#脚本运行链路) |
 | 新增一种控制后端 | [EXTENDING.md](EXTENDING.md#新增控制后端) |
 | 给脚本加一个新命名空间 / 函数 | [EXTENDING.md](EXTENDING.md#新增脚本-api) |

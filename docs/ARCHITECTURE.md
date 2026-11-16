@@ -61,10 +61,10 @@ QuickJS 执行 JavaScript 脚本。整体不是严格 Clean Architecture，而�
 | `pipeline/` | MaaFramework 风格 Pipeline 的解析、校验、执行、回放 | `PipelineParser`、`PipelineRunner`、`DevicePipelineActions` |
 | `privileged/` | Shizuku UserService、AIDL、隐藏 API、解锁 / 虚拟屏协议 | `VirtualScreenUserService`、`UnlockUserService`、`VirtualScreenServiceClient` |
 | `runtime/` | 脚本执行状态机、准备阶段、QuickJS 封装、日志文件 | `ScriptExecutionManager`、`RunPreparer`、`JsEngine`、`ScriptNeeds` |
-| `runtime/api/` | 挂到 QuickJS 的 API 门面与底层 `Raw` 方法 | `ScriptApiCatalog`、`ScriptApiEnvironment`、`DeviceApiBundle`、`InputApi` |
+| `runtime/api/` | 挂到 QuickJS 的 API 门面与底层 `Raw` 方法 | `ScriptApiCatalog`、`ScriptApiEnvironment`、`DeviceApiBundle`、`InputApi`、`EventsApi`、`FloatyApi` |
 | `schedule/` | 定时 / 间隔 / Cron / 事件触发、条件、重试、开机重注册 | `ScheduleManager`、`ScheduleRunner`、`CronExpression` |
 | `security/` | Android Keystore AES-GCM 字符串加密 | `SecretCipher` |
-| `service/` | 前台服务、无障碍服务、持续录屏、悬浮窗、调试叠加、快捷磁贴 | `ScriptForegroundService`、`IzukiAccessibilityService`、`ScreenCapture` |
+| `service/` | 前台服务、无障碍服务、持续录屏、悬浮窗、调试叠加、快捷磁贴、事件 / Toast 缓冲 | `ScriptForegroundService`、`IzukiAccessibilityService`、`ScreenCapture`、`ScriptOverlayManager`、`AccessibilityEventStore`、`ToastObserver` |
 | `subscription/` | 脚本远程订阅与定时同步 | `SubscriptionManager`、`SubscriptionSync` |
 | `ui/` | Compose 页面、导航、主题、PiP、编辑器 | `IzukiNavHost`、`EditorScreen`、`SettingsScreen` |
 | `update/` | GitHub Release 检查、下载、安装 | `UpdateManager`、`UpdateChecker`、`ApkInstaller` |
@@ -184,7 +184,8 @@ controllers.controllerFor(Capability.SHELL)
   `@need` 可声明哪些名字、编辑器补全都从这里派生。
 - `runtime/api/ScriptApiEnvironment.kt`：按本次运行创建 API 对象并绑定到 JS context。
   - 无状态 API（`DeviceApi`、`AppApi`、`ShellApi` 等）复用 `DeviceApiBundle`；
-  - 有状态 API（`SelectorApi`、`PipelineApi`、`RecordApi`、`ImageApi`）按运行创建；
+  - 有状态 API（`SelectorApi`、`PipelineApi`、`RecordApi`、`ImageApi`、`EventsApi`、`FloatyApi`）按运行创建；
+  - 悬浮窗按 `runId` 归属，创建 / 更新 / 关闭统一投递主线程；脚本停止或新 run 启动时清理旧窗口；
   - `@need` 只决定是否注册，不改变 API 行为。
 - `assets/runtime/prelude.js`：把 `*Raw` 底层方法包装成好用的 JS 门面（如
   `images.findImage` 包装 `findImageRegionRaw`），并实现 `require()` 模块系统。
@@ -309,6 +310,10 @@ SharedPreferences（名称即文件）：
 - 日志落盘：`LogFileStore` 单线程调度器串行写入，窗口聚合减少 IO。
 - MCP：工具在单线程设备队列执行；HTTP / 服务启停在自己的 IO 作用域。
 - 录制：写入器后台串行；截图 / 事件按时序落盘。
+- 无障碍事件 / Toast：`AccessibilityEventStore` 与 `ToastObserver` 用锁保护环形缓冲，
+  等待方按序号唤醒；`clear()` 不清序号，避免已持有 `sinceSeq` 的等待永久挂起。
+- 悬浮窗：`ScriptOverlayManager` 的 `WindowManager` 操作全部切到主线程并带等待上限，
+  QuickJS 线程不直接触碰窗口。
 - 控制后端：大部分操作是同步的 Binder / 进程调用，调用方需避免在主线程直接执行长操作。
 - 脚本停止：`runLock` + QuickJS 中断回调；不依赖协作式检查也能打断纯计算循环。
 

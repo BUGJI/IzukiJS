@@ -265,7 +265,7 @@ notify.reset();
 | `events.wait({types?, package?, textContains?, sinceSeq?, timeoutMs?})` | 阻塞等待第一条匹配事件，超时返回 `null` |
 | `events.waitIdle({quietMs=500, timeoutMs=10000, types?})` | 等待界面安静，返回 `{ok, quietMs, elapsedMs, seq}` |
 | `events.currentWindow()` | 最近窗口 `{package, className, windowId, time}`；无窗口事件返回 `null` |
-| `events.clear()` | 清空事件缓冲 |
+| `events.clear()` | 清空事件缓冲；**不复位 `seq`**，已持有 `sinceSeq` / `afterSeq` 的等待仍能被后续事件唤醒 |
 
 事件字段：`{seq, type, package, className, text, desc, windowId, time, keyCode?}`。
 `key_down` / `key_up` 只记录不拦截，按键会继续交给系统。
@@ -435,8 +435,8 @@ else warn("请求失败: " + (r && r.error));
 |---|---|
 | `selector.existsById(id)` / `selector.existsByText(t)` / `selector.existsByDesc(d)` | 是否存在 |
 | `selector.countByText(t)` | 匹配数量 |
-| `selector.clickById(id)` / `selector.clickByText(t)` / `selector.clickByDesc(d)` | 点击（优先 performAction，否则点中心） |
-| `selector.longClickById(id)` / `selector.longClickByText(t)` / `selector.longClickByDesc(d)` | 长按 |
+| `selector.clickById(id)` / `selector.clickByText(t)` / `selector.clickByDesc(d)` | 点击：先点自身，再点最近可点击祖先，最后回退坐标点击 |
+| `selector.longClickById(id)` / `selector.longClickByText(t)` / `selector.longClickByDesc(d)` | 长按，降级顺序同上 |
 | `selector.setTextById(id, text)` | 设置文本 |
 | `selector.getTextById(id)` / `selector.getTextByText(t)` | 取文本 |
 | `selector.boundsById(id)` | 返回 `"left,top,right,bottom"` |
@@ -474,7 +474,7 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `selector.findAll(criteria)` | 全部匹配元素数组 |
 | `selector.nth(criteria, index)` | 等同于 `find(criteria, index)` |
 | `selector.exists(criteria)` / `selector.count(criteria)` | 是否存在 / 匹配数量 |
-| `selector.click(criteria, index=0)` / `selector.longClick(criteria, index=0)` | 点击 / 长按 |
+| `selector.click(criteria, index=0)` / `selector.longClick(criteria, index=0)` | 点击 / 长按；同样会向上寻找可点击 / 可长按祖先 |
 | `selector.waitFor(criteria, timeoutMs=5000, intervalMs=200, index=0)` | 等待出现，返回元素或 `null` |
 | `selector.waitGone(criteria, timeoutMs=5000, intervalMs=200)` | 等待消失，返回是否成功 |
 | `selector.scrollIntoView(criteria, index=0)` | 尝试滚动到可见区域 |
