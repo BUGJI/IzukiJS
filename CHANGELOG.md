@@ -29,7 +29,7 @@
   脚本停止或新 run 启动时自动清理，并接入截图 / 注入前的悬浮层隐藏。
 - 选择器新增字符串 DSL（`text=登录 clickable=true`、`text~=登`、`text=/.../i`）、
   `selector.parse` / `explain` / `codegen`；MCP `find` 未命中附带解释，UI 命中附带
-  `selector_dsl` / `selector_js`，`ui_dump` 支持 `selector` / `explain`。
+  `selector_dsl` / `selector_js`，`ui_dump` 支持 `selector` / `dsl` 并附带 `explain` / `codegen`。
 
 ### 修复
 
@@ -48,6 +48,15 @@
 - `ocr` 的 ROI 结果新增 `region`，并明确 `image` 与块坐标始终是全屏空间。
 - `run_script` 新增 `run_mode` / `wake` / `unlock` / `reuse_virtual_screen` 覆盖项；
   复用已有虚拟屏时不再接管归属或自动停止。
+- `click` / `longClick` 的 `target=main` 在只有无障碍 / HID 后端时恢复可用：这类输入
+  天然落在主屏，不再要求后端支持 display 定向。
+- 悬浮窗创建 / 更新 / 关闭统一投递主线程，修复 QuickJS 线程直接操作 `WindowManager`
+  的崩溃；`floaty.update` 更新开关不再产生自造的 `change` 动作。
+- `events.clear()` 不再复位事件序号，避免已持有 `afterSeq` 的脚本 / 选择器永远等不到
+  新事件；无障碍事件记录过滤密码框的文本变化，只保留「发生过输入」这一事实。
+- `notify.status()` / `notify.toastStatus()` 门面返回对象而非 JSON 字符串，并补进脚本
+  补全目录；MCP `ui_dump` 移除无实际作用的 `explain` 参数（传 `selector` / `dsl` 即
+  返回 `explain` 与 `codegen`），`events.waitIdle` 文档默认超时与实现对齐。
 
 ## [1.2.4] - 2026-11-15
 

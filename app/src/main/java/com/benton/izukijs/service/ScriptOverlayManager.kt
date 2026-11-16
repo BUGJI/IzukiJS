@@ -278,9 +278,10 @@ object ScriptOverlayManager {
                 val view = views[key] ?: return@forEach
                 val value = values.opt(key)
                 when (value) {
-                    is Boolean -> {
-                        if (view is Switch) view.isChecked = value
-                        view.visibility = if (value) View.VISIBLE else View.GONE
+                    is Boolean -> when (view) {
+                        // switch 的布尔值表示选中态，其余控件表示可见性。
+                        is Switch -> setSwitchChecked(view, value, key)
+                        else -> view.visibility = if (value) View.VISIBLE else View.GONE
                     }
 
                     is Number -> when (view) {
@@ -348,14 +349,25 @@ object ScriptOverlayManager {
             spec.optString("id").takeIf { it.isNotBlank() }?.let { views[it] = this }
         }
 
-        private fun addSwitch(spec: JSONObject): View = Switch(context).apply {
-            text = spec.optString("text")
-            isChecked = spec.optBoolean("checked", false)
-            setTextColor(colorOf(spec.optString("color"), Color.WHITE))
-            setOnCheckedChangeListener { _, checked ->
-                enqueueAction(spec.optString("id"), "change", checked)
-            }
-            spec.optString("id").takeIf { it.isNotBlank() }?.let { views[it] = this }
+        private fun addSwitch(spec: JSONObject): View {
+            val view = Switch(context)
+            view.text = spec.optString("text")
+            view.setTextColor(colorOf(spec.optString("color"), Color.WHITE))
+            setSwitchChecked(view, spec.optBoolean("checked", false), spec.optString("id"))
+            spec.optString("id").takeIf { it.isNotBlank() }?.let { views[it] = view }
+            return view
+        }
+
+        /**
+         * 更新开关选中态。
+         *
+         * 先摘掉监听再设值：脚本用 `floaty.update` 同步开关状态时，不应在动作队列里
+         * 留下一条自己造成的 change，否则 `waitAction` 会读到脚本自己的更新。
+         */
+        private fun setSwitchChecked(view: Switch, checked: Boolean, id: String) {
+            view.setOnCheckedChangeListener(null)
+            view.isChecked = checked
+            view.setOnCheckedChangeListener { _, value -> enqueueAction(id, "change", value) }
         }
 
         private fun addProgress(spec: JSONObject): View = ProgressBar(

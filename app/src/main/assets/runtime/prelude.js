@@ -568,6 +568,12 @@
       if (!raw) return null;
       try { return JSON.parse(raw); } catch (e) { return null; }
     };
+    if (typeof notify.status === 'function') {
+      var __notifyStatus = notify.status;
+      notify.status = function () {
+        try { return JSON.parse(__notifyStatus()); } catch (e) { return null; }
+      };
+    }
     if (typeof notify.progressRaw === 'function') {
       notify.progress = function (options) {
         return notify.progressRaw(JSON.stringify(options || {}));
@@ -585,6 +591,12 @@
           return [];
         }
       };
+      if (typeof notify.toastStatus === 'function') {
+        var __notifyToastStatus = notify.toastStatus;
+        notify.toastStatus = function () {
+          try { return JSON.parse(__notifyToastStatus()); } catch (e) { return null; }
+        };
+      }
       if (typeof notify.latestToastRaw === 'function') {
         notify.latestToast = function (pkg, contains, timeoutMs) {
           var options;

@@ -38,7 +38,6 @@ internal fun buildAgentToolSpecs(shellAvailable: Boolean): List<ToolSpec> = buil
                 mapOf(
                     "selector" to stringProp("选择器 DSL 或 JSON 条件；例如 text=登录 clickable=true"),
                     "dsl" to stringProp("selector 的别名"),
-                    "explain" to booleanProp("仅为 true 且 selector 非空时返回 explain"),
                 ),
             ),
         ),

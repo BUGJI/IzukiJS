@@ -61,7 +61,7 @@ class InputApi(
         consecutiveBacks = 0
         val controller = mainDisplayController()
         val ok = controller?.let {
-            OverlayCoordinator.withoutOverlay { it.clickForDisplay(x.toFloat(), y.toFloat(), MAIN_DISPLAY) }
+            OverlayCoordinator.withoutOverlay { injectOnMainDisplay(it, x.toFloat(), y.toFloat()) }
         } ?: false
         logBus.debug("点击主屏 (${x.toInt()}, ${y.toInt()})${controller.resultTag(ok)}")
         return ok
@@ -88,12 +88,7 @@ class InputApi(
         val controller = mainDisplayController()
         val ok = controller?.let {
             OverlayCoordinator.withoutOverlay {
-                it.longClickForDisplay(
-                    x.toFloat(),
-                    y.toFloat(),
-                    durationMillis.toLong(),
-                    MAIN_DISPLAY,
-                )
+                injectOnMainDisplay(it, x.toFloat(), y.toFloat(), durationMillis.toLong())
             }
         } ?: false
         logBus.debug(
@@ -103,13 +98,35 @@ class InputApi(
         return ok
     }
 
+    /**
+     * 主屏输入后端：走主屏专用查询，忽略「虚拟屏 display 定向」过滤。
+     *
+     * 虚拟屏激活时不能用 `controllerFor(GESTURE)`：它只保留 `supportsDisplayTarget()`
+     * 的后端；但无障碍 / HID 的输入本来就落在主屏，只是不能定向到任意 display。
+     */
     private fun mainDisplayController(): DeviceController? =
-        controllers.all().firstOrNull {
-            !controllers.isDisabled(it.mode) &&
-                it.isReady() &&
-                Capability.GESTURE in it.capabilities() &&
-                it.supportsDisplayTarget()
+        controllers.controllerForMain(Capability.GESTURE)
+
+    /**
+     * 把点击 / 长按下发到主屏。
+     *
+     * 能定向 display 的后端（Shizuku / Root / 无线调试）显式传主屏 id；不能定向的
+     * 后端（无障碍 / HID）直接走普通点击，它的默认目标就是主屏。
+     */
+    private fun injectOnMainDisplay(
+        controller: DeviceController,
+        x: Float,
+        y: Float,
+        durationMs: Long? = null,
+    ): Boolean = if (controller.supportsDisplayTarget()) {
+        if (durationMs == null) {
+            controller.clickForDisplay(x, y, MAIN_DISPLAY)
+        } else {
+            controller.longClickForDisplay(x, y, durationMs, MAIN_DISPLAY)
         }
+    } else {
+        if (durationMs == null) controller.click(x, y) else controller.longClick(x, y, durationMs)
+    }
 
     @JavascriptInterface
     fun swipe(

@@ -39,12 +39,14 @@ internal fun AgentTools.doFind(args: JSONObject): String {
     val criteria = criteriaForFind(by, value, text)
     // 0 命中时解释逐条件命中数；有命中时反过来给出更稳定的选择器，便于脚本复用。
     val explain = if (matches.length() == 0 && criteria != null) {
-        runCatching { JSONObject(selectorApi.explainRaw(criteria)) }.getOrNull()
+        runCatching { JSONObject(selectorApi.explainRawWithTree(outcome.treeRoot, criteria)) }.getOrNull()
     } else {
         null
     }
     val codegen = if (matches.length() > 0 && criteria != null) {
-        runCatching { JSONObject(selectorApi.codegenRaw(criteria)) }.getOrNull()?.takeIf { it.optBoolean("ok") }
+        runCatching {
+            JSONObject(selectorApi.codegenRawWithTree(outcome.treeRoot, criteria))
+        }.getOrNull()?.takeIf { it.optBoolean("ok") }
     } else {
         null
     }

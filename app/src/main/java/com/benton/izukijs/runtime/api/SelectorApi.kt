@@ -4,6 +4,7 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.JavascriptInterface
+import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.controller.accessibility.SelectorCodegen
 import com.benton.izukijs.controller.accessibility.SelectorDsl
@@ -323,22 +324,32 @@ class SelectorApi(
 
     /** 解释选择器在每一层条件上的命中数，定位第一个筛空条件。 */
     @JavascriptInterface
-    fun explainRaw(optionsJson: String): String {
+    fun explainRaw(optionsJson: String): String = explainRawWithTree(null, optionsJson)
+
+    /**
+     * 同上，但允许传入调用方已取到的控件树快照。
+     *
+     * `find` 未命中时手上已经有一份控件树，复用它可以省掉一次 0.5~4.5s 的 dump。
+     */
+    fun explainRawWithTree(tree: NodeSnapshot?, optionsJson: String): String {
         val criteria = criteriaFromJsonOrDsl(optionsJson)
             ?: return errorJson("选择器条件无效")
-        val tree = controller()?.nodeTree()
+        val root = tree ?: controller()?.nodeTree()
             ?: return errorJson("无法读取控件树，需开启无障碍")
-        return SelectorExplain.explain(tree, criteria).toString()
+        return SelectorExplain.explain(root, criteria).toString()
     }
 
     /** 为当前匹配项生成更稳定的选择器 DSL。 */
     @JavascriptInterface
-    fun codegenRaw(optionsJson: String): String {
+    fun codegenRaw(optionsJson: String): String = codegenRawWithTree(null, optionsJson)
+
+    /** 同上，可复用调用方已取到的控件树快照，避免 `find` 命中后再 dump 一次。 */
+    fun codegenRawWithTree(tree: NodeSnapshot?, optionsJson: String): String {
         val criteria = criteriaFromJsonOrDsl(optionsJson)
             ?: return errorJson("选择器条件无效")
-        val tree = controller()?.nodeTree()
+        val root = tree ?: controller()?.nodeTree()
             ?: return errorJson("无法读取控件树，需开启无障碍")
-        return SelectorCodegen.generate(tree, criteria).toString()
+        return SelectorCodegen.generate(root, criteria).toString()
     }
 
     // ---- 内部实现 ----

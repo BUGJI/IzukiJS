@@ -325,8 +325,8 @@ Izuki JS 是 Android 上的自动化运行时，可以用三种方式驱动同�
 ### 4.1 `@need` 能力声明（脚本头部）
 
 `// @need shell, fs` 只注册列出的高风险命名空间。可声明的有：
-`shell`、`fs`、`notify`、`push`、`http`、`clipboard`、`ai`、`app`、`selector`、
-`images`、`ocr`、`pipeline`、`record`、`virtualscreen`。
+`shell`、`fs`、`notify`、`events`、`floaty`、`push`、`http`、`clipboard`、`ai`、`app`、
+`selector`、`images`、`ocr`、`pipeline`、`record`、`virtualscreen`。
 
 - 未写 `@need` 时暴露所有**已启用**的命名空间。
 - `device`、`console`、`permissions`、`env`、`state`、`modules` 与全局输入函数

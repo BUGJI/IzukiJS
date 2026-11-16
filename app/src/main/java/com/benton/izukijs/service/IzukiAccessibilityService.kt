@@ -83,13 +83,17 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
                 if (parcelableIsNotification) "notification" else "toast"
             else -> null
         }
+        // 密码框的文字变化不记录内容：脚本 / MCP 拿到的是「发生过输入」这一事实，
+        // 而不是用户实际键入的字符。
+        val passwordInput = eventType == "text_changed" &&
+            runCatching { event.isPassword }.getOrDefault(false)
         if (eventType != null) {
             AccessibilityEventStore.record(
                 type = eventType,
                 packageName = eventPackage,
                 className = className,
-                text = joinedText,
-                contentDescription = contentDescription,
+                text = if (passwordInput) "" else joinedText,
+                contentDescription = if (passwordInput) null else contentDescription,
                 windowId = event.windowId,
                 time = event.eventTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
             )

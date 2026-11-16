@@ -144,7 +144,7 @@ object ScriptApiCatalog {
             kind = Kind.NAMESPACE,
             need = "notify",
             suggestions = listOf(
-                "available(", "list(", "latest(", "clear(", "click(", "delete(",
+                "available(", "status(", "list(", "latest(", "clear(", "click(", "delete(",
                 "toastAvailable(", "toastStatus(", "toasts(", "latestToast(", "clearToasts(",
                 "progress(", "update(", "reset(", "progressEnabled(",
             ),

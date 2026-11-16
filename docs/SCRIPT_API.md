@@ -263,12 +263,14 @@ notify.reset();
 | `events.status()` | `{available, connected, seq, count}` |
 | `events.list({types?, sinceSeq?, limit?})` | 最近事件数组，新的在前；类型如 `window_state` / `window_content` / `view_scrolled` / `notification` / `toast` / `key_down` |
 | `events.wait({types?, package?, textContains?, sinceSeq?, timeoutMs?})` | 阻塞等待第一条匹配事件，超时返回 `null` |
-| `events.waitIdle({quietMs=500, timeoutMs=5000, types?})` | 等待界面安静，返回 `{ok, quietMs, elapsedMs, seq}` |
+| `events.waitIdle({quietMs=500, timeoutMs=10000, types?})` | 等待界面安静，返回 `{ok, quietMs, elapsedMs, seq}` |
 | `events.currentWindow()` | 最近窗口 `{package, className, windowId, time}`；无窗口事件返回 `null` |
 | `events.clear()` | 清空事件缓冲 |
 
 事件字段：`{seq, type, package, className, text, desc, windowId, time, keyCode?}`。
 `key_down` / `key_up` 只记录不拦截，按键会继续交给系统。
+密码框（`isPassword`）的 `text_changed` 只记录「发生过输入」，`text` / `desc` 为空；
+其他输入框的文字变化会记录内容，敏感页面请用 `// @need events` 控制命名空间暴露面。
 
 ```js
 // 点击后等待界面安静再做 OCR
@@ -289,7 +291,7 @@ var e = events.wait({ types: ["window_state"], package: "com.example.app", timeo
 |---|---|
 | `floaty.available()` | 悬浮窗权限与服务是否就绪 |
 | `floaty.show(options)` | 创建窗口，返回 `{ok, id}` |
-| `floaty.update(id, options)` | 更新位置 / 大小 / 可见性 / 文本 / 选中 / 进度 |
+| `floaty.update(id, options)` | 更新位置 / 大小 / 可见性 / 文本 / 选中 / 进度；对 `switch` 传布尔值表示选中态，其他控件传布尔值表示可见性，更新开关不会再产生自造的 `change` 动作 |
 | `floaty.close(id)` / `floaty.closeAll()` | 关闭窗口 |
 | `floaty.actions(id)` | 取出按钮 / 开关动作队列 |
 | `floaty.waitAction(id, timeoutMs=10000)` | 阻塞等待下一个动作，超时返回 `null` |
@@ -1033,8 +1035,8 @@ virtualScreen.target("virtual");
 ```
 
 - 声明后，**只有列出的命名空间会被注册**；未声明的 `shell` / `fs` / `notify` /
-  `push` / `http` / `clipboard` / `ai` / `app` / `selector` / `images` / `ocr` /
-  `pipeline` / `record` / `virtualscreen` 在脚本里不存在。
+  `events` / `floaty` / `push` / `http` / `clipboard` / `ai` / `app` / `selector` /
+  `images` / `ocr` / `pipeline` / `record` / `virtualscreen` 在脚本里不存在。
 - 没有 `@need` 时保持旧行为：暴露所有已启用的命名空间。
 - `device` / `console` / `permissions` / `env` / `state` / `modules` 与全局函数始终可用，
   不需要写进 `@need`。
