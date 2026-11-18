@@ -2,39 +2,26 @@ package com.benton.izukijs.di
 
 import android.app.Application
 import com.benton.izukijs.BuildConfig
-import com.benton.izukijs.controller.ControllerManager
-import com.benton.izukijs.controller.record.RecordingSession
-import com.benton.izukijs.controller.NodeTreeResult
-import com.benton.izukijs.core.log.LogBus
 import com.benton.izukijs.core.permission.LocalNetworkPermission
-import com.benton.izukijs.data.ScriptRepository
 import com.benton.izukijs.mcp.McpConfigRepository
 import com.benton.izukijs.mcp.McpServerController
 import com.benton.izukijs.mcp.core.McpAuditLog
 import com.benton.izukijs.mcp.resources.McpDocCatalog
 import com.benton.izukijs.mcp.resources.McpResources
 import com.benton.izukijs.mcp.tools.McpToolRegistry
-import com.benton.izukijs.runtime.LogFileStore
-import com.benton.izukijs.runtime.ScriptExecutionManager
-import com.benton.izukijs.runtime.api.DeviceApiBundle
-import com.benton.izukijs.service.ScreenUnlockController
 import com.benton.izukijs.service.UserRecordingService
-import com.benton.izukijs.virtualscreen.VirtualScreenManager
 
-/** MCP 服务相关的构造集中在这里，避免 [AppContainer] 继续膨胀。 */
+/**
+ * MCP 服务相关的构造集中在这里。
+ *
+ * 只读取 [CoreContainer] / [ControlContainer] / [RuntimeContainer] 的公开依赖，
+ * 不再逐个传 12 个参数，也避免反向依赖 UI 或服务实现。
+ */
 class McpContainer(
-    application: Application,
-    controllerManager: ControllerManager,
-    logBus: LogBus,
-    private val deviceApiBundle: DeviceApiBundle,
-    private val nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
-    private val mainNodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
-    private val scriptRepository: ScriptRepository,
-    private val scriptExecutionManager: ScriptExecutionManager,
-    private val logFileStore: LogFileStore,
-    private val virtualScreenManager: VirtualScreenManager,
-    private val screenUnlockController: ScreenUnlockController,
-    private val recordingSession: RecordingSession,
+    private val application: Application,
+    private val core: CoreContainer,
+    private val control: ControlContainer,
+    private val runtime: RuntimeContainer,
 ) {
 
     val configRepository = McpConfigRepository(application)
@@ -60,25 +47,24 @@ class McpContainer(
         },
     )
 
-
     val serverController = McpServerController(
         context = application,
-        logBus = logBus,
+        logBus = core.logBus,
         auditLog = auditLog,
         configProvider = { configRepository.current() },
         registryFactory = { operations ->
             McpToolRegistry(
-                bundle = deviceApiBundle,
-                nodeTreeProvider = nodeTreeProvider,
-                mainNodeTreeProvider = mainNodeTreeProvider,
-                scriptRepository = scriptRepository,
-                executionManager = scriptExecutionManager,
+                bundle = runtime.deviceApiBundle,
+                nodeTreeProvider = runtime.nodeTreeProvider,
+                mainNodeTreeProvider = runtime.mainNodeTreeProvider,
+                scriptRepository = core.scriptRepository,
+                executionManager = runtime.scriptExecutionManager,
                 operations = operations,
-                logFileStore = logFileStore,
+                logFileStore = core.logFileStore,
                 configProvider = { configRepository.current() },
-                virtualScreen = virtualScreenManager,
-                screenUnlock = screenUnlockController,
-                recordingSession = recordingSession,
+                virtualScreen = control.virtualScreenManager,
+                screenUnlock = control.screenUnlockController,
+                recordingSession = runtime.recordingSession,
                 userRecordingStarter = { options ->
                     // 与设置页共用前台服务，避免 MCP 启动的录制在后台被系统回收。
                     runCatching {
@@ -100,11 +86,11 @@ class McpContainer(
         },
         resourcesFactory = {
             McpResources(
-                bundle = deviceApiBundle,
-                controllers = controllerManager,
-                scriptRepository = scriptRepository,
-                executionManager = scriptExecutionManager,
-                logFileStore = logFileStore,
+                bundle = runtime.deviceApiBundle,
+                controllers = control.controllerManager,
+                scriptRepository = core.scriptRepository,
+                executionManager = runtime.scriptExecutionManager,
+                logFileStore = core.logFileStore,
                 auditLog = auditLog,
                 docs = docsCatalog,
             )

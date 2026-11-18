@@ -52,7 +52,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -86,7 +86,7 @@ import java.util.UUID
 fun ScheduleScreen(onBack: () -> Unit) {
     val container = rememberAppContainer()
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
     var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
@@ -236,7 +236,7 @@ fun ScheduleScreen(onBack: () -> Unit) {
                         true
                     } catch (t: Throwable) {
                         if (t is kotlinx.coroutines.CancellationException) throw t
-                        snackbar.show(context.getString(R.string.editor_save_failed))
+                        snackbar.show(resources.getString(R.string.editor_save_failed))
                         false
                     }
                     done(ok)

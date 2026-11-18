@@ -7,7 +7,7 @@
 
 Izuki JS 是**单模块 Android 应用**（`:app`），使用 Kotlin + Jetpack Compose，运行时通过
 QuickJS 执行 JavaScript 脚本。整体不是严格 Clean Architecture，而是按「UI / 执行 / 能力 /
-数据」分层，关键边界用接口和手写容器隔开：
+数据」分层，关键边界用接口和 Koin 依赖图隔开：
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
@@ -51,7 +51,7 @@ QuickJS 执行 JavaScript 脚本。整体不是严格 Clean Architecture，而�
 | `core/` | 跨模块基础设施 | `LogBus`、`PerfMetrics`、`RunControl`、`AtomicFile`、`ScriptExitException`、`HttpSettings` |
 | `data/` | 脚本仓库、历史版本、环境变量、运行历史、编辑器 / 磁贴 / 解锁偏好 | `ScriptRepository`、`ScriptHistoryRepository`、`ScriptEnvRepository` |
 | `developer/` | 开发者选项与运行时阈值（超时、日志上限、录制帧数等） | `DeveloperSettings`、`DeveloperTuning` |
-| `di/` | 手写依赖容器 | `AppContainer`、`McpContainer` |
+| `di/` | Koin 依赖图与兼容门面 | `AppContainer`、`CoreContainer`、`ControlContainer`、`RuntimeContainer`、`McpContainer`、`appModules` |
 | `flow/` | 多脚本串行编排 | `FlowRunner`、`FlowPlanner`、`FlowManager` |
 | `i18n/` | 中英文语言切换与 Context 包装 | `LanguagePreferences`、`LanguageRepository` |
 | `mcp/` | MCP 服务生命周期、HTTP 传输、JSON-RPC、资源与工具 | `McpServerController`、`McpHttpHandler`、`McpProtocolHandler`、`McpToolRegistry` |
@@ -75,17 +75,21 @@ QuickJS 执行 JavaScript 脚本。整体不是严格 Clean Architecture，而�
 
 ## 启动与依赖组装
 
-1. `IzukiApp` 创建 `AppContainer`，`AppContainer.init()` 完成一次性初始化：
+1. `IzukiApp` 启动 Koin（`appModules`）并注入 `AppContainer`，`AppContainer.init()` 完成一次性初始化：
    - 日志落盘、性能采集回调、开发者调优阈值；
    - 释放内置脚本；
    - 初始化 Shizuku / Root / HID / ADB 管理器，它们按就绪状态向 `ControllerManager` 注册 / 注销；
    - 启动定时、编排、订阅重注册与自动更新检查；
    - 把持久化的控制偏好实时同步到 `ControllerManager`。
 2. `MainActivity` 负责 Compose 入口、主题、语言包装、PiP 和 MCP 前台服务恢复。
-3. `AppContainer` 是手写单例图；`McpContainer` 单独组装 MCP 相关对象，避免容器继续膨胀。
-   取用方式：`Context.appContainer`。
+3. 依赖图按方向拆成四张：`CoreContainer`（作用域 / 日志 / 仓库）→ `ControlContainer`
+   （控制后端 / 截图 / 解锁 / 虚拟屏）→ `RuntimeContainer`（执行 / 录制 / 定时 / 流程 / 订阅）
+   → `McpContainer`。`AppContainer` 只保留兼容属性名，新代码优先使用
+   `container.core` / `container.control` / `container.runtime`。
 
-新增全局单例时优先放入 `AppContainer` 并明确生命周期；只在 MCP 使用的放入 `McpContainer`。
+新增全局单例时放入对应具名图：仓库与设置进 `CoreContainer`，控制能力进
+`ControlContainer`，执行链路进 `RuntimeContainer`，仅 MCP 使用的进 `McpContainer`；
+`AppContainer` 不再新增字段。
 
 ## 控制抽象与能力协商
 
@@ -303,7 +307,7 @@ SharedPreferences（名称即文件）：
 
 ## 线程与并发
 
-- UI：`AppContainer.uiScope` 为 `Dispatchers.Main.immediate`；Compose 状态通过
+- UI：`CoreContainer.uiScope`（经 `AppContainer` 暴露）为 `Dispatchers.Main.immediate`；Compose 状态通过
   `StateFlow.collectAsStateWithLifecycle()` 订阅。
 - 脚本执行：`ScriptExecutionManager` 使用 `SupervisorJob + Dispatchers.Default`，
   准备阶段不阻塞主线程。

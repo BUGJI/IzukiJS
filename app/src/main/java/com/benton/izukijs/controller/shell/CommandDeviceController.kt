@@ -185,10 +185,14 @@ abstract class CommandDeviceController(
     }
 
     override fun globalAction(action: Int): Boolean {
-        if (action == GLOBAL_NOTIFICATIONS && displayIdProvider() != null) {
+        if (action == ShellGlobalActions.NOTIFICATIONS && displayIdProvider() != null) {
             logBus.warn("展开通知栏不支持 display 定向，将在主屏执行")
         }
-        return exec(globalActionCommand(action))
+        val command = ShellGlobalActions.commandFor(action, displayOption()) ?: run {
+            logBus.warn("全局动作 $action 在当前 Shell 后端不受支持")
+            return false
+        }
+        return exec(command)
     }
 
     override fun screenshot(): Bitmap? = screenshotForDisplay(displayIdProvider())
@@ -210,14 +214,6 @@ abstract class CommandDeviceController(
         return result.exitCode == 0
     }
 
-    private fun globalActionCommand(action: Int): String = when (action) {
-        GLOBAL_BACK -> "input ${displayOption()}keyevent 4"
-        GLOBAL_HOME -> "input ${displayOption()}keyevent 3"
-        GLOBAL_RECENTS -> "input ${displayOption()}keyevent 187"
-        GLOBAL_NOTIFICATIONS -> "cmd statusbar expand-notifications"
-        else -> "input ${displayOption()}keyevent $action"
-    }
-
     /** `input -d <id> ...` / `screencap -d <id>` 的 display 参数；无目标屏时为空串。 */
     private fun displayOption(): String =
         displayIdProvider()?.takeIf { it >= 0 }?.let { "-d $it " } ?: ""
@@ -232,11 +228,6 @@ abstract class CommandDeviceController(
     }
 
     protected companion object {
-        const val GLOBAL_BACK = 1
-        const val GLOBAL_HOME = 2
-        const val GLOBAL_RECENTS = 3
-        const val GLOBAL_NOTIFICATIONS = 4
-
         /** `input text` 可处理的可见 ASCII 范围。 */
         val ASCII_PRINTABLE = 0x20..0x7E
 

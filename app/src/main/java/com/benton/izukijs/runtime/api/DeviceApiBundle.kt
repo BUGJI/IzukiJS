@@ -43,8 +43,8 @@ class DeviceApiBundle(
     /**
      * 复用电量/截图/输入等重对象，只替换 [SelectorApi] 的退出回调。
      *
-     * 脚本每次运行都需要独立的「是否请求退出」判断，但其余 API 无状态，
-     * 因此不必每次重新组装整个 bundle。
+     * 脚本每次运行都需要独立的「是否请求退出」判断，因此不必每次重新组装整个 bundle。
+     * 仍被共享的 [InputApi] / [AppApi] 带有跨调用缓存，由每次 run 绑定时显式 reset。
      */
     fun withExitRequested(isExitRequested: () -> Boolean): DeviceApiBundle = DeviceApiBundle(
         screenshotProvider = screenshotProvider,
@@ -168,7 +168,7 @@ class DeviceApiBundle(
                 controllers.controllerFor(Capability.SHELL)?.shell(cmd)?.stdout
             }
             val controllerProvider: () -> AccessibilityController? = {
-                controllers.controllerFor(Capability.NODE_TREE) as? AccessibilityController
+                controllers.accessibilityController()
             }
             val selectorFactory: (() -> Boolean) -> SelectorApi = { exitRequested ->
                 SelectorApi(

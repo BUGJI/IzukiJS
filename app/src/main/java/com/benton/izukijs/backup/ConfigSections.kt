@@ -31,6 +31,8 @@ import com.benton.izukijs.runtime.FloatingWindowMode
 import com.benton.izukijs.runtime.HttpSettingsRepository
 import com.benton.izukijs.runtime.LogSettings
 import com.benton.izukijs.runtime.LogSettingsRepository
+import com.benton.izukijs.runtime.QuickStopGesture
+import com.benton.izukijs.runtime.QuickStopKey
 import com.benton.izukijs.runtime.RunBusyPolicy
 import com.benton.izukijs.runtime.RuntimeSettings
 import com.benton.izukijs.runtime.RuntimeSettingsRepository
@@ -382,6 +384,9 @@ object ConfigSections {
                 put("busyPolicy", c.busyPolicy.key)
                 put("perfBaseline", c.perfBaseline)
                 put("floatingWindowMode", c.floatingWindowMode.key)
+                put("volumeKeyStopEnabled", c.volumeKeyStopEnabled)
+                put("volumeKeyStopKey", c.volumeKeyStopKey.key)
+                put("volumeKeyStopGesture", c.volumeKeyStopGesture.key)
             }
         },
         decode = { o, base ->
@@ -402,6 +407,16 @@ object ConfigSections {
                 perfBaseline = o.optBoolean("perfBaseline", base.perfBaseline),
                 floatingWindowMode = FloatingWindowMode.fromKey(
                     o.optString("floatingWindowMode", base.floatingWindowMode.key),
+                ),
+                volumeKeyStopEnabled = o.optBoolean(
+                    "volumeKeyStopEnabled",
+                    base.volumeKeyStopEnabled,
+                ),
+                volumeKeyStopKey = QuickStopKey.fromKey(
+                    o.optString("volumeKeyStopKey", base.volumeKeyStopKey.key),
+                ),
+                volumeKeyStopGesture = QuickStopGesture.fromKey(
+                    o.optString("volumeKeyStopGesture", base.volumeKeyStopGesture.key),
                 ),
             )
         },

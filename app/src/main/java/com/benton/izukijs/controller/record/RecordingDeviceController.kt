@@ -11,9 +11,16 @@ import com.benton.izukijs.model.ControlMode
 import org.json.JSONArray
 import org.json.JSONObject
 
-class RecordingDeviceController(
+/** 录制事件写入端口；抽成接口便于脱离文件与 Android 依赖做单元测试。 */
+internal interface EventRecorder {
+    fun record(event: RecordEvent): Long
+
+    fun timestampOf(wallMs: Long): Long
+}
+
+internal class RecordingDeviceController(
     private val inner: DeviceController,
-    private val writer: RecordingWriter,
+    private val writer: EventRecorder,
     private val source: String = RecordSource.SCRIPT,
 ) : DeviceController {
 
@@ -24,6 +31,8 @@ class RecordingDeviceController(
     override fun isReady(): Boolean = inner.isReady()
 
     override fun supportsDisplayTarget(): Boolean = inner.supportsDisplayTarget()
+
+    override fun underlying(): DeviceController = inner.underlying()
 
     override fun click(x: Float, y: Float): Boolean = timed(
         build = { atMs, elapsed, success ->
@@ -58,6 +67,49 @@ class RecordingDeviceController(
             )
         },
     ) { inner.swipe(x1, y1, x2, y2, durationMs) }
+
+    // 录制代理必须把「显式 display」调用也委托下去，否则虚拟屏激活时 target=main
+    // 会看到 supportsDisplayTarget()=true 却始终拿到 false。录制格式暂不记录 displayId：
+    // 回放时按当前目标屏执行，与录制期间的主屏语义一致。
+    override fun clickForDisplay(x: Float, y: Float, displayId: Int): Boolean = timed(
+        build = { atMs, elapsed, success ->
+            ClickEvent(atMs, x.toInt(), y.toInt(), success, source, elapsedMs = elapsed)
+        },
+    ) { inner.clickForDisplay(x, y, displayId) }
+
+    override fun longClickForDisplay(
+        x: Float,
+        y: Float,
+        durationMs: Long,
+        displayId: Int,
+    ): Boolean = timed(
+        build = { atMs, elapsed, success ->
+            LongClickEvent(atMs, x.toInt(), y.toInt(), durationMs, success, source, elapsedMs = elapsed)
+        },
+    ) { inner.longClickForDisplay(x, y, durationMs, displayId) }
+
+    override fun swipeForDisplay(
+        x1: Float,
+        y1: Float,
+        x2: Float,
+        y2: Float,
+        durationMs: Long,
+        displayId: Int,
+    ): Boolean = timed(
+        build = { atMs, elapsed, success ->
+            SwipeEvent(
+                timestamp = atMs,
+                x1 = x1.toInt(),
+                y1 = y1.toInt(),
+                x2 = x2.toInt(),
+                y2 = y2.toInt(),
+                durationMs = durationMs,
+                success = success,
+                source = source,
+                elapsedMs = elapsed,
+            )
+        },
+    ) { inner.swipeForDisplay(x1, y1, x2, y2, durationMs, displayId) }
 
     override fun supportsGesture(): Boolean = inner.supportsGesture()
 

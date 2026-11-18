@@ -49,10 +49,23 @@ object OverlayCoordinator {
     /** 当前是否处于隐藏状态。 */
     private var hidden = false
 
+    /** 正在执行 withoutOverlay 的调用数；只有归零后才能恢复悬浮层。 */
+    private var inFlight = 0
+
+    /**
+     * 当前这轮隐藏的完成信号。
+     *
+     * 第一个调用者负责真正 hide + 等待；并发调用者必须等同一个信号，不能因为
+     * `hidden == true` 就直接开始截图，否则可能截到尚未完成隐藏的悬浮层。
+     */
+    private var hideSignal: CountDownLatch? = null
+
     private val showRunnable = Runnable {
         val snapshot = synchronized(LOCK) {
-            if (!hidden) return@synchronized null
+            // 仍有操作在途时不能显示；最后一个操作收尾时会重新调度。
+            if (!hidden || inFlight > 0) return@synchronized null
             hidden = false
+            hideSignal = null
             listeners.toList()
         } ?: return@Runnable
         snapshot.forEach { it.show() }
@@ -72,6 +85,8 @@ object OverlayCoordinator {
             if (listeners.isEmpty()) {
                 mainHandler.removeCallbacks(showRunnable)
                 hidden = false
+                hideSignal?.countDown()
+                hideSignal = null
             }
         }
     }
@@ -80,27 +95,49 @@ object OverlayCoordinator {
      * 在截图 / 触摸注入前后临时隐藏 / 显示悬浮层。应在非主线程调用（操作发生在脚本线程）。
      */
     fun <T> withoutOverlay(block: () -> T): T {
-        var needWait = false
+        var owner = false
         val targets: List<Listener>
+        val signal: CountDownLatch?
         synchronized(LOCK) {
             targets = listeners.toList()
-            if (targets.isNotEmpty() && !hidden) {
+            if (targets.isEmpty()) return block()
+            inFlight++
+            if (!hidden) {
                 hidden = true
-                needWait = true
-                targets.forEach { it.hide() }
+                owner = true
+                // 先发布信号再 hide：监听器抛异常时等待者也不会永久阻塞。
+                hideSignal = CountDownLatch(1)
+                signal = hideSignal
+                targets.forEach { runCatching { it.hide() } }
+            } else {
+                signal = hideSignal
             }
         }
-        if (targets.isEmpty()) return block()
-        if (needWait) {
-            PerfMetrics.measure("overlay.hideWait") {
-                targets.forEach { it.awaitHidden(HIDE_TIMEOUT_MS) }
+        if (owner) {
+            try {
+                PerfMetrics.measure("overlay.hideWait") {
+                    targets.forEach { it.awaitHidden(HIDE_TIMEOUT_MS) }
+                }
+            } finally {
+                signal?.countDown()
+            }
+        } else {
+            // 等待首个调用者完成隐藏；超时兜底避免监听器异常导致永久等待。
+            try {
+                signal?.await(
+                    HIDE_TIMEOUT_MS * targets.size + WAIT_SLACK_MS,
+                    TimeUnit.MILLISECONDS,
+                )
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
             }
         }
         return try {
             block()
         } finally {
             synchronized(LOCK) {
-                if (hidden) {
+                inFlight--
+                if (inFlight == 0 && hidden) {
                     mainHandler.removeCallbacks(showRunnable)
                     mainHandler.postDelayed(showRunnable, SHOW_DELAY_MS)
                 }
@@ -133,6 +170,9 @@ object OverlayCoordinator {
 
     /** 隐藏后等待一帧绘制的最长时间；实现方通常在一帧内返回。 */
     private const val HIDE_TIMEOUT_MS = 100L
+
+    /** 并发等待隐藏完成的额外余量，避免调度抖动导致等待者提前放行。 */
+    private const val WAIT_SLACK_MS = 1_000L
 
     /** 连续操作结束后延迟恢复显示，避免高频操作时反复闪烁。 */
     private const val SHOW_DELAY_MS = 300L

@@ -48,7 +48,7 @@ GitHub 自动生成的 notes。`未发布` 小节不会被自动抽取，发版�
 # Debug
 ./gradlew :app:assembleDebug
 
-# Release（未配置签名时回退 debug 签名，仅用于本地验证）
+# Release（必须配置正式签名；缺少时直接失败）
 ./gradlew :app:assembleRelease
 ```
 
@@ -76,7 +76,9 @@ keyAlias=...
 keyPassword=...
 ```
 
-文件存在且 `storeFile` 有效时 Release 使用该签名；否则使用 debug 签名并打印告警。
+文件存在且 `storeFile` 有效时 Release 使用该签名；否则 `assembleRelease` / `bundleRelease`
+直接失败，避免把 debug 签名产物误当正式包分发。确需本地出包验证时，显式加
+`-Pizuki.allowDebugReleaseSignature=true`，构建日志会打印告警。
 **debug 签名产物不能用于正式分发**，尤其是自动更新：不同机器的 debug 证书不同，
 旧版本无法覆盖安装。
 

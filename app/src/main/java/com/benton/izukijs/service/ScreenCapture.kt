@@ -112,12 +112,18 @@ class ScreenCapture(private val logBus: LogBus) {
 
     val isActive: Boolean get() = _active.value
 
-    fun start(context: Context, resultCode: Int, data: Intent) {
+    /** 系统撤销投影时回调；前台服务据此停止自身，避免残留“录屏中”通知。 */
+    @Volatile
+    var onProjectionStopped: (() -> Unit)? = null
+
+    /** 返回是否真正启动成功；失败时调用方应停止对应的前台服务。 */
+    fun start(context: Context, resultCode: Int, data: Intent): Boolean {
         stop()
-        runCatching {
+        return runCatching {
             val appCtx = context.applicationContext
             val manager = appCtx.getSystemService(MediaProjectionManager::class.java)
-            val mediaProjection = manager.getMediaProjection(resultCode, data) ?: return
+            val mediaProjection = manager.getMediaProjection(resultCode, data)
+                ?: return@runCatching false
             appContext = appCtx
             projection = mediaProjection
 
@@ -127,6 +133,8 @@ class ScreenCapture(private val logBus: LogBus) {
                     override fun onStop() {
                         logBus.warn("录屏已由系统停止")
                         stop()
+                        // 通知前台服务一起退出；否则通知栏会一直显示“录屏中”。
+                        onProjectionStopped?.invoke()
                     }
                 },
                 Handler(Looper.getMainLooper()),
@@ -144,9 +152,11 @@ class ScreenCapture(private val logBus: LogBus) {
             logBus.success(
                 "持续录屏已启动（${initial.width} x ${initial.height}，rotation=${initial.rotation}）",
             )
-        }.onFailure {
+            true
+        }.getOrElse {
             logBus.error("启动录屏失败: ${it.message}")
             stop()
+            false
         }
     }
 

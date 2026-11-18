@@ -59,7 +59,8 @@ Windows 用 `gradlew.bat`。没有单独的 format 命令；遵循 `.editorconfi
 ## 代码约定
 
 - Kotlin 官方风格，4 空格；注释用中文，解释原因与边界，不复述代码。
-- 新依赖需有明确理由；当前刻意使用手写 DI、`org.json`、`HttpURLConnection`。
+- 新依赖需有明确理由；DI 使用 Koin + `di/` 四张具名图，`org.json`、`HttpURLConnection`
+  仍为刻意选择。新增单例放入对应图，不要继续膨胀 `AppContainer` 门面。
 - 新增用户可见文案同时改 `res/values/strings.xml` 与 `res/values-en/strings.xml`。
 - Compose 页面不要直接做阻塞设备操作；状态放到 ViewModel / 仓库。
 - 纯逻辑尽量不依赖 `android.*`，以便 JVM 单测（参考 `PipelineRunner` / `RecordingReplay`）。

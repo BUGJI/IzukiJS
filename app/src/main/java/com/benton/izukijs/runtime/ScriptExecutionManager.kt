@@ -119,6 +119,14 @@ class ScriptExecutionManager(
 
     private var terminateWatchdog: Job? = null
 
+    /**
+     * 看门狗代次。
+     *
+     * `cancel()` 无法打断已经越过 `delay`、正在等待 decisionLock 的协程；代次校验
+     * 保证被取消的旧看门狗不会提前提升新一轮的排队项。
+     */
+    private var terminateGeneration = 0L
+
     /** 活动 run 句柄；强制放弃时据此标记旧 run，避免把终止误判成成功退出。 */
     private val activeSessions = ConcurrentHashMap<String, RunSession>()
 
@@ -478,13 +486,18 @@ class ScriptExecutionManager(
             failure = t
         } finally {
             try {
-                val timedOut = !session.abandoned && session.engine?.timedOut == true
-                // 用户停止与脚本主动 exit() 都会置 exitRequested，必须用 stopRequested 区分：
-                // 用户停止不能再被当作成功，否则脚本编排会继续执行下一步。
-                // 被强制放弃的旧 run 同样按「停止」收尾，不能因为 exitRequested 记成成功退出。
-                val userStopped = session.abandoned || gate.isStopRequested()
-                val exited = !userStopped &&
-                    (session.engine?.exitRequested == true || isExitThrowable(failure))
+                // 完成判定只读本 session 的状态：被强制放弃的旧 run 不能再看共享 gate，
+                // 否则新 run 启动后会读到新 run 的 stopRequested，把旧 run 误判成成功。
+                val flags = resolveRunCompletionFlags(
+                    abandoned = session.abandoned,
+                    stopRequested = session.stopRequested,
+                    engineTimedOut = session.engine?.timedOut == true,
+                    engineExitRequested = session.engine?.exitRequested == true,
+                    failureIsExit = isExitThrowable(failure),
+                )
+                val timedOut = flags.timedOut
+                val userStopped = flags.userStopped
+                val exited = flags.exited
                 clearEngine(session)
                 if (virtualScreen.isActive()) {
                     if (!virtualOwned) {
@@ -524,14 +537,18 @@ class ScriptExecutionManager(
                     it.stackTraceToString().take(DeveloperTuning.current.maxRunErrorChars)
                 }
                 RunLogRegistry.finish(session.runId, status, error)
-                dispatchRunResult(
-                    runId = session.runId,
-                    scriptId = request.scriptId,
-                    scriptName = request.scriptName,
-                    trigger = request.trigger,
-                    status = status,
-                    durationMs = System.currentTimeMillis() - startedAt,
-                )
+                // 被新 run 顶掉的旧 run 已不属于当前运行；结果只进历史，不再发用户通知，
+                // 否则终止超时后会同时收到「旧脚本已停止」和「新脚本已启动」两条。
+                if (!session.abandoned) {
+                    dispatchRunResult(
+                        runId = session.runId,
+                        scriptId = request.scriptId,
+                        scriptName = request.scriptName,
+                        trigger = request.trigger,
+                        status = status,
+                        durationMs = System.currentTimeMillis() - startedAt,
+                    )
+                }
                 when (status) {
                     RunStatus.SUCCEEDED -> PerfMetrics.count("script.succeeded")
                     RunStatus.FAILED -> PerfMetrics.count("script.failed")
@@ -571,14 +588,7 @@ class ScriptExecutionManager(
     private fun finishAbandonedBeforeStart(session: RunSession, request: PendingRun) {
         logBus.warn("… 脚本启动被新的运行请求取代: ${request.scriptName}")
         RunLogRegistry.finish(session.runId, RunStatus.STOPPED)
-        dispatchRunResult(
-            runId = session.runId,
-            scriptId = request.scriptId,
-            scriptName = request.scriptName,
-            trigger = request.trigger,
-            status = RunStatus.STOPPED,
-            durationMs = 0L,
-        )
+        // 该 run 从未真正执行，且通知归属已切给新 run；只保留历史与回调，不再额外发通知。
         val completion = RunCompletion(
             success = false,
             stopped = true,
@@ -778,7 +788,13 @@ class ScriptExecutionManager(
             terminateWatchdog?.cancel()
             terminateWatchdog = null
             val pending = pendingRuns.clear().also { clearQueuedState() }
-            pending to gate.resolveStop()
+            val stopAction = gate.resolveStop()
+            // 停止意图记在本 run 的 session 上；run 结束后新 run 会重置共享 gate，
+            // 旧 run 的收尾仍必须按「用户停止」而不是成功处理。
+            if (stopAction != RunGate.StopAction.None) {
+                gate.activeRunId()?.let { activeSessions[it]?.stopRequested = true }
+            }
+            pending to stopAction
         }
         canceled?.let { cancelPending(it, "用户停止") }
         when (action) {
@@ -819,7 +835,11 @@ class ScriptExecutionManager(
             if (pending == null || !pending.terminate) {
                 null
             } else {
-                gate.resolveStop()
+                val stopAction = gate.resolveStop()
+                if (stopAction != RunGate.StopAction.None) {
+                    gate.activeRunId()?.let { activeSessions[it]?.stopRequested = true }
+                }
+                stopAction
             }
         } ?: return
         when (action) {
@@ -836,37 +856,46 @@ class ScriptExecutionManager(
     }
 
     private fun startTerminateWatchdog() {
-        terminateWatchdog?.cancel()
-        terminateWatchdog = scope.launch {
-            delay(TERMINATE_WAIT_MS)
-            val promoted = synchronized(decisionLock) {
-                val pending = pendingRuns.peek()
-                val oldRunId = gate.activeRunId()
-                if (pending == null || !pending.terminate || oldRunId == null) {
-                    null
-                } else {
-                    pendingRuns.clear()
-                    clearQueuedState()
-                    terminateWatchdog = null
-                    val nextSession = RunSession(RunLogRegistry.newRunId())
-                    if (!gate.replaceActive(oldRunId, nextSession.runId)) {
-                        pendingRuns.offer(pending)
-                        publishQueued(pending, pending.terminate)
+        synchronized(decisionLock) {
+            terminateWatchdog?.cancel()
+            val generation = ++terminateGeneration
+            terminateWatchdog = scope.launch {
+                delay(TERMINATE_WAIT_MS)
+                val promoted = synchronized(decisionLock) {
+                    // 已被更新的看门狗取代：本次不得触碰任何运行位 / 队列状态。
+                    if (generation != terminateGeneration) return@synchronized null
+                    val pending = pendingRuns.peek()
+                    val oldRunId = gate.activeRunId()
+                    if (pending == null || !pending.terminate || oldRunId == null) {
                         null
                     } else {
-                        activeSessions[oldRunId]?.abandoned = true
-                        // 录制释放放到新 run 的准备协程里，避免文件收尾 I/O 占用 decisionLock。
-                        val takeover = pending.copy(releasesScriptRecording = true)
-                        launchRun(nextSession, takeover)
-                        takeover
+                        pendingRuns.clear()
+                        clearQueuedState()
+                        terminateWatchdog = null
+                        val nextSession = RunSession(RunLogRegistry.newRunId())
+                        // 必须先标记放弃再转交运行位：转交后旧 run 可能立刻进入收尾，
+                        // 若此时才置位，会把被顶掉的运行误判成成功。
+                        val oldSession = activeSessions[oldRunId]
+                        oldSession?.abandoned = true
+                        if (!gate.replaceActive(oldRunId, nextSession.runId)) {
+                            oldSession?.abandoned = false
+                            pendingRuns.offer(pending)
+                            publishQueued(pending, pending.terminate)
+                            null
+                        } else {
+                            // 录制释放放到新 run 的准备协程里，避免文件收尾 I/O 占用 decisionLock。
+                            val takeover = pending.copy(releasesScriptRecording = true)
+                            launchRun(nextSession, takeover)
+                            takeover
+                        }
                     }
-                }
-            } ?: return@launch
+                } ?: return@launch
 
-            logBus.warn(
-                "⚠ 当前脚本 ${TERMINATE_WAIT_MS / 1000} 秒内未退出，" +
-                    "已放弃等待并启动: ${promoted.scriptName}",
-            )
+                logBus.warn(
+                    "⚠ 当前脚本 ${TERMINATE_WAIT_MS / 1000} 秒内未退出，" +
+                        "已放弃等待并启动: ${promoted.scriptName}",
+                )
+            }
         }
     }
 
@@ -908,6 +937,15 @@ class ScriptExecutionManager(
         /** 已被新 run 强制取代；收尾必须按停止处理且不得清理新 run 的资源。 */
         @Volatile
         var abandoned: Boolean = false
+
+        /**
+         * 本 run 是否收到过用户停止请求。
+         *
+         * 不能复用 [gate] 的共享标志：旧 run 收尾时运行位可能已属于新 run，
+         * 会读到新 run 的（通常为 false）停止状态。
+         */
+        @Volatile
+        var stopRequested: Boolean = false
 
         @Volatile
         private var wakeLockHeld: Boolean = false

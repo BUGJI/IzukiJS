@@ -64,8 +64,11 @@ class McpServerService : Service() {
     override fun onDestroy() {
         mainHandler.removeCallbacks(pendingRestart)
         // 服务被系统回收时也必须关闭监听，避免 socket 存活但没有前台服务。
-        runCatching { controller.stop() }
-        ioScope.cancel()
+        // HttpServer.stop() 会等待在途请求，不能占用主线程；放进 IO 作用域并等它跑完再取消。
+        ioScope.launch {
+            runCatching { lifecycleMutex.withLock { controller.stop() } }
+            ioScope.cancel()
+        }
         super.onDestroy()
     }
 

@@ -89,11 +89,15 @@ class ScriptApiEnvironment(
         val ocrApi = runBundle.ocrApi
         val selectorApi = runBundle.selectorApi
 
+        // bundle 由脚本与 MCP 共享；每次 run 绑定新环境时清空跨 run 的输入 / 前台缓存。
+        inputApi.resetRunState()
+        appApi.resetRunState()
+
         bridge.appendGlobal(ctx, globalApi)
         bridge.appendGlobal(ctx, inputApi)
-        bridge.addNamespace(ctx, deviceApi, "device")
-        bridge.addNamespace(ctx, ConsoleApi(logBus, runId), "console")
-        bridge.addNamespace(
+        registerNamespace(ctx, deviceApi, "device")
+        registerNamespace(ctx, ConsoleApi(logBus, runId), "console")
+        registerNamespace(
             ctx,
             PermissionsApi(
                 context,
@@ -106,12 +110,12 @@ class ScriptApiEnvironment(
             ),
             "permissions",
         )
-        bridge.addNamespace(ctx, EnvApi(scriptEnv), "env")
-        bridge.addNamespace(ctx, StateApi(scriptEnv), "state")
-        bridge.addNamespace(ctx, ModuleApi(moduleSourceProvider), "modules")
+        registerNamespace(ctx, EnvApi(scriptEnv), "env")
+        registerNamespace(ctx, StateApi(scriptEnv), "state")
+        registerNamespace(ctx, ModuleApi(moduleSourceProvider), "modules")
 
         if (allowed(needs, "virtualScreen") && virtualScreen != null) {
-            bridge.addNamespace(
+            registerNamespace(
                 ctx,
                 VirtualScreenApi(
                     manager = virtualScreen,
@@ -125,14 +129,14 @@ class ScriptApiEnvironment(
                 "virtualScreen",
             )
         }
-        if (allowed(needs, "app")) bridge.addNamespace(ctx, appApi, "app")
-        if (allowed(needs, "shell")) bridge.addNamespace(ctx, shellApi, "shell")
+        if (allowed(needs, "app")) registerNamespace(ctx, appApi, "app")
+        if (allowed(needs, "shell")) registerNamespace(ctx, shellApi, "shell")
         if (allowed(needs, "images")) {
-            bridge.addNamespace(ctx, imageApi, "images")
+            registerNamespace(ctx, imageApi, "images")
         }
-        if (allowed(needs, "ocr")) bridge.addNamespace(ctx, ocrApi, "ocr")
+        if (allowed(needs, "ocr")) registerNamespace(ctx, ocrApi, "ocr")
         if (allowed(needs, "pipeline")) {
-            bridge.addNamespace(
+            registerNamespace(
                 ctx,
                 PipelineApi(
                     screenshotProvider = runBundle.screenshotProvider,
@@ -151,23 +155,23 @@ class ScriptApiEnvironment(
         if (allowed(needs, "record") && recordingSession != null) {
             val api = RecordApi(recordingSession, logBus)
             recordApi = api
-            bridge.addNamespace(ctx, api, "record")
+            registerNamespace(ctx, api, "record")
         }
         if (allowed(needs, "notify")) {
-            bridge.addNamespace(
+            registerNamespace(
                 ctx,
                 runBundle.notificationApi.forRun(runId, exitRequested),
                 "notify",
             )
         }
         if (allowed(needs, "events")) {
-            bridge.addNamespace(ctx, EventsApi(exitRequested), "events")
+            registerNamespace(ctx, EventsApi(exitRequested), "events")
         }
         if (allowed(needs, "floaty")) {
-            bridge.addNamespace(ctx, FloatyApi(runId, exitRequested), "floaty")
+            registerNamespace(ctx, FloatyApi(runId, exitRequested), "floaty")
         }
         if (allowed(needs, "push") && pushDispatcher != null) {
-            bridge.addNamespace(
+            registerNamespace(
                 ctx,
                 PushApi(
                     dispatcher = pushDispatcher,
@@ -178,20 +182,20 @@ class ScriptApiEnvironment(
                 "push",
             )
         }
-        if (allowed(needs, "fs")) bridge.addNamespace(ctx, FileApi(logBus), "fs")
-        if (allowed(needs, "selector")) bridge.addNamespace(ctx, selectorApi, "selector")
+        if (allowed(needs, "fs")) registerNamespace(ctx, FileApi(logBus), "fs")
+        if (allowed(needs, "selector")) registerNamespace(ctx, selectorApi, "selector")
         if (allowed(needs, "clipboard")) {
-            bridge.addNamespace(ctx, ClipboardApi(context, logBus), "clipboard")
+            registerNamespace(ctx, ClipboardApi(context, logBus), "clipboard")
         }
         if (allowed(needs, "http")) {
-            bridge.addNamespace(
+            registerNamespace(
                 ctx,
                 HttpApi(logBus) { httpSettingsRepository.current() },
                 "http",
             )
         }
         if (allowed(needs, "ai")) {
-            bridge.addNamespace(
+            registerNamespace(
                 ctx,
                 AiApi(
                     configRepository = aiConfigRepository,
@@ -219,9 +223,24 @@ class ScriptApiEnvironment(
         if (imageApiDelegate.isInitialized()) runCatching { imageApi.close() }
     }
 
+    /**
+     * 注册脚本命名空间。
+     *
+     * 目录是单一事实源：未登记到 [ScriptApiCatalog] 的命名空间一律视为漏改，
+     * 直接失败而不是悄悄暴露给脚本。
+     */
+    private fun registerNamespace(ctx: JSContext, target: Any, name: String) {
+        require(ScriptApiCatalog.findNamespace(name) != null) {
+            "脚本命名空间未登记到 ScriptApiCatalog: $name"
+        }
+        bridge.addNamespace(ctx, target, name)
+    }
+
     private fun allowed(needs: Set<String>?, namespace: String): Boolean {
         if (needs == null) return true
-        val need = ScriptApiCatalog.findNamespace(namespace)?.need ?: return true
+        // 注册前已由 registerNamespace 校验存在；这里再失败关闭，避免目录被误删后
+        // 把命名空间当作 always-on 继续暴露。
+        val need = ScriptApiCatalog.findNamespace(namespace)?.need ?: return false
         return need in needs
     }
 }

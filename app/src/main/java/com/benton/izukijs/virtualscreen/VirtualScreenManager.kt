@@ -16,6 +16,7 @@ import com.benton.izukijs.model.RunMode
 import com.benton.izukijs.privileged.VirtualScreenServiceClient
 import com.benton.izukijs.privileged.VirtualScreenProtocol
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.runtime.VolumeKeyQuickStop
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -474,8 +475,10 @@ class VirtualScreenManager(
             "${x2.toInt()} ${y2.toInt()} ${durationMs.coerceIn(1L, MAX_INPUT_DURATION_MS)}"
     }
 
-    suspend fun key(keyCode: Int): Boolean =
-        inputCommand { id -> "input -d $id keyevent $keyCode" }
+    suspend fun key(keyCode: Int): Boolean {
+        VolumeKeyQuickStop.noteInjectedKey(keyCode)
+        return inputCommand { id -> "input -d $id keyevent $keyCode" }
+    }
 
     /**
      * 向虚拟屏输入文本。

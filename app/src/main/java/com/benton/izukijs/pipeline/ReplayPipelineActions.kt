@@ -288,7 +288,7 @@ class ReplayPipelineActions(
         val result = ArrayList<Pair<Box, Box>>()
         var from = begin
         for (raw in ends) {
-            val parsedEnd = parseTargetValue(raw) ?: return null
+            val parsedEnd = parseTargetValueOrNull(raw) ?: return null
             val endTarget = if (endOffset != null) parsedEnd.copy(offset = endOffset) else parsedEnd
             val end = resolveTarget(endTarget, box) ?: return null
             result.add(from to end)
@@ -342,43 +342,6 @@ class ReplayPipelineActions(
             return null
         }
         return resolveTarget(target, selfBox)
-    }
-
-    private fun parseTargetValue(raw: Any?): TargetSpec? = try {
-        PipelineParser.parseTarget(JSONObject().put("value", raw), "value", "value_offset", TargetSpec())
-    } catch (t: Throwable) {
-        null
-    }
-
-    private fun targetItems(raw: Any?): List<Any?> =
-        if (raw is JSONArray && !isRectArray(raw)) {
-            (0 until raw.length()).map { raw.opt(it) }
-        } else {
-            listOf(raw)
-        }
-
-    private fun isRectArray(value: JSONArray): Boolean {
-        if (value.length() != 2 && value.length() != 4) return false
-        for (index in 0 until value.length()) {
-            if (value.opt(index) !is Number) return false
-        }
-        return true
-    }
-
-    private fun stringValue(obj: JSONObject, vararg keys: String): String? {
-        for (key in keys) {
-            val value = obj.opt(key)
-            if (value is String && value.isNotBlank()) return value
-        }
-        return null
-    }
-
-    private fun number(obj: JSONObject, vararg keys: String): Double? {
-        for (key in keys) {
-            val value = obj.opt(key)
-            if (value is Number) return value.toDouble()
-        }
-        return null
     }
 
     private fun keyValue(obj: JSONObject): Int? {

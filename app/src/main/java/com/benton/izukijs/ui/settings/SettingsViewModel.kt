@@ -41,6 +41,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.benton.izukijs.ui.common.collectFrom
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -384,8 +385,6 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun virtualScreenAvailable(): Boolean = container.virtualScreenManager.available()
 
     private fun <T> Flow<T>.collectInto(update: (SettingsUiState, T) -> SettingsUiState) {
-        viewModelScope.launch {
-            collect { value -> _uiState.update { state -> update(state, value) } }
-        }
+        _uiState.collectFrom(viewModelScope, this, update)
     }
 }

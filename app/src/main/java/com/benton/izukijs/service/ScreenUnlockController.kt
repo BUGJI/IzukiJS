@@ -252,8 +252,7 @@ class ScreenUnlockController(
         Thread.sleep(PATTERN_SETTLE_MS)
         if (!isLocked()) return UnlockResult.ALREADY_UNLOCKED
 
-        val accessibility = controllers.all()
-            .firstOrNull { it is AccessibilityController && it.isReady() } as? AccessibilityController
+        val accessibility = controllers.accessibilityController()
         if (accessibility != null &&
             replayViaAccessibility(accessibility, strokes, pattern.strokes)
         ) {

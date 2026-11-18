@@ -11,17 +11,16 @@ composeBom = "2026.09.00"
 coroutines = "1.11.0"
 navigationCompose = "2.10.2"
 quickjs = "1.4.6.1"
-timber = "5.0.1"
 shizuku = "13.1.0"
 libadb = "3.1.1"
 bouncycastle = "1.86"
-conscrypt = "2.9.0"
 opencv = "5.0.0.1"
 mlkitTextChinese = "16.0.1"
 mlkitBarcode = "17.3.0"
 material = "1.14.0"
 json = "20260814"
 onnxruntime = "1.31.1"
+koin = "4.2.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,7 +36,6 @@ androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", versi
 androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
-androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
@@ -46,17 +44,16 @@ androidx-compose-material-icons-extended = { group = "androidx.compose.material"
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 quickjs-android = { group = "com.github.hjhrq1991", name = "quickjs-android", version.ref = "quickjs" }
-timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
 shizuku-api = { group = "dev.rikka.shizuku", name = "api", version.ref = "shizuku" }
 shizuku-provider = { group = "dev.rikka.shizuku", name = "provider", version.ref = "shizuku" }
 libadb-android = { group = "com.github.MuntashirAkon", name = "libadb-android", version.ref = "libadb" }
 bouncycastle-bcpkix = { group = "org.bouncycastle", name = "bcpkix-jdk15to18", version.ref = "bouncycastle" }
-conscrypt-android = { group = "org.conscrypt", name = "conscrypt-android", version.ref = "conscrypt" }
 opencv = { group = "org.opencv", name = "opencv", version.ref = "opencv" }
 mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkitTextChinese" }
 mlkit-barcode-scanning = { group = "com.google.mlkit", name = "barcode-scanning", version.ref = "mlkitBarcode" }
 material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 json = { group = "org.json", name = "json", version.ref = "json" }
+koin-android = { group = "io.insert-koin", name = "koin-android", version.ref = "koin" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }
 
 [plugins]

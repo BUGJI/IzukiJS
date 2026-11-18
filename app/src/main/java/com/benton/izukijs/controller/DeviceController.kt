@@ -177,6 +177,14 @@ interface DeviceController :
     fun isReady(): Boolean
 
     /**
+     * 去掉录制代理等包装，返回真正执行的后端；非包装后端返回自身。
+     *
+     * 选择器 / 调试布局这类只读查询必须拿到真实无障碍实例：录制代理会记录并转发
+     * 输入，但不是 [com.benton.izukijs.controller.accessibility.AccessibilityController]。
+     */
+    fun underlying(): DeviceController = this
+
+    /**
      * 是否支持把输入 / 截图定向到指定 display。
      * 目前只有 Shizuku / 无线调试 / Root 这类 Shell 后端支持；无障碍与 HID 固定操作主屏。
      */

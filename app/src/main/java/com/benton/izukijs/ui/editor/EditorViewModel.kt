@@ -43,8 +43,8 @@ data class EditorConflict(
 /**
  * 编辑器的非 UI 业务逻辑：串行写盘、版本历史、运行参数解析与变量读取。
  *
- * 文本、选区、撤销栈与查找状态仍由 Compose 持有（它们与输入法 / 焦点强耦合）；
- * 这里只承载可复用、可测试的持久化与会话操作。
+ * 文本与选区仍由 Compose 持有（与输入法 / 焦点强耦合）；撤销策略在 [EditorHistory]，
+ * 这里承载持久化、版本历史、运行参数与会话操作。
  */
 class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
@@ -203,12 +203,61 @@ class EditorViewModel(private val container: AppContainer) : ViewModel() {
 
     fun confirmRun(script: ScriptInfo, values: Map<String, String>) {
         val prompt = _runPrompt.value ?: return
-        container.scriptEnvRepository.saveValues(script.id, values)
-        container.scriptExecutionManager.run(script.id, script.name, prompt.source, values)
-        _runPrompt.value = null
+        viewModelScope.launch {
+            // 仓库写入是同步文件 IO，不能占主线程；保存完成后再启动脚本。
+            withContext(Dispatchers.IO) {
+                container.scriptEnvRepository.saveValues(script.id, values)
+            }
+            container.scriptExecutionManager.run(script.id, script.name, prompt.source, values)
+            _runPrompt.value = null
+        }
     }
 
     fun dismissRun() {
         _runPrompt.value = null
+    }
+
+    // ---- 撤销 / 重做 ----
+    // 文本与选区仍由 Compose 持有（与输入法、焦点强耦合），这里只保存纯数据快照。
+    // 具体策略在 EditorHistory 中，可独立做 JVM 单测。
+
+    private val undoHistory = EditorHistory()
+
+    private val _canUndo = MutableStateFlow(false)
+    val canUndo: StateFlow<Boolean> = _canUndo.asStateFlow()
+
+    private val _canRedo = MutableStateFlow(false)
+    val canRedo: StateFlow<Boolean> = _canRedo.asStateFlow()
+
+    fun clearHistory() {
+        undoHistory.clear()
+        publishHistoryState()
+    }
+
+    fun recordEdit(previous: EditorTextState, force: Boolean) {
+        undoHistory.record(previous, force)
+        publishHistoryState()
+    }
+
+    /** 程序化编辑后重置合并窗口，避免紧随其后的输入被并入同一步撤销。 */
+    fun resetEditCoalescing() {
+        undoHistory.resetCoalescing()
+    }
+
+    fun undo(current: EditorTextState): EditorTextState? {
+        val state = undoHistory.undo(current)
+        publishHistoryState()
+        return state
+    }
+
+    fun redo(current: EditorTextState): EditorTextState? {
+        val state = undoHistory.redo(current)
+        publishHistoryState()
+        return state
+    }
+
+    private fun publishHistoryState() {
+        _canUndo.value = undoHistory.canUndo
+        _canRedo.value = undoHistory.canRedo
     }
 }

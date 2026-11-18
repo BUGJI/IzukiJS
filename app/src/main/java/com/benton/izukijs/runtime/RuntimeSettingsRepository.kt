@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
  * - [busyPolicy]：已有脚本运行时，新启动请求的处理方式。
  * - [perfBaseline]：是否采集并定期输出性能基线（帧耗时、截图、找图找色、日志刷新等）。
  * - [floatingWindowMode]：脚本运行时日志悬浮条的显示方式。
+ * - [volumeKeyStopEnabled] / [volumeKeyStopKey] / [volumeKeyStopGesture]：
+ *   脚本运行期间用物理音量键快速停止当前脚本；默认关闭。
  */
 data class RuntimeSettings(
     val keepAwake: Boolean = true,
@@ -28,7 +30,36 @@ data class RuntimeSettings(
     val busyPolicy: RunBusyPolicy = RunBusyPolicy.REJECT,
     val perfBaseline: Boolean = false,
     val floatingWindowMode: FloatingWindowMode = FloatingWindowMode.EXPANDED,
+    val volumeKeyStopEnabled: Boolean = false,
+    val volumeKeyStopKey: QuickStopKey = QuickStopKey.VOLUME_DOWN,
+    val volumeKeyStopGesture: QuickStopGesture = QuickStopGesture.SINGLE,
 )
+
+/** 音量键快速停止使用的物理按键。 */
+enum class QuickStopKey(val key: String) {
+    VOLUME_DOWN("volume_down"),
+    VOLUME_UP("volume_up"),
+    BOTH("both"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): QuickStopKey =
+            entries.firstOrNull { it.key == key } ?: VOLUME_DOWN
+    }
+}
+
+/** 音量键快速停止的按压方式。 */
+enum class QuickStopGesture(val key: String) {
+    SINGLE("single"),
+    DOUBLE("double"),
+    LONG("long"),
+    ;
+
+    companion object {
+        fun fromKey(key: String?): QuickStopGesture =
+            entries.firstOrNull { it.key == key } ?: SINGLE
+    }
+}
 
 /** 脚本运行时日志悬浮条的显示方式。 */
 enum class FloatingWindowMode(val key: String) {
@@ -64,6 +95,13 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
         floatingWindowMode = FloatingWindowMode.fromKey(
             prefs.getString(KEY_FLOATING_WINDOW_MODE, null),
         ),
+        volumeKeyStopEnabled = prefs.getBoolean(KEY_VOLUME_KEY_STOP_ENABLED, false),
+        volumeKeyStopKey = QuickStopKey.fromKey(
+            prefs.getString(KEY_VOLUME_KEY_STOP_KEY, null),
+        ),
+        volumeKeyStopGesture = QuickStopGesture.fromKey(
+            prefs.getString(KEY_VOLUME_KEY_STOP_GESTURE, null),
+        ),
     )
 
     override fun write(editor: SharedPreferences.Editor, value: RuntimeSettings) {
@@ -77,6 +115,9 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
             .putString(KEY_BUSY_POLICY, value.busyPolicy.key)
             .putBoolean(KEY_PERF_BASELINE, value.perfBaseline)
             .putString(KEY_FLOATING_WINDOW_MODE, value.floatingWindowMode.key)
+            .putBoolean(KEY_VOLUME_KEY_STOP_ENABLED, value.volumeKeyStopEnabled)
+            .putString(KEY_VOLUME_KEY_STOP_KEY, value.volumeKeyStopKey.key)
+            .putString(KEY_VOLUME_KEY_STOP_GESTURE, value.volumeKeyStopGesture.key)
     }
 
     private companion object {
@@ -90,5 +131,8 @@ class RuntimeSettingsRepository(context: Context) : PrefsStateStore<RuntimeSetti
         const val KEY_BUSY_POLICY = "busy_policy"
         const val KEY_PERF_BASELINE = "perf_baseline"
         const val KEY_FLOATING_WINDOW_MODE = "floating_window_mode"
+        const val KEY_VOLUME_KEY_STOP_ENABLED = "volume_key_stop_enabled"
+        const val KEY_VOLUME_KEY_STOP_KEY = "volume_key_stop_key"
+        const val KEY_VOLUME_KEY_STOP_GESTURE = "volume_key_stop_gesture"
     }
 }

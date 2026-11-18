@@ -37,6 +37,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -96,6 +97,7 @@ fun PermissionScreen(
     val readyModes by container.controllerManager.effectiveReadyModes.collectAsStateWithLifecycle()
     val screenCaptureActive by container.screenCapture.active.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
     val haptics = rememberAppHaptics()
 
@@ -477,7 +479,7 @@ fun PermissionScreen(
                     RevokeTarget.ROOT -> rootManager.revoke()
                 }
                 scope.launch {
-                    snackbar.show(context.getString(R.string.perm_revoke_done, label))
+                    snackbar.show(resources.getString(R.string.perm_revoke_done, label))
                 }
             },
             onDismiss = { pendingRevoke = null },

@@ -49,14 +49,18 @@ import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.benton.izukijs.R
+import com.benton.izukijs.core.notification.NotificationRoutes
 import com.benton.izukijs.ui.adb.AdbSetupScreen
 import com.benton.izukijs.ui.ai.AiAgentScreen
 import com.benton.izukijs.ui.common.IzukiPageScaffold
@@ -97,7 +101,8 @@ object Routes {
     /** 通知点击后的主界面标签路由；由 [IzukiNavHost] 切换 pager 处理。 */
     const val TAB_RUN = "tab:run"
     const val TAB_SCRIPTS = "tab:scripts"
-    const val TAB_LOGS = "tab:logs"
+    /** 与通知层共用同一组落点，避免两处字面量漂移。 */
+    const val TAB_LOGS = NotificationRoutes.LOGS
     const val TAB_SETTINGS = "tab:settings"
 
     const val SETTINGS_DETAIL = "settings/{$ARG_SETTINGS_CATEGORY}"
@@ -114,7 +119,7 @@ object Routes {
     const val HID = "hid"
     const val ADB = "adb"
     const val AI = "ai"
-    const val MCP = "mcp"
+    const val MCP = NotificationRoutes.MCP
     const val VIRTUAL_SCREEN = "virtual_screen"
 
     // 脚本 id 来自文件名，允许 # % 空格等字符；直接拼进路由会被当作 fragment/转义符。
@@ -131,14 +136,35 @@ object Routes {
     fun notifyChannelEdit(id: String) = "notify_channel/${Uri.encode(id)}"
 }
 
-/** 底部导航的四个主标签，顺序即 [HorizontalPager] 的页序。 */
+/**
+ * 底部导航的四个主标签。
+ *
+ * 标签名、图标、通知落点路由与 pager 页序集中在这里，新增标签不再需要同时改
+ * `Routes.TAB_*`、ordinal 映射和 pager 分支。
+ */
 private enum class BottomItem(
     @StringRes val labelRes: Int,
+    val tabRoute: String,
 ) {
-    RUN(R.string.nav_run),
-    SCRIPTS(R.string.nav_scripts),
-    LOGS(R.string.nav_logs),
-    SETTINGS(R.string.nav_settings),
+    RUN(R.string.nav_run, Routes.TAB_RUN),
+    SCRIPTS(R.string.nav_scripts, Routes.TAB_SCRIPTS),
+    LOGS(R.string.nav_logs, Routes.TAB_LOGS),
+    SETTINGS(R.string.nav_settings, Routes.TAB_SETTINGS),
+    ;
+
+    companion object {
+        fun fromRoute(route: String?): BottomItem? =
+            entries.firstOrNull { it.tabRoute == route }
+    }
+}
+
+/** 通知 / 外部入口带来的路由可能已过期；先确认图中存在，避免非法路由直接崩溃。 */
+private fun NavHostController.navigateIfKnown(route: String) {
+    val known = runCatching { graph.findNode(route) != null }.getOrDefault(false)
+    if (!known) return
+    runCatching {
+        navigate(route) { launchSingleTop = true }
+    }
 }
 
 /** 底部导航图标；日志使用专用矢量图，避免与「菜单」图标语义混淆。 */
@@ -155,6 +181,11 @@ private val WIDE_LAYOUT_MIN_WIDTH = 600.dp
 
 /** 详情页切换动画时长。压短到接近两帧节奏，减少切页时的拖沓感。 */
 private const val NAV_ANIM_MS = 180
+
+/** 纯容器型嵌套图：不作为页面打开，只用于按功能组织目的地。 */
+private const val GRAPH_AUTOMATION = "graph:automation"
+private const val GRAPH_CONNECTIVITY = "graph:connectivity"
+private const val GRAPH_DEVELOPER = "graph:developer"
 
 @Composable
 fun IzukiNavHost(
@@ -179,18 +210,12 @@ fun IzukiNavHost(
     // 通知点击携带的目标路由：标签页切 pager，其余页面走 NavHost。
     LaunchedEffect(requestedRoute) {
         val route = requestedRoute ?: return@LaunchedEffect
-        val tab = when (route) {
-            Routes.TAB_RUN -> BottomItem.RUN.ordinal
-            Routes.TAB_SCRIPTS -> BottomItem.SCRIPTS.ordinal
-            Routes.TAB_LOGS -> BottomItem.LOGS.ordinal
-            Routes.TAB_SETTINGS -> BottomItem.SETTINGS.ordinal
-            else -> null
-        }
+        val tab = BottomItem.fromRoute(route)
         if (tab != null) {
             if (currentRoute != Routes.MAIN) navController.popBackStack(Routes.MAIN, inclusive = false)
-            pagerState.scrollToPage(tab)
+            pagerState.scrollToPage(tab.ordinal)
         } else {
-            navController.navigate(route) { launchSingleTop = true }
+            navController.navigateIfKnown(route)
         }
         onRequestedRouteHandled()
     }
@@ -396,6 +421,47 @@ private fun MainTabs(
     }
 }
 
+/** 前进从右进、返回从左进；退出方向与之相反。 */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.sharedAxisEnter(forward: Boolean) =
+    fadeIn(tween(NAV_ANIM_MS)) + slideIntoContainer(
+        if (forward) {
+            AnimatedContentTransitionScope.SlideDirection.Left
+        } else {
+            AnimatedContentTransitionScope.SlideDirection.Right
+        },
+        tween(NAV_ANIM_MS),
+    )
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.sharedAxisExit(forward: Boolean) =
+    fadeOut(tween(NAV_ANIM_MS)) + slideOutOfContainer(
+        if (forward) {
+            AnimatedContentTransitionScope.SlideDirection.Left
+        } else {
+            AnimatedContentTransitionScope.SlideDirection.Right
+        },
+        tween(NAV_ANIM_MS),
+    )
+
+/** 详情页之间统一单实例跳转。 */
+private fun NavHostController.open(route: String) {
+    navigate(route) { launchSingleTop = true }
+}
+
+/**
+ * 设置二级页与渠道编辑页复用 Activity 的 ViewModelStore，
+ * 避免每个路由各创建一份 SettingsViewModel。
+ */
+@Composable
+private fun WithActivityViewModelStore(content: @Composable () -> Unit) {
+    val context = LocalContext.current
+    val owner = remember(context) { context.findActivity() as? ViewModelStoreOwner }
+    if (owner != null) {
+        CompositionLocalProvider(LocalViewModelStoreOwner provides owner) { content() }
+    } else {
+        content()
+    }
+}
+
 /**
  * 详情页导航图。起始页为透明的 [Routes.MAIN] 占位，主界面 pager 常驻其下方；
  * 打开详情时新页面沿共享轴滑入覆盖，返回时回到占位页即露出主界面。
@@ -410,229 +476,183 @@ private fun DetailNavHost(
         startDestination = Routes.MAIN,
         modifier = modifier,
         // 详情页使用 shared-axis：前进从右侧滑入、返回从左侧滑入，配合淡入淡出。
-        enterTransition = {
-            fadeIn(tween(NAV_ANIM_MS)) + slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.Left,
-                tween(NAV_ANIM_MS),
-            )
-        },
-        exitTransition = {
-            fadeOut(tween(NAV_ANIM_MS)) + slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.Left,
-                tween(NAV_ANIM_MS),
-            )
-        },
-        popEnterTransition = {
-            fadeIn(tween(NAV_ANIM_MS)) + slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.Right,
-                tween(NAV_ANIM_MS),
-            )
-        },
-        popExitTransition = {
-            fadeOut(tween(NAV_ANIM_MS)) + slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.Right,
-                tween(NAV_ANIM_MS),
-            )
-        },
+        enterTransition = { sharedAxisEnter(forward = true) },
+        exitTransition = { sharedAxisExit(forward = true) },
+        popEnterTransition = { sharedAxisEnter(forward = false) },
+        popExitTransition = { sharedAxisExit(forward = false) },
         // 预测性返回（边缘拖拽）默认是缩放（scaleOut 0.7），与返回按钮的平移不一致；
         // 这里显式覆盖为与 pop 相同的共享轴平移，让拖拽过程中当前页随手势横移。
-        predictivePopEnterTransition = {
-            fadeIn(tween(NAV_ANIM_MS)) + slideIntoContainer(
-                AnimatedContentTransitionScope.SlideDirection.Right,
-                tween(NAV_ANIM_MS),
-            )
-        },
-        predictivePopExitTransition = {
-            fadeOut(tween(NAV_ANIM_MS)) + slideOutOfContainer(
-                AnimatedContentTransitionScope.SlideDirection.Right,
-                tween(NAV_ANIM_MS),
-            )
-        },
+        predictivePopEnterTransition = { sharedAxisEnter(forward = false) },
+        predictivePopExitTransition = { sharedAxisExit(forward = false) },
     ) {
         composable(Routes.MAIN) {
             // 透明占位：保持主界面 pager 可见 / 可交互。
         }
-        composable(
-            route = Routes.SETTINGS_DETAIL,
-            arguments = listOf(
-                navArgument(Routes.ARG_SETTINGS_CATEGORY) { type = NavType.StringType },
-            ),
-        ) { entry ->
-            // 设置标签页在 NavHost 之外，使用的是 Activity 的 ViewModelStore；
-            // 二级页也切到同一个 owner，避免每个设置页各创建一份 SettingsViewModel。
-            val context = LocalContext.current
-            val settingsOwner = remember(context) {
-                context.findActivity() as? ViewModelStoreOwner
-            }
+        settingsGraph(navController)
+        editorGraph(navController)
+        automationGraph(navController)
+        connectivityGraph(navController)
+        developerGraph(navController)
+    }
+}
 
-            @Composable
-            fun SettingsContent() {
-                SettingsDetailScreen(
-                    categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
-                    onBack = { navController.popBackStack() },
-                    onOpenSetup = {
-                        navController.navigate(Routes.SETUP) { launchSingleTop = true }
-                    },
-                    onOpenMcp = {
-                        navController.navigate(Routes.MCP) { launchSingleTop = true }
-                    },
-                    onOpenRecordingDetail = { id ->
-                        navController.navigate(Routes.recordingDetail(id)) {
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenChannelEditor = { channelId ->
-                        navController.navigate(
-                            if (channelId == null) {
-                                Routes.NOTIFY_CHANNEL_NEW
-                            } else {
-                                Routes.notifyChannelEdit(channelId)
-                            },
-                        ) { launchSingleTop = true }
-                    },
-                )
+/** 设置、录制与通知渠道：都复用 Activity 作用域的 SettingsViewModel。 */
+private fun NavGraphBuilder.settingsGraph(navController: NavHostController) {
+    composable(
+        route = Routes.SETTINGS_DETAIL,
+        arguments = listOf(
+            navArgument(Routes.ARG_SETTINGS_CATEGORY) { type = NavType.StringType },
+        ),
+    ) { entry ->
+        WithActivityViewModelStore {
+            SettingsDetailScreen(
+                categoryKey = entry.arguments?.getString(Routes.ARG_SETTINGS_CATEGORY).orEmpty(),
+                onBack = { navController.popBackStack() },
+                onOpenSetup = { navController.open(Routes.SETUP) },
+                onOpenMcp = { navController.open(Routes.MCP) },
+                onOpenRecordingDetail = { id ->
+                    navController.open(Routes.recordingDetail(id))
+                },
+                onOpenChannelEditor = { channelId ->
+                    navController.open(
+                        if (channelId == null) {
+                            Routes.NOTIFY_CHANNEL_NEW
+                        } else {
+                            Routes.notifyChannelEdit(channelId)
+                        },
+                    )
+                },
+            )
+        }
+    }
+    composable(
+        route = Routes.RECORDING_DETAIL,
+        arguments = listOf(navArgument(Routes.ARG_RECORDING_ID) { type = NavType.StringType }),
+    ) { entry ->
+        WithActivityViewModelStore {
+            IzukiPageScaffold(
+                title = { Text(stringResource(R.string.settings_record)) },
+                onBack = { navController.popBackStack() },
+            ) { padding ->
+                PageColumn(
+                    modifier = Modifier.padding(padding).padding(horizontal = 16.dp),
+                ) {
+                    RecordingDetailPage(
+                        id = entry.arguments?.getString(Routes.ARG_RECORDING_ID).orEmpty(),
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
+        }
+    }
+    composable(Routes.NOTIFY_CHANNEL_NEW) {
+        NotificationChannelRoute(navController = navController, channelId = null)
+    }
+    composable(
+        route = Routes.NOTIFY_CHANNEL_EDIT,
+        arguments = listOf(navArgument(Routes.ARG_CHANNEL_ID) { type = NavType.StringType }),
+    ) { entry ->
+        NotificationChannelRoute(
+            navController = navController,
+            channelId = entry.arguments?.getString(Routes.ARG_CHANNEL_ID).orEmpty(),
+        )
+    }
+}
 
-            if (settingsOwner != null) {
-                CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
-                    SettingsContent()
-                }
-            } else {
-                SettingsContent()
-            }
-        }
-        composable(
-            route = Routes.RECORDING_DETAIL,
-            arguments = listOf(navArgument(Routes.ARG_RECORDING_ID) { type = NavType.StringType }),
-        ) { entry ->
-            val context = LocalContext.current
-            val settingsOwner = remember(context) {
-                context.findActivity() as? ViewModelStoreOwner
-            }
-            @Composable
-            fun RecordingContent() {
-                IzukiPageScaffold(
-                    title = { Text(stringResource(R.string.settings_record)) },
-                    onBack = { navController.popBackStack() },
-                ) { padding ->
-                    PageColumn(
-                        modifier = Modifier.padding(padding).padding(horizontal = 16.dp),
-                    ) {
-                        RecordingDetailPage(
-                            id = entry.arguments?.getString(Routes.ARG_RECORDING_ID).orEmpty(),
-                            onBack = { navController.popBackStack() },
-                        )
-                    }
-                }
-            }
-            if (settingsOwner != null) {
-                CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
-                    RecordingContent()
-                }
-            } else {
-                RecordingContent()
-            }
-        }
-        composable(Routes.NOTIFY_CHANNEL_NEW) {
-            NotificationChannelRoute(navController = navController, channelId = null)
-        }
-        composable(
-            route = Routes.NOTIFY_CHANNEL_EDIT,
-            arguments = listOf(navArgument(Routes.ARG_CHANNEL_ID) { type = NavType.StringType }),
-        ) { entry ->
-            NotificationChannelRoute(
-                navController = navController,
-                channelId = entry.arguments?.getString(Routes.ARG_CHANNEL_ID).orEmpty(),
-            )
-        }
-        composable(
-            route = Routes.EDITOR,
-            arguments = listOf(navArgument(Routes.ARG_SCRIPT_ID) { type = NavType.StringType }),
-        ) { entry ->
-            EditorScreen(
-                scriptId = entry.arguments?.getString(Routes.ARG_SCRIPT_ID).orEmpty(),
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(
-            route = Routes.SCRIPT_EDIT,
-            arguments = listOf(navArgument(Routes.ARG_SCRIPT_ID) { type = NavType.StringType }),
-        ) { entry ->
-            ScriptEditScreen(
-                scriptId = entry.arguments?.getString(Routes.ARG_SCRIPT_ID).orEmpty(),
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.SETUP) {
-            PermissionScreen(
-                onBack = { navController.popBackStack() },
-                onOpenHid = { navController.navigate(Routes.HID) { launchSingleTop = true } },
-                onOpenAdb = { navController.navigate(Routes.ADB) { launchSingleTop = true } },
-            )
-        }
-        composable(Routes.SCHEDULE) {
-            ScheduleScreen(onBack = { navController.popBackStack() })
-        }
-        composable(Routes.FLOWS) {
-            FlowScreen(
-                onBack = { navController.popBackStack() },
-                onOpenFlowEdit = { flowId ->
-                    navController.navigate(
-                        if (flowId == null) Routes.FLOW_NEW else Routes.flowEdit(flowId),
-                    ) { launchSingleTop = true }
-                },
-            )
-        }
-        composable(Routes.FLOW_NEW) {
-            FlowEditScreen(
-                flowId = null,
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(
-            route = Routes.FLOW_EDIT,
-            arguments = listOf(navArgument(Routes.ARG_FLOW_ID) { type = NavType.StringType }),
-        ) { entry ->
-            FlowEditScreen(
-                flowId = entry.arguments?.getString(Routes.ARG_FLOW_ID),
-                onBack = { navController.popBackStack() },
-            )
-        }
-        composable(Routes.HID) {
-            HidSetupScreen(onBack = { navController.popBackStack() })
-        }
-        composable(Routes.ADB) {
-            AdbSetupScreen(onBack = { navController.popBackStack() })
-        }
-        composable(Routes.AI) {
-            AiAgentScreen(
-                onBack = { navController.popBackStack() },
-                onOpenSetup = {
-                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
-                },
-            )
-        }
-        composable(Routes.MCP) {
-            McpServerScreen(
-                onBack = { navController.popBackStack() },
-                onOpenSetup = {
-                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
-                },
-            )
-        }
-        composable(Routes.VIRTUAL_SCREEN) {
-            VirtualScreenScreen(
-                onBack = { navController.popBackStack() },
-                onOpenSettings = {
-                    navController.navigate(Routes.settingsDetail(SettingsCategory.DISPLAY)) {
-                        launchSingleTop = true
-                    }
-                },
-                onOpenSetup = {
-                    navController.navigate(Routes.SETUP) { launchSingleTop = true }
-                },
-            )
-        }
+/** 脚本编辑器与脚本属性页。 */
+private fun NavGraphBuilder.editorGraph(navController: NavHostController) {
+    composable(
+        route = Routes.EDITOR,
+        arguments = listOf(navArgument(Routes.ARG_SCRIPT_ID) { type = NavType.StringType }),
+    ) { entry ->
+        EditorScreen(
+            scriptId = entry.arguments?.getString(Routes.ARG_SCRIPT_ID).orEmpty(),
+            onBack = { navController.popBackStack() },
+        )
+    }
+    composable(
+        route = Routes.SCRIPT_EDIT,
+        arguments = listOf(navArgument(Routes.ARG_SCRIPT_ID) { type = NavType.StringType }),
+    ) { entry ->
+        ScriptEditScreen(
+            scriptId = entry.arguments?.getString(Routes.ARG_SCRIPT_ID).orEmpty(),
+            onBack = { navController.popBackStack() },
+        )
+    }
+}
+
+/** 定时与流程。 */
+private fun NavGraphBuilder.automationGraph(navController: NavHostController) {
+    navigation(startDestination = Routes.SCHEDULE, route = GRAPH_AUTOMATION) {
+    composable(Routes.SCHEDULE) {
+        ScheduleScreen(onBack = { navController.popBackStack() })
+    }
+    composable(Routes.FLOWS) {
+        FlowScreen(
+            onBack = { navController.popBackStack() },
+            onOpenFlowEdit = { flowId ->
+                navController.open(if (flowId == null) Routes.FLOW_NEW else Routes.flowEdit(flowId))
+            },
+        )
+    }
+    composable(Routes.FLOW_NEW) {
+        FlowEditScreen(flowId = null, onBack = { navController.popBackStack() })
+    }
+    composable(
+        route = Routes.FLOW_EDIT,
+        arguments = listOf(navArgument(Routes.ARG_FLOW_ID) { type = NavType.StringType }),
+    ) { entry ->
+        FlowEditScreen(
+            flowId = entry.arguments?.getString(Routes.ARG_FLOW_ID),
+            onBack = { navController.popBackStack() },
+        )
+    }
+    }
+}
+
+/** 权限与连接方式设置。 */
+private fun NavGraphBuilder.connectivityGraph(navController: NavHostController) {
+    navigation(startDestination = Routes.SETUP, route = GRAPH_CONNECTIVITY) {
+    composable(Routes.SETUP) {
+        PermissionScreen(
+            onBack = { navController.popBackStack() },
+            onOpenHid = { navController.open(Routes.HID) },
+            onOpenAdb = { navController.open(Routes.ADB) },
+        )
+    }
+    composable(Routes.HID) {
+        HidSetupScreen(onBack = { navController.popBackStack() })
+    }
+    composable(Routes.ADB) {
+        AdbSetupScreen(onBack = { navController.popBackStack() })
+    }
+    }
+}
+
+/** AI、MCP 与虚拟屏。 */
+private fun NavGraphBuilder.developerGraph(navController: NavHostController) {
+    navigation(startDestination = Routes.AI, route = GRAPH_DEVELOPER) {
+    composable(Routes.AI) {
+        AiAgentScreen(
+            onBack = { navController.popBackStack() },
+            onOpenSetup = { navController.open(Routes.SETUP) },
+        )
+    }
+    composable(Routes.MCP) {
+        McpServerScreen(
+            onBack = { navController.popBackStack() },
+            onOpenSetup = { navController.open(Routes.SETUP) },
+        )
+    }
+    composable(Routes.VIRTUAL_SCREEN) {
+        VirtualScreenScreen(
+            onBack = { navController.popBackStack() },
+            onOpenSettings = {
+                navController.open(Routes.settingsDetail(SettingsCategory.DISPLAY))
+            },
+            onOpenSetup = { navController.open(Routes.SETUP) },
+        )
+    }
     }
 }
 
@@ -642,24 +662,10 @@ private fun NotificationChannelRoute(
     navController: NavHostController,
     channelId: String?,
 ) {
-    val context = LocalContext.current
-    val settingsOwner = remember(context) {
-        context.findActivity() as? ViewModelStoreOwner
-    }
-
-    @Composable
-    fun Content() {
+    WithActivityViewModelStore {
         NotificationChannelPage(
             channelId = channelId,
             onBack = { navController.popBackStack() },
         )
-    }
-
-    if (settingsOwner != null) {
-        CompositionLocalProvider(LocalViewModelStoreOwner provides settingsOwner) {
-            Content()
-        }
-    } else {
-        Content()
     }
 }

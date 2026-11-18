@@ -332,14 +332,6 @@ object PipelineValidator {
         }
     }
 
-    private fun isRectArray(value: JSONArray): Boolean {
-        if (value.length() != 2 && value.length() != 4) return false
-        for (index in 0 until value.length()) {
-            if (value.opt(index) !is Number) return false
-        }
-        return true
-    }
-
     private fun validateRegionValue(
         spec: PipelineSpec,
         nodeName: String,

@@ -98,7 +98,10 @@ class MyBackendManager(
 
 - 同一 `ControlMode` 重复注册会替换旧实例（`ControllerManager.register` 已处理）。
 - 断开时务必 `unregister`，否则 `isReady() == false` 的后端仍会被枚举。
-- 在 `di/AppContainer.kt` 创建并 `init()`；如果管理器依赖应用作用域，显式传入。
+- 在 `di/ControlContainer.kt` 创建并在 `AppContainer.init()` 中调用 `init()`；
+  如果管理器依赖应用作用域，从 `CoreContainer.appScope` 显式传入。
+- 新增依赖优先放入 `CoreContainer` / `ControlContainer` / `RuntimeContainer` 对应具名图，
+  不要继续往 `AppContainer` 门面加字段。
 
 ### 4. 权限与设置界面
 

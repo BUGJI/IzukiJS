@@ -39,6 +39,16 @@ class AppApi(
 
     private val foregroundCacheLock = Any()
 
+    /**
+     * 清空跨 run 的前台缓存。
+     *
+     * [AppApi] 由脚本与 MCP 共享；上一次运行缓存的前台包名不能成为下一次运行的起点，
+     * 否则脚本刚启动时 `foreground()` 可能返回上次的界面。
+     */
+    internal fun resetRunState() {
+        synchronized(foregroundCacheLock) { usageForegroundCache = null }
+    }
+
     @JavascriptInterface
     fun launch(packageName: String): Boolean {
         usageForegroundCache = null

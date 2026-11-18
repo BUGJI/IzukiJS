@@ -3,204 +3,134 @@ package com.benton.izukijs.di
 import android.app.Application
 import android.content.Context
 import com.benton.izukijs.IzukiApp
-import com.benton.izukijs.ai.AiConfigRepository
+import com.benton.izukijs.backup.ConfigBackupManager
+import com.benton.izukijs.backup.ConfigSections
 import com.benton.izukijs.controller.ControllerManager
 import com.benton.izukijs.controller.ControllerSettingsRepository
-import com.benton.izukijs.controller.NodeTreeResult
-import com.benton.izukijs.virtualscreen.ScreenTarget
-import com.benton.izukijs.controller.UiautomatorDumper
 import com.benton.izukijs.controller.adb.AdbManager
 import com.benton.izukijs.controller.hid.HidManager
-import com.benton.izukijs.controller.record.RecordingHooks
 import com.benton.izukijs.controller.record.RecordingSession
 import com.benton.izukijs.controller.root.RootManager
 import com.benton.izukijs.controller.shizuku.ShizukuManager
-import com.benton.izukijs.data.AppearanceRepository
-import com.benton.izukijs.backup.ConfigBackupManager
-import com.benton.izukijs.backup.ConfigSections
-import com.benton.izukijs.data.EditorSettingsRepository
-import com.benton.izukijs.data.GlobalEnvRepository
-import com.benton.izukijs.data.RunHistoryRepository
-import com.benton.izukijs.data.ScriptEnvRepository
-import com.benton.izukijs.data.ScriptImporter
-import com.benton.izukijs.data.ScriptListPreferences
-import com.benton.izukijs.data.ScriptRepository
-import com.benton.izukijs.data.TileSettingsRepository
-import com.benton.izukijs.data.UnlockSettingsRepository
-import com.benton.izukijs.developer.DeveloperSettingsRepository
-import com.benton.izukijs.developer.DeveloperTuning
-import com.benton.izukijs.flow.FlowManager
-import com.benton.izukijs.flow.FlowRepository
-import com.benton.izukijs.flow.FlowRunner
-import com.benton.izukijs.flow.NotificationFlowNotifier
-import com.benton.izukijs.i18n.LanguageRepository
-import com.benton.izukijs.ocr.OcrConfigRepository
-import com.benton.izukijs.ocr.OcrProcessor
-import com.benton.izukijs.notification.NotificationDispatcher
-import com.benton.izukijs.notification.NotificationSettingsRepository
-import com.benton.izukijs.runtime.HttpSettingsRepository
+import com.benton.izukijs.core.config.RuntimeLimits
 import com.benton.izukijs.core.log.LogBus
-import com.benton.izukijs.core.log.LogBusRunLogSink
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.runtime.RunControl
-import com.benton.izukijs.runtime.CacheImageStore
-import com.benton.izukijs.runtime.LogFileStore
-import com.benton.izukijs.runtime.LogSettingsRepository
-import com.benton.izukijs.runtime.RunPreparer
-import com.benton.izukijs.runtime.RuntimeSettingsRepository
+import com.benton.izukijs.developer.DeveloperTuning
+import com.benton.izukijs.notification.NotificationDispatcher
 import com.benton.izukijs.runtime.ScriptExecutionManager
-import com.benton.izukijs.runtime.api.DeviceApiBundle
-import com.benton.izukijs.schedule.ScheduleManager
-import com.benton.izukijs.schedule.ScheduleRepository
-import com.benton.izukijs.schedule.ScheduleRunner
-import com.benton.izukijs.schedule.TriggerConditions
-import com.benton.izukijs.privileged.PrivilegedUnlockClient
-import com.benton.izukijs.service.CaptureSettingsRepository
 import com.benton.izukijs.service.McpServerService
 import com.benton.izukijs.service.ScreenCapture
 import com.benton.izukijs.service.ScreenUnlockController
-import com.benton.izukijs.service.UnlockGestureRecorder
-import com.benton.izukijs.service.WakeLockController
-import com.benton.izukijs.subscription.SubscriptionManager
-import com.benton.izukijs.subscription.SubscriptionRepository
-import com.benton.izukijs.update.UpdateManager
-import com.benton.izukijs.update.UpdateSettingsRepository
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
-import com.benton.izukijs.virtualscreen.VirtualScreenSettingsRepository
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * 轻量手写依赖容器。规模变大后可平滑替换为 Hilt/Koin。
+ * 应用依赖门面。
+ *
+ * 真正的构造已拆到 [CoreContainer] / [ControlContainer] / [RuntimeContainer] / [McpContainer]；
+ * 这里保留原有属性名作为兼容层，调用点可逐步改为 `container.core.xxx` 等具名图。
+ * 由 `IzukiApp` 通过 Koin 注入并调用一次 [init]。
  */
-class AppContainer(val application: Application) {
+class AppContainer(
+    val application: Application,
+    val core: CoreContainer,
+    val control: ControlContainer,
+    val runtime: RuntimeContainer,
+    private val mcp: McpContainer,
+) {
 
-    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    // ---- 作用域 ----
+    val uiScope get() = core.uiScope
 
-    /** 应用级 UI 作用域：Snackbar 结果等待等需要在页面切换后继续的操作。 */
-    val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    // ---- 基础 / 仓库 ----
+    val logBus: LogBus get() = core.logBus
+    val logSettingsRepository get() = core.logSettingsRepository
+    val logFileStore get() = core.logFileStore
+    val cacheImageStore get() = core.cacheImageStore
+    val scriptRepository get() = core.scriptRepository
+    val scriptImporter get() = core.scriptImporter
+    val scriptListPreferences get() = core.scriptListPreferences
+    val scriptEnvRepository get() = core.scriptEnvRepository
+    val globalEnvRepository get() = core.globalEnvRepository
+    val runHistoryRepository get() = core.runHistoryRepository
+    val tileSettingsRepository get() = core.tileSettingsRepository
+    val runtimeSettingsRepository get() = core.runtimeSettingsRepository
+    val notificationSettingsRepository get() = core.notificationSettingsRepository
+    val notificationDispatcher: NotificationDispatcher get() = core.notificationDispatcher
+    val virtualScreenSettingsRepository get() = core.virtualScreenSettingsRepository
+    val httpSettingsRepository get() = core.httpSettingsRepository
+    val unlockSettingsRepository get() = core.unlockSettingsRepository
+    val ocrConfigRepository get() = core.ocrConfigRepository
+    val aiConfigRepository get() = core.aiConfigRepository
+    val editorSettingsRepository get() = core.editorSettingsRepository
+    val languageRepository get() = core.languageRepository
+    val appearanceRepository get() = core.appearanceRepository
+    val developerSettingsRepository get() = core.developerSettingsRepository
+    val updateSettingsRepository get() = core.updateSettingsRepository
+    val updateManager get() = core.updateManager
+    val scheduleRepository get() = core.scheduleRepository
+    val flowRepository get() = core.flowRepository
+    val subscriptionRepository get() = core.subscriptionRepository
+    val controllerSettingsRepository: ControllerSettingsRepository get() = core.controllerSettingsRepository
+    val captureSettingsRepository get() = core.captureSettingsRepository
 
-    val controllerManager = ControllerManager()
+    // ---- 控制 / 设备能力 ----
+    val controllerManager: ControllerManager get() = control.controllerManager
+    val virtualScreenManager: VirtualScreenManager get() = control.virtualScreenManager
+    val wakeLockController get() = control.wakeLockController
+    val privilegedUnlockClient get() = control.privilegedUnlockClient
+    val screenUnlockController: ScreenUnlockController get() = control.screenUnlockController
+    val unlockGestureRecorder get() = control.unlockGestureRecorder
+    val screenCapture: ScreenCapture get() = control.screenCapture
+    val ocrProcessor get() = control.ocrProcessor
+    val shizukuManager: ShizukuManager get() = control.shizukuManager
+    val rootManager: RootManager get() = control.rootManager
+    val hidManager: HidManager get() = control.hidManager
+    val adbManager: AdbManager get() = control.adbManager
 
-    val controllerSettingsRepository = ControllerSettingsRepository(application)
+    // ---- 运行时 ----
+    val deviceApiBundle get() = runtime.deviceApiBundle
+    val recordingSession: RecordingSession get() = runtime.recordingSession
+    val scriptExecutionManager: ScriptExecutionManager get() = runtime.scriptExecutionManager
+    val runControl: RunControl get() = runtime.scriptExecutionManager
+    val scheduleManager get() = runtime.scheduleManager
+    val flowManager get() = runtime.flowManager
+    val subscriptionManager get() = runtime.subscriptionManager
+    val scheduleRunner get() = runtime.scheduleRunner
+    val flowRunner get() = runtime.flowRunner
 
-    val captureSettingsRepository = CaptureSettingsRepository(application)
-
-    val logBus = LogBus()
-
-    val logSettingsRepository = LogSettingsRepository(application)
-
-    val logFileStore = LogFileStore(application, logSettingsRepository)
-
-    val cacheImageStore = CacheImageStore(application)
-
-    val scriptRepository = ScriptRepository(application)
-
-    val scriptImporter = ScriptImporter(application, scriptRepository, logBus)
-
-    val scriptListPreferences = ScriptListPreferences(application)
-
-    val scriptEnvRepository = ScriptEnvRepository(application)
-
-    val globalEnvRepository = GlobalEnvRepository(application)
-
-    val runHistoryRepository = RunHistoryRepository(application)
-
-    val tileSettingsRepository = TileSettingsRepository(application)
-
-    val runtimeSettingsRepository = RuntimeSettingsRepository(application)
-
-    val notificationSettingsRepository = NotificationSettingsRepository(application)
-
-    val notificationDispatcher = NotificationDispatcher(
-        context = application,
-        settingsRepository = notificationSettingsRepository,
-        logBus = logBus,
-    )
-
-    val virtualScreenSettingsRepository = VirtualScreenSettingsRepository(application)
-
-    val virtualScreenManager = VirtualScreenManager(
-        context = application,
-        controllers = controllerManager,
-        settingsRepository = virtualScreenSettingsRepository,
-        logBus = logBus,
-    )
-
-    val httpSettingsRepository = HttpSettingsRepository(application)
-
-    val wakeLockController = WakeLockController(application)
-
-    val unlockSettingsRepository = UnlockSettingsRepository(application)
-
-    val privilegedUnlockClient = PrivilegedUnlockClient(application, logBus)
-
-    val screenUnlockController = ScreenUnlockController(
-        context = application,
-        controllers = controllerManager,
-        settingsRepository = unlockSettingsRepository,
-        wakeLock = wakeLockController,
-        privileged = privilegedUnlockClient,
-        logBus = logBus,
-    )
-
-    val unlockGestureRecorder = UnlockGestureRecorder(
-        context = application,
-        controllers = controllerManager,
-        settingsRepository = unlockSettingsRepository,
-        wakeLock = wakeLockController,
-        privileged = privilegedUnlockClient,
-        logBus = logBus,
-    )
-
-    val screenCapture = ScreenCapture(logBus)
-
-    val ocrConfigRepository = OcrConfigRepository(application)
-
-    val ocrProcessor = OcrProcessor(ocrConfigRepository, captureSettingsRepository, logBus)
-
-    val aiConfigRepository = AiConfigRepository(application)
-
-    val editorSettingsRepository = EditorSettingsRepository(application)
-
-    val languageRepository = LanguageRepository(application)
-
-    val appearanceRepository = AppearanceRepository(application)
-
-    val developerSettingsRepository = DeveloperSettingsRepository(application)
-
-    val updateSettingsRepository = UpdateSettingsRepository(application)
-
-    val updateManager = UpdateManager(application, updateSettingsRepository, logBus)
+    // ---- MCP ----
+    val mcpConfigRepository get() = mcp.configRepository
+    val mcpAuditLog get() = mcp.auditLog
+    val mcpServerController get() = mcp.serverController
 
     val configBackupManager by lazy {
         ConfigBackupManager(
             sections = ConfigSections.all(
-                ai = aiConfigRepository,
-                ocr = ocrConfigRepository,
-                controller = controllerSettingsRepository,
-                capture = captureSettingsRepository,
-                log = logSettingsRepository,
-                http = httpSettingsRepository,
-                editor = editorSettingsRepository,
-                appearance = appearanceRepository,
-                update = updateSettingsRepository,
-                globalEnv = globalEnvRepository,
-                virtualScreen = virtualScreenSettingsRepository,
-                notification = notificationSettingsRepository,
-                runtime = runtimeSettingsRepository,
-                language = languageRepository,
-                developer = developerSettingsRepository,
-                mcp = mcpConfigRepository,
-                tile = tileSettingsRepository,
+                ai = core.aiConfigRepository,
+                ocr = core.ocrConfigRepository,
+                controller = core.controllerSettingsRepository,
+                capture = core.captureSettingsRepository,
+                log = core.logSettingsRepository,
+                http = core.httpSettingsRepository,
+                editor = core.editorSettingsRepository,
+                appearance = core.appearanceRepository,
+                update = core.updateSettingsRepository,
+                globalEnv = core.globalEnvRepository,
+                virtualScreen = core.virtualScreenSettingsRepository,
+                notification = core.notificationSettingsRepository,
+                runtime = core.runtimeSettingsRepository,
+                language = core.languageRepository,
+                developer = core.developerSettingsRepository,
+                mcp = mcp.configRepository,
+                tile = core.tileSettingsRepository,
             ),
             // 锁屏 PIN / 图案使用设备绑定密钥加密，不参与导出 / 导入，仅在重置时清理。
-            resetOnly = listOf(unlockSettingsRepository::clear),
+            resetOnly = listOf(core.unlockSettingsRepository::clear),
             // 导入 / 重置可能关闭 MCP 或改掉令牌、端口；已运行的监听必须同步重建或停止。
             onApplied = {
-                val config = mcpConfigRepository.current()
+                val config = mcp.configRepository.current()
                 runCatching {
                     if (config.enabled && config.isConfigured) {
                         McpServerService.restart(application)
@@ -212,222 +142,53 @@ class AppContainer(val application: Application) {
         )
     }
 
-    /** 截图 / 应用启动的录制观察点，容器内共享同一个实例。 */
-    private val recordingHooks = RecordingHooks()
-
-    /** 脚本与 MCP 共用的设备 API 集合；容器内只组装一次。 */
-    val deviceApiBundle: DeviceApiBundle by lazy {
-        DeviceApiBundle.create(
-            application,
-            controllerManager,
-            screenCapture,
-            ocrProcessor,
-            logBus,
-            appListEnabled = { runtimeSettingsRepository.current().appList },
-            progressNotificationEnabled = {
-                runtimeSettingsRepository.current().progressNotification
-            },
-            virtualScreen = virtualScreenManager,
-            recordingHooks = recordingHooks,
-        )
-    }
-
-    /** 控制操作录制；同一时间最多一个录制会话。 */
-    val recordingSession = RecordingSession(
-        context = application,
-        controllers = controllerManager,
-        logBus = logBus,
-        hooks = recordingHooks,
-        privileged = privilegedUnlockClient,
-        captureProvider = { fresh -> deviceApiBundle.recordingCaptureProvider(fresh) },
-        nodeTreeProvider = { timeoutMs -> nodeTreeProvider(timeoutMs) },
-        foregroundProvider = { deviceApiBundle.appApi.foreground() },
-    )
-
-    /** 读控件树：无障碍优先，Shizuku / 无线调试 / Root 的 uiautomator dump 兜底。 */
-    private val nodeTreeProvider: (Long) -> NodeTreeResult = { timeoutMs ->
-        UiautomatorDumper.read(
-            controllerManager,
-            logBus,
-            timeoutMs,
-            animationProbe = {
-                com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
-                    capture = { screenCapture.capture() },
-                )
-            },
-        )
-    }
-
-    /** 显式主屏控件树：虚拟屏激活时仍按默认显示屏 dump，供 MCP target=main 使用。 */
-    private val mainNodeTreeProvider: (Long) -> NodeTreeResult = { timeoutMs ->
-        UiautomatorDumper.read(
-            controllerManager,
-            logBus,
-            timeoutMs,
-            animationProbe = {
-                com.benton.izukijs.controller.ScreenAnimationProbe.isAnimating(
-                    capture = { screenCapture.capture() },
-                )
-            },
-            target = ScreenTarget.MAIN,
-        )
-    }
-
-    private val runPreparer = RunPreparer(
-        appContext = application,
-        controllers = controllerManager,
-        logBus = logBus,
-        aiConfigRepository = aiConfigRepository,
-        httpSettingsRepository = httpSettingsRepository,
-        scriptEnvRepository = scriptEnvRepository,
-        globalEnvRepository = globalEnvRepository,
-        runHistoryRepository = runHistoryRepository,
-        virtualScreen = virtualScreenManager,
-        virtualScreenSettings = virtualScreenSettingsRepository,
-        runtimeSettings = runtimeSettingsRepository,
-    )
-
-    val scriptExecutionManager = ScriptExecutionManager(
-        application,
-        controllerManager,
-        screenCapture,
-        deviceApiBundle,
-        nodeTreeProvider,
-        logBus,
-        aiConfigRepository,
-        captureSettingsRepository,
-        runtimeSettingsRepository,
-        httpSettingsRepository,
-        wakeLockController,
-        screenUnlockController,
-        virtualScreenManager,
-        virtualScreenSettingsRepository,
-        runPreparer,
-        moduleSourceProvider = { raw ->
-            val id = raw.trim().removePrefix("./").removeSuffix(".js")
-            scriptRepository.find(id)?.let { scriptRepository.read(it) }
-        },
-        notificationDispatcher = notificationDispatcher,
-        recordingSession = recordingSession,
-    )
-
-    /** 面向通知 / 悬浮窗的运行控制端口，避免 service 反向依赖 runtime 实现。 */
-    val runControl: RunControl get() = scriptExecutionManager
-
-    private val mcp = McpContainer(
-        application = application,
-        controllerManager = controllerManager,
-        logBus = logBus,
-        deviceApiBundle = deviceApiBundle,
-        nodeTreeProvider = nodeTreeProvider,
-        mainNodeTreeProvider = mainNodeTreeProvider,
-        scriptRepository = scriptRepository,
-        scriptExecutionManager = scriptExecutionManager,
-        logFileStore = logFileStore,
-        virtualScreenManager = virtualScreenManager,
-        screenUnlockController = screenUnlockController,
-        recordingSession = recordingSession,
-    )
-
-    val mcpConfigRepository get() = mcp.configRepository
-    val mcpAuditLog get() = mcp.auditLog
-    val mcpServerController get() = mcp.serverController
-
-    val shizukuManager = ShizukuManager(application, controllerManager, logBus)
-
-    val rootManager = RootManager(application, controllerManager, logBus, appScope)
-
-    val hidManager = HidManager(application, controllerManager, logBus, appScope)
-
-    val adbManager = AdbManager(application, controllerManager, logBus, appScope)
-
-    val scheduleRepository = ScheduleRepository(application)
-
-    val scheduleManager = ScheduleManager(application, scheduleRepository, logBus)
-
-    val flowRepository = FlowRepository(application)
-
-    val flowManager = FlowManager(application, flowRepository, logBus)
-
-    val subscriptionRepository = SubscriptionRepository(application)
-
-    val subscriptionManager = SubscriptionManager(
-        application,
-        subscriptionRepository,
-        scriptRepository,
-        logBus,
-    )
-
-    private val runLogSink = LogBusRunLogSink(logBus)
-    private val runConditions = TriggerConditions(
-        application,
-        foregroundProvider = { deviceApiBundle.appApi.currentPackage() },
-    )
-
-    val scheduleRunner = ScheduleRunner(
-        repository = scheduleRepository,
-        scriptRepository = scriptRepository,
-        scheduleManager = scheduleManager,
-        executionManager = scriptExecutionManager,
-        screenUnlock = screenUnlockController,
-        triggerConditions = runConditions,
-        logBus = runLogSink,
-    )
-
-    val flowRunner = FlowRunner(
-        repository = flowRepository,
-        scriptRepository = scriptRepository,
-        flowManager = flowManager,
-        executionManager = scriptExecutionManager,
-        screenUnlock = screenUnlockController,
-        triggerConditions = runConditions,
-        logBus = runLogSink,
-        notificationDispatcher = NotificationFlowNotifier(
-            application,
-            notificationDispatcher,
-            runLogSink,
-        ),
-    )
-
     /** 初始化控制后端。会注册 Shizuku 监听并异步探测 Root。 */
     fun init() {
-        logBus.setSink { logFileStore.append(it) }
-        PerfMetrics.setReportSink { logBus.info(it) }
-        DeveloperTuning.update(developerSettingsRepository.current())
-        appScope.launch { scriptRepository.seedBundledScripts() }
-        shizukuManager.init()
-        rootManager.init()
-        hidManager.init()
-        adbManager.init()
-        scheduleManager.start()
+        core.logBus.setSink { core.logFileStore.append(it) }
+        PerfMetrics.setReportSink { core.logBus.info(it) }
+        val developerSettings = core.developerSettingsRepository.current()
+        DeveloperTuning.update(developerSettings)
+        RuntimeLimits.maxScriptBytes = developerSettings.maxScriptBytes
+        core.appScope.launch { core.scriptRepository.seedBundledScripts() }
+        control.shizukuManager.init()
+        control.rootManager.init()
+        control.hidManager.init()
+        control.adbManager.init()
+        runtime.scheduleManager.start()
         // 控制偏好以持久化的 Repository 为唯一数据源，实时同步到内存中的 ControllerManager。
-        appScope.launch {
-            controllerSettingsRepository.settings.collect { settings ->
-                controllerManager.readMode = settings.readMode
-                controllerManager.operateMode = settings.operateMode
-                controllerManager.setCapabilityPreferences(settings.capabilityPreferences)
-                controllerManager.setDisabledModes(settings.disabledModes)
+        core.appScope.launch {
+            core.controllerSettingsRepository.settings.collect { settings ->
+                control.controllerManager.readMode = settings.readMode
+                control.controllerManager.operateMode = settings.operateMode
+                control.controllerManager.setCapabilityPreferences(settings.capabilityPreferences)
+                control.controllerManager.setDisabledModes(settings.disabledModes)
             }
         }
-        appScope.launch {
-            logSettingsRepository.settings.collect { logBus.minLevel = it.minLevel }
+        core.appScope.launch {
+            core.logSettingsRepository.settings.collect { core.logBus.minLevel = it.minLevel }
         }
-        appScope.launch {
-            runtimeSettingsRepository.settings.collect { PerfMetrics.setEnabled(it.perfBaseline) }
+        core.appScope.launch {
+            core.runtimeSettingsRepository.settings.collect {
+                PerfMetrics.setEnabled(it.perfBaseline)
+            }
         }
-        appScope.launch {
-            developerSettingsRepository.settings.collect { DeveloperTuning.update(it) }
+        core.appScope.launch {
+            core.developerSettingsRepository.settings.collect {
+                DeveloperTuning.update(it)
+                // core 层只读这份快照，避免 core -> developer 的反向依赖。
+                RuntimeLimits.maxScriptBytes = it.maxScriptBytes
+            }
         }
-        appScope.launch {
-            logFileStore.trim()
-            scheduleManager.rescheduleAll()
-            flowManager.rescheduleAll()
-            subscriptionManager.rescheduleAll()
+        core.appScope.launch {
+            core.logFileStore.trim()
+            runtime.scheduleManager.rescheduleAll()
+            runtime.flowManager.rescheduleAll()
+            runtime.subscriptionManager.rescheduleAll()
         }
-        appScope.launch { updateManager.startIfAutoCheckEnabled() }
+        core.appScope.launch { core.updateManager.startIfAutoCheckEnabled() }
     }
 }
 
-/** 在任意处获取依赖容器。 */
+/** 在任意处获取依赖门面。 */
 val Context.appContainer: AppContainer
     get() = (applicationContext as IzukiApp).container

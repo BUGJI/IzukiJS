@@ -76,6 +76,10 @@ class SelectorApi(
         trace("长按文本 \"$text\"") { longClickNode(findByText(text)) }
 
     @JavascriptInterface
+    fun longClickByDesc(desc: String): Boolean =
+        trace("长按描述 \"$desc\"") { longClickNode(findByDesc(desc)) }
+
+    @JavascriptInterface
     fun setTextById(viewId: String, text: String): Boolean = trace("设置 #$viewId 文本") {
         val node = findById(viewId) ?: return@trace false
         try {

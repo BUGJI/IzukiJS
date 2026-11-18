@@ -8,7 +8,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.IntentCompat
 import com.benton.izukijs.IzukiApp
@@ -26,6 +28,8 @@ class ScreenCaptureService : Service() {
     private val worker: ExecutorService = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "izuki-capture-ctl").apply { isDaemon = true }
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -46,15 +50,28 @@ class ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
         val capture = (application as IzukiApp).container.screenCapture
-        worker.execute { runCatching { capture.start(this, resultCode, data) } }
+        // 系统撤销投影（下拉快捷开关 / 其他应用抢占）时同步结束前台服务。
+        capture.onProjectionStopped = { mainHandler.post { stopCaptureService() } }
+        worker.execute {
+            val started = runCatching { capture.start(this, resultCode, data) }
+                .getOrDefault(false)
+            // 启动失败（令牌失效 / 已撤销）不能留下一个永远显示“录屏中”的服务。
+            if (!started) mainHandler.post { stopCaptureService() }
+        }
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         val capture = (application as IzukiApp).container.screenCapture
+        capture.onProjectionStopped = null
         worker.execute { runCatching { capture.stop() } }
         worker.shutdown()
         super.onDestroy()
+    }
+
+    private fun stopCaptureService() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun startForegroundInternal() {

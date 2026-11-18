@@ -387,6 +387,11 @@ private fun settingsSearchEntries(
         Icons.Filled.Code,
     ) { onOpenCategory(SettingsCategory.RUN) },
     SettingsSearchEntry(
+        stringResource(R.string.settings_quick_stop_title),
+        "音量 音量键 按键 快速停止 停止脚本 volume key quick stop",
+        Icons.Filled.Code,
+    ) { onOpenCategory(SettingsCategory.RUN) },
+    SettingsSearchEntry(
         stringResource(R.string.notif_section_channels),
         "通知 渠道 推送 notification channel push",
         Icons.Filled.Notifications,

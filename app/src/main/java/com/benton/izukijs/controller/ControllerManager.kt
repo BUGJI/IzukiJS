@@ -1,5 +1,6 @@
 package com.benton.izukijs.controller
 
+import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.CapabilityGroup
 import com.benton.izukijs.model.ControlMode
@@ -119,6 +120,21 @@ class ControllerManager {
      */
     fun controllerForMain(capability: Capability): DeviceController? =
         controllerFor(capability, ignoreDisplayTarget = true)
+
+    /**
+     * 选择可用的无障碍查询后端，并去掉录制代理包装。
+     *
+     * 选择器、调试布局与图案解锁需要 [AccessibilityController] 的节点查询能力，
+     * 录制期间注册的是代理；直接 `as? AccessibilityController` 会静默失败。
+     * 主屏查询不受 [targetDisplayId] 限制，因为虚拟屏激活时主屏仍可读。
+     */
+    fun accessibilityController(): AccessibilityController? =
+        all()
+            .asSequence()
+            .filter { !isDisabled(it.mode) && it.isReady() }
+            .map { it.underlying() }
+            .filterIsInstance<AccessibilityController>()
+            .firstOrNull()
 
     private fun controllerFor(capability: Capability, ignoreDisplayTarget: Boolean): DeviceController? {
         val ordered = order(capability)

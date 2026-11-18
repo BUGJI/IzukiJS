@@ -10,11 +10,11 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.core.notification.NotificationRoutes
 import com.benton.izukijs.core.notification.NotifyEvent
 import com.benton.izukijs.core.notification.NotifyLevel
 import com.benton.izukijs.core.notification.NotifySource
 import com.benton.izukijs.service.NotificationIds
-import com.benton.izukijs.ui.navigation.Routes
 
 /** 把通知事件投递到系统通知栏。 */
 internal class LocalNotifier(
@@ -60,7 +60,11 @@ internal class LocalNotifier(
 
     /** 运行结果/脚本消息都落到日志页；MCP 来源可以直接打开 MCP 页面。 */
     private fun routeFor(event: NotifyEvent): String =
-        if (event.source == NotifySource.MCP) Routes.MCP else Routes.TAB_LOGS
+        if (event.source == NotifySource.MCP) {
+            NotificationRoutes.MCP
+        } else {
+            NotificationRoutes.LOGS
+        }
 
     private fun channelFor(level: NotifyLevel): String = when (level) {
         NotifyLevel.ERROR -> CHANNEL_ERROR

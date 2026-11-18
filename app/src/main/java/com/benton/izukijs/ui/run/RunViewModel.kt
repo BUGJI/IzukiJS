@@ -6,6 +6,7 @@ import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.RecentRun
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.ui.common.ScriptLaunchViewModel
+import com.benton.izukijs.ui.common.collectFrom
 import com.benton.izukijs.virtualscreen.VirtualScreenSettings
 import com.benton.izukijs.virtualscreen.VirtualScreenState
 import kotlinx.coroutines.flow.Flow
@@ -123,9 +124,7 @@ class RunViewModel(container: AppContainer) : ScriptLaunchViewModel(container) {
     }
 
     private fun <T> Flow<T>.collectInto(update: (RunUiState, T) -> RunUiState) {
-        viewModelScope.launch {
-            collect { value -> _uiState.update { state -> update(state, value) } }
-        }
+        _uiState.collectFrom(viewModelScope, this, update)
     }
 
     private fun buildRecentItems(

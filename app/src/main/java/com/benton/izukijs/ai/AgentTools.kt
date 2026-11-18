@@ -3,6 +3,7 @@ package com.benton.izukijs.ai
 import com.benton.izukijs.controller.NodeTreeResult
 import com.benton.izukijs.runtime.api.AppApi
 import com.benton.izukijs.runtime.api.DeviceApi
+import com.benton.izukijs.runtime.api.DeviceApiBundle
 import com.benton.izukijs.runtime.api.InputApi
 import com.benton.izukijs.runtime.api.NotificationApi
 import com.benton.izukijs.runtime.api.OcrApi
@@ -96,5 +97,32 @@ class AgentTools(
         }
 
         else -> null
+    }
+
+    companion object {
+        /**
+         * 从共享设备 bundle 组装工具集。
+         *
+         * MCP 的脚本工具 / 主屏工具 / AI 工具曾各自手写一遍 10 个参数，容易漏传
+         * 通知或截图依赖；集中到工厂后只替换真正不同的 OCR 与节点树来源。
+         */
+        fun from(
+            bundle: DeviceApiBundle,
+            policy: ToolPolicy,
+            nodeTreeProvider: (timeoutMs: Long) -> NodeTreeResult,
+            ocrApi: OcrApi = bundle.ocrApi,
+            screenshotPathProvider: () -> String? = { null },
+        ): AgentTools = AgentTools(
+            inputApi = bundle.inputApi,
+            selectorApi = bundle.selectorApi,
+            ocrApi = ocrApi,
+            appApi = bundle.appApi,
+            shellApi = bundle.shellApi,
+            deviceApi = bundle.deviceApi,
+            notificationApi = bundle.notificationApi,
+            screenshotPathProvider = screenshotPathProvider,
+            nodeTreeProvider = nodeTreeProvider,
+            policy = policy,
+        )
     }
 }

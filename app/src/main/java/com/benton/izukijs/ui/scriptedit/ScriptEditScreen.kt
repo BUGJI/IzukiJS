@@ -66,6 +66,7 @@ import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.common.SectionGap
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.formatDateTime
+import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.rememberAppContainer
 import kotlinx.coroutines.launch
 
@@ -83,6 +84,7 @@ private data class ScriptEditBaseline(
 @Composable
 fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
     val container = rememberAppContainer()
+    val viewModel: ScriptEditViewModel = appViewModel { ScriptEditViewModel(it) }
     val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
@@ -224,111 +226,82 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
         val hadSubscription = subscription != null
         saving = true
         scope.launch {
-            var message = resources.getString(R.string.script_saved)
-            var failed = false
-            var shouldSync = false
-            var syncTargetId: String? = null
-            runCatching {
-                var target = current
-                var renamedId: String? = null
-                if (newName != current.name) {
-                    target = container.scriptRepository.renameAsync(current, newName)
-                    container.scriptEnvRepository.move(current.id, target.id)
-                    container.scriptListPreferences.moveTags(current.id, target.id)
-                    container.scriptListPreferences.movePinned(current.id, target.id)
-                    container.tileSettingsRepository.moveScriptId(current.id, target.id)
-                    container.scheduleRepository.moveScriptAsync(current.id, target.id, target.name)
-                    container.flowRepository.moveScriptAsync(current.id, target.id, target.name)
-                    container.subscriptionManager.moveAsync(current.id, target.id)
-                    container.runHistoryRepository.move(current.id, target.id, target.name)
-                    script = target
-                    renamedId = target.id
-                }
-
-                container.scriptEnvRepository.saveEnvSettings(
-                    target.id,
-                    useGlobalForSave,
-                    parsedEnv,
-                    envForSave,
-                )
-
-                if (trimmedUrl.isEmpty()) {
-                    if (hadSubscription) {
-                        container.subscriptionManager.cancelAsync(target.id)
-                        subscription = null
-                        message = resources.getString(R.string.subscription_deleted)
-                    }
-                    url = ""
-                    intervalText = "0"
-                    enabled = false
-                } else {
-                    val existing = container.subscriptionRepository.getAsync(target.id)
-                    val saved = ScriptSubscription(
-                        scriptId = target.id,
-                        url = trimmedUrl,
-                        intervalMinutes = interval,
-                        enabled = effectiveEnabled,
-                        lastSyncAtMillis = existing?.lastSyncAtMillis ?: 0L,
-                        nextSyncAtMillis = existing?.nextSyncAtMillis ?: 0L,
-                        lastError = existing?.lastError.orEmpty(),
-                        contentHash = existing?.contentHash.orEmpty(),
-                        etag = existing?.etag.orEmpty(),
-                        lastModified = existing?.lastModified.orEmpty(),
-                    )
-                    container.subscriptionManager.scheduleAsync(saved)
-                    subscription = container.subscriptionRepository.getAsync(target.id)
-                    shouldSync = (existing == null || existing.url != trimmedUrl) && effectiveEnabled
-                    syncTargetId = target.id
-                    intervalText = interval.toString()
-                    enabled = effectiveEnabled
-                    message = resources.getString(
-                        if (!effectiveEnabled) {
-                            R.string.subscription_saved_disabled
-                        } else {
-                            R.string.subscription_saved
-                        },
-                    )
-                }
-                name = target.name
-                url = trimmedUrl
-                renamedId?.let { currentScriptId = it }
-                baseline = ScriptEditBaseline(
-                    name = target.name,
-                    url = trimmedUrl,
-                    intervalText = intervalText,
-                    enabled = enabled,
+            val result = viewModel.save(
+                ScriptEditSaveRequest(
+                    current = current,
+                    newName = newName,
                     useGlobalEnv = useGlobalForSave,
+                    env = parsedEnv,
                     envText = envForSave,
-                )
-            }.onFailure { error ->
-                failed = true
-                message = error.message ?: resources.getString(R.string.subscription_sync_failed)
-            }
+                    url = trimmedUrl,
+                    intervalMinutes = interval,
+                    enabled = effectiveEnabled,
+                    hadSubscription = hadSubscription,
+                ),
+            )
             saving = false
-            if (failed) {
-                snackbar.show(message)
-            } else {
-                val idToSync = syncTargetId
-                if (shouldSync && idToSync != null) {
-                    syncing = true
-                    container.subscriptionManager.syncNowAsync(idToSync) { ok ->
-                        scope.launch {
-                            if (deleting || subscription == null) {
+            when (result) {
+                is ScriptEditSaveResult.Failed -> {
+                    snackbar.show(
+                        result.message ?: resources.getString(R.string.subscription_sync_failed),
+                    )
+                }
+
+                is ScriptEditSaveResult.Saved -> {
+                    script = result.script
+                    result.renamedId?.let { currentScriptId = it }
+                    subscription = result.subscription
+                    if (trimmedUrl.isEmpty()) {
+                        url = ""
+                        intervalText = "0"
+                        enabled = false
+                    } else {
+                        intervalText = interval.toString()
+                        enabled = effectiveEnabled
+                    }
+                    name = result.script.name
+                    baseline = ScriptEditBaseline(
+                        name = result.script.name,
+                        url = trimmedUrl,
+                        intervalText = intervalText,
+                        enabled = enabled,
+                        useGlobalEnv = useGlobalForSave,
+                        envText = envForSave,
+                    )
+                    if (result.shouldSync) {
+                        syncing = true
+                        container.subscriptionManager.syncNowAsync(result.script.id) { ok ->
+                            scope.launch {
+                                if (deleting || subscription == null) {
+                                    syncing = false
+                                    return@launch
+                                }
+                                subscription = container.subscriptionRepository.getAsync(
+                                    result.script.id,
+                                )
                                 syncing = false
-                                return@launch
-                            }
-                            subscription = container.subscriptionRepository.getAsync(idToSync)
-                            syncing = false
-                            if (!ok) {
-                                snackbar.show(resources.getString(R.string.subscription_sync_failed))
+                                if (!ok) {
+                                    snackbar.show(
+                                        resources.getString(R.string.subscription_sync_failed),
+                                    )
+                                }
                             }
                         }
                     }
-                }
-                if (onSaved != null) {
-                    onSaved()
-                } else {
-                    snackbar.show(message)
+                    if (onSaved != null) {
+                        onSaved()
+                    } else {
+                        val message = when {
+                            result.subscriptionDeleted -> {
+                                resources.getString(R.string.subscription_deleted)
+                            }
+
+                            trimmedUrl.isEmpty() -> resources.getString(R.string.script_saved)
+                            effectiveEnabled -> resources.getString(R.string.subscription_saved)
+                            else -> resources.getString(R.string.subscription_saved_disabled)
+                        }
+                        snackbar.show(message)
+                    }
                 }
             }
         }
@@ -361,7 +334,7 @@ fun ScriptEditScreen(scriptId: String, onBack: () -> Unit) {
         deleting = true
         scope.launch {
             try {
-                container.subscriptionManager.cancelAsync(current.id)
+                viewModel.deleteSubscription(current.id)
                 subscription = null
                 url = ""
                 intervalText = "0"

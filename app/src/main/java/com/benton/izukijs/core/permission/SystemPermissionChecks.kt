@@ -90,13 +90,12 @@ object SystemPermissionChecks {
     fun exactAlarmsApplicable(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
         sdkInt >= Build.VERSION_CODES.S
 
-    fun canScheduleExactAlarms(context: Context): Boolean =
-        if (!exactAlarmsApplicable()) {
-            true
-        } else {
-            val manager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-            runCatching { manager?.canScheduleExactAlarms() == true }.getOrDefault(false)
-        }
+    fun canScheduleExactAlarms(context: Context): Boolean {
+        // 直接判断 SDK 版本，lint 才能识别 API 31 调用；不要只依赖自定义包装函数。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return true
+        val manager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        return runCatching { manager?.canScheduleExactAlarms() == true }.getOrDefault(false)
+    }
 
     /** 安装未知来源应用（应用内更新）。minSdk 28，因此始终走可查询分支。 */
     fun canInstallUnknownApps(context: Context): Boolean =

@@ -5,13 +5,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.notification.NotificationIntents
@@ -19,6 +22,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.core.notification.ProgressSegment
 import com.benton.izukijs.core.notification.ScriptNotificationCenter
 import com.benton.izukijs.core.notification.ScriptNotificationState
+import com.benton.izukijs.runtime.VolumeKeyQuickStop
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,11 +48,40 @@ class ScriptForegroundService : Service() {
 
     private var lastUpdateAt = 0L
 
+    private var volumeReceiverRegistered = false
+
+    /**
+     * 无障碍未开启时的降级通道。
+     *
+     * 只能从音量变化推断方向，因此仅支持单击；双击 / 长按依赖按下 / 抬起时刻，
+     * 需要无障碍按键过滤才能可靠区分。
+     */
+    private val volumeChangeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != ACTION_VOLUME_CHANGED) return
+            val current = intent.getIntExtra(EXTRA_VOLUME_STREAM_VALUE, -1)
+            val previous = intent.getIntExtra(EXTRA_PREV_VOLUME_STREAM_VALUE, -1)
+            VolumeKeyQuickStop.onVolumeChanged(
+                context = this@ScriptForegroundService,
+                previous = previous,
+                current = current,
+                accessibilityConnected = IzukiAccessibilityService.isConnected,
+            )
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         createChannel()
+        ContextCompat.registerReceiver(
+            this,
+            volumeChangeReceiver,
+            IntentFilter(ACTION_VOLUME_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        volumeReceiverRegistered = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -85,6 +118,10 @@ class ScriptForegroundService : Service() {
 
     override fun onDestroy() {
         observeJob = null
+        if (volumeReceiverRegistered) {
+            volumeReceiverRegistered = false
+            runCatching { unregisterReceiver(volumeChangeReceiver) }
+        }
         ScriptOverlayManager.detach(this, this)
         serviceScope.cancel()
         super.onDestroy()
@@ -261,6 +298,10 @@ class ScriptForegroundService : Service() {
         private const val EXTRA_SCRIPT_NAME = "extra_script_name"
         private const val EXTRA_RUN_ID = "extra_run_id"
         private const val MIN_UPDATE_INTERVAL_MS = 500L
+        private const val ACTION_VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION"
+        private const val EXTRA_VOLUME_STREAM_VALUE = "android.media.EXTRA_VOLUME_STREAM_VALUE"
+        private const val EXTRA_PREV_VOLUME_STREAM_VALUE =
+            "android.media.EXTRA_PREV_VOLUME_STREAM_VALUE"
 
         const val ACTION_START = "com.benton.izukijs.action.START_SCRIPT"
         const val ACTION_STOP = "com.benton.izukijs.action.STOP_SCRIPT"

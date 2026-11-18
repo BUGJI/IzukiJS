@@ -30,7 +30,9 @@ import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SectionCard
 import com.benton.izukijs.ui.rememberAppContainer
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 全局环境变量编辑。所有脚本默认共享；脚本内同名变量优先。
@@ -56,10 +58,13 @@ fun GlobalEnvSettings(
     }
 
     fun commit(values: Map<String, String>) {
-        container.globalEnvRepository.save(values)
         errorLine = null
         dirty = false
-        scope.launch { snackbar.show(resources.getString(R.string.settings_env_saved)) }
+        scope.launch {
+            // 全局环境写入会落盘，避免在 Compose 主线程同步执行。
+            withContext(Dispatchers.IO) { container.globalEnvRepository.save(values) }
+            snackbar.show(resources.getString(R.string.settings_env_saved))
+        }
     }
 
     // 顶栏返回由外层 Scaffold 提供，必须和系统返回共用同一套 dirty 拦截。

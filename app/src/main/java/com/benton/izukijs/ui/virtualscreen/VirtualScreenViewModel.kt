@@ -32,6 +32,18 @@ data class VirtualScreenAppsState(
     val allowed: Boolean = true,
 )
 
+/** 页面级临时状态：对话框、键盘草稿与前台应用。 */
+data class VirtualScreenUiState(
+    val showFullscreen: Boolean = false,
+    val showAppPicker: Boolean = false,
+    val showKeyboard: Boolean = false,
+    val keyboardDraft: String = "",
+    val confirmStopScript: Boolean = false,
+    val resolutionToApply: VirtualScreenResolution? = null,
+    val foregroundPackage: String? = null,
+    val currentAppLabel: String? = null,
+)
+
 /** 虚拟屏页面里截图、OCR 与诊断轮询的状态。 */
 data class VirtualScreenToolsState(
     val frameSeq: Long = 0L,
@@ -73,6 +85,9 @@ class VirtualScreenViewModel(private val container: AppContainer) : ViewModel() 
     )
     val tools: StateFlow<VirtualScreenToolsState> = _tools.asStateFlow()
 
+    private val _ui = MutableStateFlow(VirtualScreenUiState())
+    val ui: StateFlow<VirtualScreenUiState> = _ui.asStateFlow()
+
     private val _events = MutableSharedFlow<VirtualScreenEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<VirtualScreenEvent> = _events.asSharedFlow()
 
@@ -96,6 +111,58 @@ class VirtualScreenViewModel(private val container: AppContainer) : ViewModel() 
                 loaded = true,
                 allowed = true,
             )
+        }
+    }
+
+    fun setShowFullscreen(value: Boolean) = _ui.update { it.copy(showFullscreen = value) }
+
+    fun setShowAppPicker(value: Boolean) {
+        _ui.update { it.copy(showAppPicker = value) }
+        if (value) loadApps()
+    }
+
+    fun setShowKeyboard(value: Boolean) {
+        _ui.update {
+            if (value) it.copy(showKeyboard = true) else it.copy(showKeyboard = false, keyboardDraft = "")
+        }
+    }
+
+    fun setKeyboardDraft(value: String) = _ui.update { it.copy(keyboardDraft = value) }
+
+    fun setConfirmStopScript(value: Boolean) = _ui.update { it.copy(confirmStopScript = value) }
+
+    fun setResolutionToApply(value: VirtualScreenResolution?) =
+        _ui.update { it.copy(resolutionToApply = value) }
+
+    /** 虚拟屏关闭 / 切后台时收起所有依赖 active 的弹窗。 */
+    fun dismissTransientUi() {
+        _ui.update {
+            it.copy(
+                showFullscreen = false,
+                showAppPicker = false,
+                showKeyboard = false,
+                keyboardDraft = "",
+                confirmStopScript = false,
+                resolutionToApply = null,
+            )
+        }
+    }
+
+    /** 更新前台包名，并在 IO 线程解析应用名；包名未变化时复用现有标签。 */
+    fun updateForegroundPackage(packageName: String?) {
+        if (_ui.value.foregroundPackage == packageName) return
+        _ui.update { it.copy(foregroundPackage = packageName, currentAppLabel = null) }
+        val pkg = packageName ?: return
+        viewModelScope.launch {
+            val label = withContext(Dispatchers.IO) {
+                runCatching {
+                    val info = appContext.packageManager.getApplicationInfo(pkg, 0)
+                    appContext.packageManager.getApplicationLabel(info).toString()
+                }.getOrDefault(pkg)
+            }
+            if (_ui.value.foregroundPackage == pkg) {
+                _ui.update { it.copy(currentAppLabel = label) }
+            }
         }
     }
 
@@ -191,7 +258,8 @@ class VirtualScreenViewModel(private val container: AppContainer) : ViewModel() 
         if (_tools.value.launchingPackage != null) return
         viewModelScope.launch {
             _tools.update { it.copy(launchingPackage = packageName) }
-            val ok = manager.launch(packageName)
+            // PackageManager 解析与 Shell 回落都不应在主线程执行。
+            val ok = withContext(Dispatchers.IO) { manager.launch(packageName) }
             _tools.update { it.copy(launchingPackage = null) }
             if (!ok) {
                 _events.emit(

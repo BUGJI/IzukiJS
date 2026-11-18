@@ -34,7 +34,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.permission.SystemPermissionChecks
+import com.benton.izukijs.runtime.QuickStopGesture
+import com.benton.izukijs.runtime.QuickStopKey
 import com.benton.izukijs.runtime.RunBusyPolicy
+import com.benton.izukijs.service.IzukiAccessibilityService
 import com.benton.izukijs.service.ScriptTileService
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.LocalSnackbarController
@@ -56,6 +59,9 @@ internal fun RunSettings() {
 
     Spacer(Modifier.height(SectionGap))
     BusySettingsSection(ui, viewModel)
+
+    Spacer(Modifier.height(SectionGap))
+    QuickStopSettingsSection(ui, viewModel)
 
     Spacer(Modifier.height(SectionGap))
     WakeSettingsSection(ui, viewModel)
@@ -132,6 +138,123 @@ private fun BusySettingsSection(ui: SettingsUiState, viewModel: SettingsViewMode
                 stringResource(R.string.settings_busy_terminate_desc),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickStopSettingsSection(ui: SettingsUiState, viewModel: SettingsViewModel) {
+    val settings = ui.runtimeSettings
+    val snackbar = LocalSnackbarController.current
+    val resources = LocalResources.current
+    val scope = rememberCoroutineScope()
+
+    // 无障碍连接状态不是 StateFlow：页面恢复时重新读取，避免提示长期停留在旧值。
+    var accessibilityConnected by remember {
+        mutableStateOf(IzukiAccessibilityService.isConnected)
+    }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                accessibilityConnected = IzukiAccessibilityService.isConnected
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    SectionCard(stringResource(R.string.settings_quick_stop_title)) {
+        Text(
+            stringResource(R.string.settings_quick_stop_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        SwitchRow(
+            label = stringResource(R.string.settings_quick_stop_enable),
+            checked = settings.volumeKeyStopEnabled,
+            description = stringResource(R.string.settings_quick_stop_enable_desc),
+        ) {
+            viewModel.saveRuntimeSettings(settings.copy(volumeKeyStopEnabled = it))
+        }
+
+        if (!settings.volumeKeyStopEnabled) return@SectionCard
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.settings_quick_stop_key_title),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ChipFlow {
+            listOf(
+                QuickStopKey.VOLUME_DOWN to R.string.settings_quick_stop_key_down,
+                QuickStopKey.VOLUME_UP to R.string.settings_quick_stop_key_up,
+                QuickStopKey.BOTH to R.string.settings_quick_stop_key_both,
+            ).forEach { (key, label) ->
+                FilterChip(
+                    selected = settings.volumeKeyStopKey == key,
+                    onClick = {
+                        viewModel.saveRuntimeSettings(settings.copy(volumeKeyStopKey = key))
+                    },
+                    label = { Text(stringResource(label)) },
+                )
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.settings_quick_stop_gesture_title),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ChipFlow {
+            listOf(
+                QuickStopGesture.SINGLE to R.string.settings_quick_stop_gesture_single,
+                QuickStopGesture.DOUBLE to R.string.settings_quick_stop_gesture_double,
+                QuickStopGesture.LONG to R.string.settings_quick_stop_gesture_long,
+            ).forEach { (gesture, label) ->
+                FilterChip(
+                    selected = settings.volumeKeyStopGesture == gesture,
+                    onClick = {
+                        viewModel.saveRuntimeSettings(
+                            settings.copy(volumeKeyStopGesture = gesture),
+                        )
+                        if (gesture != QuickStopGesture.SINGLE && !accessibilityConnected) {
+                            scope.launch {
+                                snackbar.show(
+                                    resources.getString(
+                                        R.string.settings_quick_stop_need_accessibility,
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                    label = { Text(stringResource(label)) },
+                )
+            }
+        }
+
+        if (!accessibilityConnected) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(
+                    if (settings.volumeKeyStopGesture == QuickStopGesture.SINGLE) {
+                        R.string.settings_quick_stop_fallback_hint
+                    } else {
+                        R.string.settings_quick_stop_need_accessibility
+                    },
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (settings.volumeKeyStopGesture == QuickStopGesture.SINGLE) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
             )
         }
     }

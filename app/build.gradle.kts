@@ -21,6 +21,9 @@ val keystoreProperties = Properties().apply {
 // 避免只有 keystore.properties 而 storeFile 失效时把 debug 构建直接卡死。
 val debugSharedSignature =
     providers.gradleProperty("izuki.debugSharedSignature").orNull?.toBoolean() == true
+// 本地临时出 release 包时才允许显式回退 debug 签名；默认直接失败，避免误分发。
+val allowDebugReleaseSignature =
+    providers.gradleProperty("izuki.allowDebugReleaseSignature").orNull?.toBoolean() == true
 val releaseStoreFile = keystoreProperties.getProperty("storeFile")
     ?.takeIf { it.isNotBlank() }
     ?.let { file(it) }
@@ -106,15 +109,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
-            signingConfig = if (releaseSigningAvailable) {
-                signingConfigs.getByName("release")
-            } else {
-                // 未配置正式签名或 storeFile 失效时回退到 debug 签名，便于本地出包验证。
-                // 明确告警，避免把 debug 签名的产物误当正式包分发。
-                logger.warn(
-                    "[Izuki] 正式签名不可用，release 将使用 debug 签名，仅用于本地验证。",
-                )
-                signingConfigs.getByName("debug")
+            signingConfig = when {
+                releaseSigningAvailable -> signingConfigs.getByName("release")
+                // 只有显式开关才允许本地回退；否则 release 任务会在 taskGraph 校验时失败。
+                allowDebugReleaseSignature -> {
+                    logger.warn(
+                        "[Izuki] 正式签名不可用，按 -Pizuki.allowDebugReleaseSignature=true " +
+                            "使用 debug 签名，仅用于本地验证。",
+                    )
+                    signingConfigs.getByName("debug")
+                }
+
+                else -> null
             }
         }
     }
@@ -138,8 +144,8 @@ android {
         buildConfig = true
     }
     lint {
-        // 先收敛现有告警，不让 lint 失败阻断构建；后续可逐步加 baseline。
-        abortOnError = false
+        // 现有告警不阻断；一旦出现 error 级问题必须停下来修，而不是静默出包。
+        abortOnError = true
         checkReleaseBuilds = true
     }
     packaging {
@@ -151,6 +157,23 @@ android {
     // AGP 的 SourceSet API 不接受 Provider（无法判断目录是否只读生成物），
     // 这里传具体目录；产出任务依赖在 android 块之后显式挂上。
     sourceSets.getByName("main").assets.srcDir(docsAssetsDir.get().asFile)
+}
+
+// 缺少正式签名时不要让 release 静默产出 debug 签名包；只在真正打包 release 时失败，
+// debug / 单元测试不受影响。
+gradle.taskGraph.whenReady {
+    val releasePackaging = allTasks.any {
+        it.name == "assembleRelease" ||
+            it.name == "bundleRelease" ||
+            it.name.startsWith("packageRelease") ||
+            it.name.startsWith("signRelease")
+    }
+    if (releasePackaging && !releaseSigningAvailable && !allowDebugReleaseSignature) {
+        error(
+            "正式签名不可用：请配置 keystore.properties（storeFile 必须存在），" +
+                "或显式使用 -Pizuki.allowDebugReleaseSignature=true 仅做本地验证。",
+        )
+    }
 }
 
 // AGP 不会推导出自定义 assets 目录的产出任务，显式挂到资源合并与 preBuild 上。
@@ -174,7 +197,6 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -182,17 +204,16 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.quickjs.android)
-    implementation(libs.timber)
     implementation(libs.shizuku.api)
     implementation(libs.shizuku.provider)
     implementation(libs.libadb.android)
     implementation(libs.bouncycastle.bcpkix)
-    implementation(libs.conscrypt.android)
     implementation(libs.opencv)
     implementation(libs.onnxruntime.android)
     implementation(libs.mlkit.text.recognition.chinese)
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.material)
+    implementation(libs.koin.android)
     testImplementation(libs.junit)
     testImplementation(libs.json)
     testImplementation(libs.kotlinx.coroutines.test)

@@ -19,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
     val container = rememberAppContainer()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val scope = rememberCoroutineScope()
     val snackbar = LocalSnackbarController.current
     val unlockSettings = ui.unlockSettings
@@ -291,7 +293,7 @@ fun UnlockSettingsPage(onOpenMcp: () -> Unit = {}) {
                 showClearConfirm = false
                 viewModel.clearUnlockPattern()
                 container.unlockGestureRecorder.resetState()
-                scope.launch { snackbar.show(context.getString(R.string.unlock_pattern_cleared)) }
+                scope.launch { snackbar.show(resources.getString(R.string.unlock_pattern_cleared)) }
             },
             onDismiss = { showClearConfirm = false },
         )

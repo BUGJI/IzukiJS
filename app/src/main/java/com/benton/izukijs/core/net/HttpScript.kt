@@ -1,6 +1,6 @@
 package com.benton.izukijs.core.net
 
-import com.benton.izukijs.developer.DeveloperTuning
+import com.benton.izukijs.core.config.RuntimeLimits
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
@@ -15,7 +15,7 @@ import java.net.URL
 object HttpScript {
 
     /** 单个脚本的下载上限，防止异常链接或错误配置把整段内容读进内存。 */
-    val MAX_SCRIPT_BYTES: Int get() = DeveloperTuning.current.maxScriptBytes
+    val MAX_SCRIPT_BYTES: Int get() = RuntimeLimits.maxScriptBytes
 
     /** 订阅与扫码导入都只接受带主机的 http/https 链接。 */
     fun isHttpUrl(raw: String): Boolean = runCatching {

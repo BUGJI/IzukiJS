@@ -117,6 +117,8 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val persistedContent by viewModel.savedContent.collectAsStateWithLifecycle()
     val saving by viewModel.saving.collectAsStateWithLifecycle()
     val conflict by viewModel.conflict.collectAsStateWithLifecycle()
+    val canUndo by viewModel.canUndo.collectAsStateWithLifecycle()
+    val canRedo by viewModel.canRedo.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
     val snackbar = LocalSnackbarController.current
@@ -146,14 +148,6 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     var pendingRestore by remember(scriptId) { mutableStateOf<ScriptVersion?>(null) }
     var activeMatch by remember(scriptId) { mutableStateOf(0) }
     var editorFocused by remember(scriptId) { mutableStateOf(false) }
-
-    // 撤销 / 重做历史。以脚本 id 为键，切脚本时清空。栈不参与实例状态保存：
-    // 进程回收后栈为空，按钮可用性也随之归零，二者保持一致。
-    val undoStack = remember(scriptId) { ArrayDeque<EditorSnapshot>() }
-    val redoStack = remember(scriptId) { ArrayDeque<EditorSnapshot>() }
-    var canUndo by remember(scriptId) { mutableStateOf(false) }
-    var canRedo by remember(scriptId) { mutableStateOf(false) }
-    var lastEditAt by remember(scriptId) { mutableLongStateOf(0L) }
 
     val focusRequester = remember(scriptId) { FocusRequester() }
     val findFocus = remember(scriptId) { FocusRequester() }
@@ -187,10 +181,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 editorValue = TextFieldValue(text)
                 savedCode = text
                 viewModel.bindDocument(found.id, text)
-                undoStack.clear()
-                redoStack.clear()
-                canUndo = false
-                canRedo = false
+                viewModel.clearHistory()
                 loaded = true
             } else {
                 // 进程回收后 ViewModel 是新的，用恢复出来的保存基准重新绑定。
@@ -289,21 +280,16 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         MatchHighlightTransformation(highlighter, matches, matchColor, activeMatchColor, activeRange)
     }
 
-    fun snapshot() = EditorSnapshot(editorValue.text, editorValue.selection)
+    fun snapshot() = EditorTextState(
+        text = editorValue.text,
+        selectionStart = editorValue.selection.start,
+        selectionEnd = editorValue.selection.end,
+    )
 
-    // 记录一次编辑：短时间内连续输入合并为一步，避免每个按键都占一格历史。
-    fun recordEdit(previous: EditorSnapshot, force: Boolean) {
-        val now = System.currentTimeMillis()
-        val coalesce = !force && now - lastEditAt < HISTORY_COALESCE_MS && undoStack.isNotEmpty()
-        if (!coalesce) {
-            undoStack.addLast(previous)
-            while (undoStack.size > MAX_HISTORY) undoStack.removeFirst()
-        }
-        redoStack.clear()
-        lastEditAt = now
-        canUndo = undoStack.isNotEmpty()
-        canRedo = false
-    }
+    fun valueOf(state: EditorTextState) = TextFieldValue(
+        text = state.text,
+        selection = TextRange(state.selectionStart, state.selectionEnd),
+    )
 
     fun applyCompletion(suggestion: ApiSuggestion) {
         val cursor = editorValue.selection.start
@@ -312,7 +298,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         val end = ApiSuggestions.tokenEnd(text, cursor)
         val inserted = suggestion.text
         val newText = text.substring(0, start) + inserted + text.substring(end)
-        recordEdit(snapshot(), force = true)
+        viewModel.recordEdit(snapshot(), force = true)
         editorValue = TextFieldValue(
             text = newText,
             selection = TextRange(start + inserted.length),
@@ -324,27 +310,19 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     // 避免紧随其后的输入被并入同一步撤销。
     fun applyEdit(newText: String, newSelection: TextRange) {
         if (newText == editorValue.text) return
-        recordEdit(snapshot(), force = true)
-        lastEditAt = 0L
+        viewModel.recordEdit(snapshot(), force = true)
+        viewModel.resetEditCoalescing()
         editorValue = TextFieldValue(newText, newSelection)
     }
 
     fun undo() {
-        val previous = undoStack.removeLastOrNull() ?: return
-        redoStack.addLast(snapshot())
-        editorValue = TextFieldValue(previous.text, previous.selection)
-        lastEditAt = 0L
-        canUndo = undoStack.isNotEmpty()
-        canRedo = true
+        val state = viewModel.undo(snapshot()) ?: return
+        editorValue = valueOf(state)
     }
 
     fun redo() {
-        val next = redoStack.removeLastOrNull() ?: return
-        undoStack.addLast(snapshot())
-        editorValue = TextFieldValue(next.text, next.selection)
-        lastEditAt = 0L
-        canUndo = true
-        canRedo = redoStack.isNotEmpty()
+        val state = viewModel.redo(snapshot()) ?: return
+        editorValue = valueOf(state)
     }
 
     fun focusMatch(index: Int) {
@@ -434,7 +412,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 is PersistOutcome.Saved -> {
                     // 使用实际落盘内容，避免恢复期间被更新版本保存取代后编辑器与磁盘不一致。
                     editorValue = TextFieldValue(outcome.content)
-                    recordEdit(before, force = true)
+                    viewModel.recordEdit(before, force = true)
                     viewModel.closeHistory()
                     // 对话框先关闭再提示，避免 snackbar 挂起导致弹窗迟迟不消失。
                     scope.launch {
@@ -698,7 +676,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                             value = editorValue,
                             onValueChange = { newValue ->
                                 if (newValue.text != editorValue.text) {
-                                    recordEdit(snapshot(), force = false)
+                                    viewModel.recordEdit(snapshot(), force = false)
                                 }
                                 editorValue = newValue
                             },
@@ -864,7 +842,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                         return@launch
                     }
                     val before = snapshot()
-                    recordEdit(before, force = true)
+                    viewModel.recordEdit(before, force = true)
                     editorValue = TextFieldValue(disk)
                     viewModel.resetSavedContent(current.id, disk)
                 }
@@ -898,7 +876,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                     val disk = runCatching { container.scriptRepository.readAsync(current) }.getOrNull()
                     if (disk != null) {
                         val before = snapshot()
-                        recordEdit(before, force = true)
+                        viewModel.recordEdit(before, force = true)
                         editorValue = TextFieldValue(disk)
                         viewModel.resetSavedContent(current.id, disk)
                     } else {
@@ -919,11 +897,3 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
 private const val AUTOSAVE_DELAY_MS = 800L
 private const val LINE_HEIGHT_RATIO = 1.4f
 
-/** 撤销历史的合并窗口：此时间内的连续输入合并为一步。 */
-private const val HISTORY_COALESCE_MS = 500L
-
-/** 撤销栈上限，避免长时间编辑占用过多内存。 */
-private const val MAX_HISTORY = 200
-
-/** 一次可撤销的编辑快照。 */
-private data class EditorSnapshot(val text: String, val selection: TextRange)

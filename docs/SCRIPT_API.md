@@ -75,10 +75,14 @@
 | `back()` / `home()` / `recents()` | 返回 / 主页 / 最近任务 |
 | `input.notifications()` / `input.quickSettings()` | 展开通知栏 / 快捷设置 |
 | `input.powerDialog()` | 打开电源菜单 |
-| `input.splitScreen()` | 进入分屏（Android 7+） |
-| `input.lockScreen()` | 锁定屏幕（Android 9+，需无障碍） |
+| `input.splitScreen()` | 进入分屏（Android 7+；仅无障碍后端，Shell 后端返回 `false`） |
+| `input.lockScreen()` | 锁定屏幕（Android 9+；无障碍用系统全局动作，Shell 后端用熄屏键模拟） |
 | `input.dismissNotifications()` | 收起通知栏（Android 12+） |
 
+> Shell 后端（Shizuku / 无线调试 / Root）只实现了 back / home / recents / 通知栏 /
+> 快捷设置 / 电源菜单 / 锁屏 / 收起通知栏的稳定映射；`splitScreen()` 与无障碍专属
+> 全局动作没有可靠命令，会返回 `false` 而不是猜测按键。
+>
 > 底层由控制模式提供：无障碍 / Shizuku / 无线调试 / Root / 蓝牙 HID。具体能力见「控制模式」。
 >
 > Shell 后端的 `input text` 只要命令下发成功就返回 0，**不代表文字真的进入了输入框**。

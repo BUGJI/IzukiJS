@@ -31,7 +31,7 @@ import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.R
 import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.notification.NotificationIntents
-import com.benton.izukijs.controller.accessibility.AccessibilityController
+
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.ocr.OcrBlock
 import kotlinx.coroutines.CoroutineScope
@@ -272,8 +272,7 @@ class DebugOverlayService : Service() {
     private data class TaskResult(val text: String, val blocks: List<OcrBlock>)
 
     private fun captureLayout(): TaskResult {
-        val controller = container.controllerManager
-            .controllerFor(Capability.NODE_TREE) as? AccessibilityController
+        val controller = container.controllerManager.accessibilityController()
             ?: return TaskResult(getString(R.string.debug_no_accessibility), emptyList())
         val root = controller.nodeTree() ?: return TaskResult(getString(R.string.debug_no_node_tree), emptyList())
         val builder = StringBuilder()

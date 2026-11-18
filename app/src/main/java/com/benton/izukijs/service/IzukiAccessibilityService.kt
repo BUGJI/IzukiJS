@@ -18,6 +18,7 @@ import com.benton.izukijs.controller.GestureStroke
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.controller.accessibility.AccessibilityServiceHandle
 import com.benton.izukijs.model.ControlMode
+import com.benton.izukijs.runtime.VolumeKeyQuickStop
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -37,6 +38,7 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        VolumeKeyQuickStop.reset()
         (application as? IzukiApp)?.container?.controllerManager?.unregister(
             ControlMode.ACCESSIBILITY
         )
@@ -46,6 +48,7 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
     }
 
     override fun onDestroy() {
+        VolumeKeyQuickStop.reset()
         (application as? IzukiApp)?.container?.controllerManager?.unregister(
             ControlMode.ACCESSIBILITY
         )
@@ -113,7 +116,8 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
     }
 
     /**
-     * 按键只记录不拦截：返回 false 让系统继续处理按键。
+     * 按键先记录再判断是否消费：事件观察始终可用；启用「音量键快速停止」且脚本运行时，
+     * 命中的音量键会被消费，避免停止脚本的同时改变系统音量。
      *
      * 需要在无障碍配置里声明 `flagRequestFilterKeyEvents` 才能收到回调。
      */
@@ -130,7 +134,7 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
             time = keyEvent.eventTime.takeIf { it > 0L } ?: System.currentTimeMillis(),
             keyCode = keyEvent.keyCode,
         )
-        return false
+        return VolumeKeyQuickStop.onAccessibilityKey(this, keyEvent)
     }
 
     override fun onInterrupt() = Unit

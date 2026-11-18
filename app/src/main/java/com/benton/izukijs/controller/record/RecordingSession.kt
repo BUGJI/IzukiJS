@@ -350,6 +350,8 @@ class RecordingSession(
         val executor: ExecutorService?
         val resolver: RecordingContextResolver?
         val options: UserRecordingOptions?
+        val loop: RecordingCaptureLoop?
+        val inputJob: Job?
         synchronized(lock) {
             if (stopping) return currentId
             current = writer ?: return null
@@ -360,8 +362,10 @@ class RecordingSession(
             stopRequested = true
             hooks.captureObserver = null
             hooks.appObserver = null
-            captureLoop?.stop()
+            // stop() 会等待已排队的补帧完成，必须放到锁外，避免阻塞其它录制状态查询。
+            loop = captureLoop
             captureLoop = null
+            inputJob = userJob
             userJob?.cancel()
             userJob = null
             userScope?.cancel()
@@ -377,6 +381,16 @@ class RecordingSession(
         // close() 会等待写入队列收尾，放到锁外避免阻塞其它录制状态查询。
         var failed = false
         try {
+            loop?.stop()
+            // 输入循环可能正处在一批事件的中间；先等它退出，再 drain，否则会和
+            // stopInteractionRecordNow() 并发 poll，导致尾部动作乱序或重复。
+            if (wasUser && inputJob != null) {
+                runCatching {
+                    runBlocking {
+                        withTimeoutOrNull(INPUT_JOIN_TIMEOUT_MS) { inputJob.join() }
+                    }
+                }
+            }
             if (wasUser && resolver != null && options != null) {
                 // 先停采集，再把缓冲区里剩余的动作取完；否则停止前最后几次点击会丢失，
                 // 导出脚本也会缺少对应步骤。
@@ -891,6 +905,9 @@ class RecordingSession(
         const val MAX_DRAIN_ROUNDS = 50
         const val FOREGROUND_POLL_MS = 600L
         const val STOP_DRAIN_TIMEOUT_MS = 2_500L
+
+        /** 等待输入循环退出的上限；超时后仍继续 drain，避免用户停止被无限挂起。 */
+        const val INPUT_JOIN_TIMEOUT_MS = 2_000L
         const val TAP_SLOP = 24.0
         const val LONG_PRESS_MS = 500L
         const val CONTEXT_SHUTDOWN_WAIT_MS = 1_500L

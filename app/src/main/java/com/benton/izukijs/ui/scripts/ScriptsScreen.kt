@@ -1,7 +1,5 @@
 package com.benton.izukijs.ui.scripts
 
-import android.content.Context
-import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -102,7 +100,6 @@ import com.benton.izukijs.ui.common.formatDateTime
 import com.benton.izukijs.ui.common.intervalLabel
 import com.benton.izukijs.ui.common.rememberAppHaptics
 import com.benton.izukijs.ui.rememberAppContainer
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -112,8 +109,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -145,10 +140,12 @@ fun ScriptsScreen(
     val revision by container.scriptRepository.revision.collectAsStateWithLifecycle()
     val subscriptionRevision by container.subscriptionRepository.revision.collectAsStateWithLifecycle()
 
-    var scripts by remember { mutableStateOf<List<ScriptInfo>>(emptyList()) }
-    var subscriptions by remember { mutableStateOf<Map<String, ScriptSubscription>>(emptyMap()) }
-    var loaded by remember { mutableStateOf(false) }
-    var loadError by remember { mutableStateOf(false) }
+    val scriptsViewModel: ScriptsViewModel = appViewModel { ScriptsViewModel(it) }
+    val listState by scriptsViewModel.state.collectAsStateWithLifecycle()
+    val scripts = listState.scripts
+    val subscriptions = listState.subscriptions
+    val loaded = listState.loaded
+    val loadError = listState.loadError
     var showNewDialog by rememberSaveable { mutableStateOf(false) }
     var newName by rememberSaveable { mutableStateOf("") }
     var showOverflow by remember { mutableStateOf(false) }
@@ -222,23 +219,8 @@ fun ScriptsScreen(
 
     BackHandler(enabled = selectionMode) { selectedIds = emptyList() }
 
-    suspend fun refresh() = coroutineScope {
-        loadError = false
-        try {
-            val scriptsDeferred = async { container.scriptRepository.listAsync() }
-            val subscriptionsDeferred = async { container.subscriptionRepository.listAsync() }
-            scripts = scriptsDeferred.await()
-            subscriptions = subscriptionsDeferred.await().associateBy { it.scriptId }
-        } catch (t: Throwable) {
-            if (t is kotlinx.coroutines.CancellationException) throw t
-            loadError = true
-        } finally {
-            loaded = true
-        }
-    }
-
     // 仓库变更（含编辑器保存 / 导入删除）后重新拉取，避免列表停留在陈旧状态。
-    LaunchedEffect(revision, subscriptionRevision) { refresh() }
+    LaunchedEffect(revision, subscriptionRevision) { scriptsViewModel.refresh() }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/javascript"),
@@ -247,9 +229,7 @@ fun ScriptsScreen(
         exportTarget = null
         if (uri != null && target != null) {
             scope.launch {
-                val ok = withContext(Dispatchers.IO) {
-                    writeTextToUri(context, uri, container.scriptRepository.read(target))
-                }
+                val ok = scriptsViewModel.exportText(target, uri)
                 val message = if (ok) {
                     resources.getString(R.string.scripts_exported, target.name)
                 } else {
@@ -266,20 +246,8 @@ fun ScriptsScreen(
         val ids = batchExportIds
         batchExportIds = emptyList()
         if (uri == null || ids.isEmpty()) return@rememberLauncherForActivityResult
-        val knownScripts = scripts
         scope.launch {
-            val count = withContext(Dispatchers.IO) {
-                val entries = mutableListOf<Pair<String, String>>()
-                for (id in ids) {
-                    val script = knownScripts.firstOrNull { it.id == id }
-                        ?: container.scriptRepository.findAsync(id)
-                        ?: continue
-                    val content = runCatching { container.scriptRepository.read(script) }
-                        .getOrNull() ?: continue
-                    entries += (script.name + ".js") to content
-                }
-                if (entries.isEmpty()) 0 else if (writeZipToUri(context, uri, entries)) entries.size else 0
-            }
+            val count = scriptsViewModel.exportZip(ids, uri)
             val message = if (count > 0) {
                 resources.getString(R.string.scripts_batch_exported, count)
             } else {
@@ -307,12 +275,7 @@ fun ScriptsScreen(
     ) { uri ->
         if (uri != null) {
             scope.launch {
-                val created = withContext(Dispatchers.IO) {
-                    val text = readTextFromUri(context, uri) ?: return@withContext null
-                    val displayName = ScriptNameResolver.queryDisplayName(context.contentResolver, uri)
-                    val name = ScriptNameResolver.fromDocument(displayName, uri.lastPathSegment)
-                    container.scriptRepository.create(name, text)
-                }
+                val created = scriptsViewModel.importText(uri)
                 if (created != null) {
                     snackbar.show(resources.getString(R.string.scripts_imported, created.name))
                 } else {
@@ -333,7 +296,8 @@ fun ScriptsScreen(
         }
         scope.launch {
             val uri = FileProvider.getUriForFile(context, fileProviderAuthority(context), file)
-            val result = container.scriptImporter.importFromImage(uri)
+            // 二维码解码与网络下载不能占主线程；withContext 同时覆盖解码前的图片读取。
+            val result = scriptsViewModel.importScan(uri)
             file.delete()
             val message = when (result) {
                 is ScriptImporter.Result.Success -> {
@@ -562,7 +526,7 @@ fun ScriptsScreen(
                         text = stringResource(R.string.scripts_load_failed),
                         icon = Icons.Filled.Refresh,
                         actionLabel = stringResource(R.string.common_retry),
-                        onAction = { scope.launch { refresh() } },
+                        onAction = { scriptsViewModel.refresh() },
                     )
 
                     scripts.isEmpty() -> EmptyState(
@@ -609,180 +573,96 @@ fun ScriptsScreen(
     }
 
     if (showNewDialog) {
-        AlertDialog(
-            onDismissRequest = { showNewDialog = false },
-            title = { Text(stringResource(R.string.scripts_new)) },
-            text = {
-                OutlinedTextField(
-                    value = newName,
-                    onValueChange = { newName = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.scripts_name)) },
-                    isError = newName.isBlank(),
-                    supportingText = if (newName.isBlank()) {
-                        { Text(stringResource(R.string.script_edit_name_required)) }
-                    } else {
-                        null
-                    },
-                )
+        NewScriptDialog(
+            name = newName,
+            onNameChange = { newName = it },
+            submitting = submitting,
+            onConfirm = {
+                if (submitting || newName.isBlank()) return@NewScriptDialog
+                submitting = true
+                scope.launch {
+                    val created = container.scriptRepository.createAsync(newName)
+                    showNewDialog = false
+                    submitting = false
+                    onOpenScript(created.id)
+                }
             },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (submitting || newName.isBlank()) return@TextButton
-                        submitting = true
-                        scope.launch {
-                            val created = container.scriptRepository.createAsync(newName)
-                            showNewDialog = false
-                            submitting = false
-                            onOpenScript(created.id)
-                        }
-                    },
-                    enabled = !submitting && newName.isNotBlank(),
-                ) { Text(stringResource(R.string.scripts_create)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showNewDialog = false }) { Text(stringResource(R.string.common_cancel)) }
-            },
+            onDismiss = { showNewDialog = false },
         )
     }
 
     tagTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { tagTargetId = null },
-            title = { Text(stringResource(R.string.scripts_edit_tags)) },
-            text = {
-                OutlinedTextField(
-                    value = tagInput,
-                    onValueChange = { tagInput = it },
-                    singleLine = true,
-                    label = { Text(stringResource(R.string.scripts_tags_label)) },
-                    placeholder = { Text(stringResource(R.string.scripts_tags_placeholder)) },
-                )
+        EditTagsDialog(
+            tagInput = tagInput,
+            onTagInputChange = { tagInput = it },
+            onConfirm = {
+                container.scriptListPreferences.setTags(target.id, parseTagInput(tagInput))
+                tagTargetId = null
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    container.scriptListPreferences.setTags(target.id, parseTagInput(tagInput))
-                    tagTargetId = null
-                }) { Text(stringResource(R.string.common_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { tagTargetId = null }) { Text(stringResource(R.string.common_cancel)) }
-            },
+            onDismiss = { tagTargetId = null },
         )
     }
 
     deleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.scripts_delete_title)) },
-            text = { Text(stringResource(R.string.scripts_delete_message, target.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    haptics.reject()
-                    deleteTarget = null
-                    // 使用应用级作用域：切到其它标签后 Snackbar 仍可点击“撤销”。
-                    container.uiScope.launch {
-                        // 删除与撤销的级联逻辑集中在 ScriptDeletion，页面只负责弹窗与 Snackbar。
-                        // 页面切走会取消组合作用域；级联删除不能停在一半。
-                        val backup = withContext(NonCancellable) {
-                            deletion.delete(
-                                script = target,
-                                tags = tags[target.id].orEmpty(),
-                                pinned = target.id in pinned,
-                                pinnedToTile = target.id == tileScriptId,
-                            )
-                        }
-                        if (backup == null) {
-                            snackbar.show(
-                                resources.getString(R.string.scripts_delete_failed, target.name),
-                            )
-                            return@launch
-                        }
-                        val result = snackbar.show(
-                            message = resources.getString(R.string.scripts_deleted, target.name),
-                            actionLabel = resources.getString(R.string.common_undo),
-                            duration = SnackbarDuration.Long,
+        DeleteScriptDialog(
+            scriptName = target.name,
+            onConfirm = {
+                haptics.reject()
+                deleteTarget = null
+                // 使用应用级作用域：切到其它标签后 Snackbar 仍可点击“撤销”。
+                container.uiScope.launch {
+                    val backup = withContext(NonCancellable) {
+                        deletion.delete(
+                            script = target,
+                            tags = tags[target.id].orEmpty(),
+                            pinned = target.id in pinned,
+                            pinnedToTile = target.id == tileScriptId,
                         )
-                        if (result == SnackbarResult.ActionPerformed) {
-                            withContext(NonCancellable) { deletion.restore(backup) }
-                        }
                     }
-                }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                    Text(stringResource(R.string.common_delete))
+                    if (backup == null) {
+                        snackbar.show(
+                            resources.getString(R.string.scripts_delete_failed, target.name),
+                        )
+                        return@launch
+                    }
+                    val result = snackbar.show(
+                        message = resources.getString(R.string.scripts_deleted, target.name),
+                        actionLabel = resources.getString(R.string.common_undo),
+                        duration = SnackbarDuration.Long,
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        withContext(NonCancellable) { deletion.restore(backup) }
+                    }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.common_cancel)) }
-            },
+            onDismiss = { deleteTarget = null },
         )
     }
 
     if (showBatchTagDialog && selectionMode) {
-        AlertDialog(
-            onDismissRequest = { showBatchTagDialog = false },
-            title = {
-                Text(
-                    stringResource(
-                        if (batchTagMode == BATCH_TAG_REMOVE) {
-                            R.string.scripts_batch_remove_tags
-                        } else {
-                            R.string.scripts_batch_add_tags
-                        },
-                    ),
-                )
-            },
-            text = {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilterChip(
-                            selected = batchTagMode == BATCH_TAG_ADD,
-                            onClick = { batchTagMode = BATCH_TAG_ADD },
-                            label = { Text(stringResource(R.string.scripts_tags_add)) },
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        FilterChip(
-                            selected = batchTagMode == BATCH_TAG_REMOVE,
-                            onClick = { batchTagMode = BATCH_TAG_REMOVE },
-                            label = { Text(stringResource(R.string.scripts_tags_remove)) },
-                        )
+        BatchTagDialog(
+            mode = batchTagMode,
+            onModeChange = { batchTagMode = it },
+            input = batchTagInput,
+            onInputChange = { batchTagInput = it },
+            onConfirm = {
+                val input = parseTagInput(batchTagInput)
+                if (input.isNotEmpty()) {
+                    if (batchTagMode == BATCH_TAG_REMOVE) {
+                        container.scriptListPreferences.removeTagsFrom(selectedIdSet, input)
+                    } else {
+                        container.scriptListPreferences.addTagsTo(selectedIdSet, input)
                     }
-                    OutlinedTextField(
-                        value = batchTagInput,
-                        onValueChange = { batchTagInput = it },
-                        singleLine = true,
-                        label = { Text(stringResource(R.string.scripts_tags_label)) },
-                        placeholder = { Text(stringResource(R.string.scripts_tags_placeholder)) },
-                    )
                 }
+                showBatchTagDialog = false
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    val input = parseTagInput(batchTagInput)
-                    if (input.isNotEmpty()) {
-                        if (batchTagMode == BATCH_TAG_REMOVE) {
-                            container.scriptListPreferences.removeTagsFrom(selectedIdSet, input)
-                        } else {
-                            container.scriptListPreferences.addTagsTo(selectedIdSet, input)
-                        }
-                    }
-                    showBatchTagDialog = false
-                }) { Text(stringResource(R.string.common_confirm)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBatchTagDialog = false }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
+            onDismiss = { showBatchTagDialog = false },
         )
     }
 
     if (batchDeletePending && selectionMode) {
-        ConfirmDialog(
-            title = stringResource(R.string.scripts_delete_title),
-            message = stringResource(R.string.scripts_batch_delete_message, selectedIds.size),
-            destructive = true,
-            onDismiss = { batchDeletePending = false },
+        BatchDeleteDialog(
+            count = selectedIds.size,
             onConfirm = {
                 val targets = scripts.filter { it.id in selectedIdSet }
                 val tagsSnapshot = tags
@@ -790,7 +670,7 @@ fun ScriptsScreen(
                 val tileSnapshot = tileScriptId
                 batchDeletePending = false
                 selectedIds = emptyList()
-                if (targets.isEmpty()) return@ConfirmDialog
+                if (targets.isEmpty()) return@BatchDeleteDialog
                 haptics.reject()
                 // 与单条删除一致：使用应用级作用域，切页后仍可撤销；级联删除不可中断。
                 container.uiScope.launch {
@@ -830,6 +710,7 @@ fun ScriptsScreen(
                     }
                 }
             },
+            onDismiss = { batchDeletePending = false },
         )
     }
 
@@ -843,192 +724,6 @@ fun ScriptsScreen(
         )
     }
 }
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ScriptRow(
-    script: ScriptInfo,
-    subscription: ScriptSubscription?,
-    tags: List<String>,
-    pinned: Boolean,
-    pinnedToTile: Boolean,
-    selectionMode: Boolean,
-    selected: Boolean,
-    running: Boolean,
-    runEnabled: Boolean,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit,
-    onTogglePin: () -> Unit,
-    onToggleTile: () -> Unit,
-    onEditTags: () -> Unit,
-    onEdit: () -> Unit,
-    onExport: () -> Unit,
-    onDelete: () -> Unit,
-    onRun: () -> Unit,
-    onStop: () -> Unit,
-) {
-    var menuOpen by remember { mutableStateOf(false) }
-
-    ListItem(
-        leadingContent = {
-            // 选择模式下用勾选框替代置顶按钮，避免同时承载两种语义。
-            if (selectionMode) {
-                Checkbox(checked = selected, onCheckedChange = null)
-            } else {
-                IconButton(onClick = onTogglePin) {
-                    Icon(
-                        ImageVector.vectorResource(if (pinned) R.drawable.ic_pin else R.drawable.ic_pin_outline),
-                        contentDescription = stringResource(
-                            if (pinned) R.string.scripts_unpin else R.string.scripts_pin,
-                        ),
-                        tint = if (pinned) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                }
-            }
-        },
-        headlineContent = { Text(script.name) },
-        supportingContent = {
-            // 日期格式化与标签拼串只在数据变化时计算一次，避免每次重组重复做。
-            val dateText = remember(script.updatedAt) { formatDateTime(script.updatedAt) }
-            val tagText = remember(tags) {
-                val shown = tags.take(3).joinToString("  ") { "#$it" }
-                shown + if (tags.size > 3) " +${tags.size - 3}" else ""
-            }
-            val parts = buildList {
-                add(dateText)
-                if (tagText.isNotEmpty()) add(tagText)
-                if (subscription != null) {
-                    val badge = if (!subscription.enabled || subscription.intervalMinutes <= 0L) {
-                        stringResource(R.string.scripts_subscription_badge_disabled)
-                    } else {
-                        stringResource(
-                            R.string.scripts_subscription_badge,
-                            intervalLabel(subscription.intervalMinutes),
-                        )
-                    }
-                    add(
-                        if (subscription.lastError.isNotBlank()) {
-                            stringResource(R.string.scripts_subscription_failed, badge)
-                        } else {
-                            badge
-                        },
-                    )
-                }
-            }
-            Text(parts.joinToString(" · "))
-        },
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
-            )
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        trailingContent = if (selectionMode) {
-            null
-        } else {
-            {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (running) {
-                        IconButton(onClick = onStop) {
-                            Icon(
-                                Icons.Filled.Close,
-                                contentDescription = stringResource(R.string.common_stop),
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = onRun, enabled = runEnabled) {
-                            Icon(
-                                Icons.Filled.PlayArrow,
-                                contentDescription = stringResource(R.string.common_run),
-                                tint = if (runEnabled) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.outline
-                                },
-                            )
-                        }
-                    }
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_more))
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        stringResource(
-                                            if (pinnedToTile) {
-                                                R.string.scripts_tile_unpin
-                                            } else {
-                                                R.string.scripts_tile_pin
-                                            },
-                                        ),
-                                    )
-                                },
-                                onClick = { menuOpen = false; onToggleTile() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.scripts_manage_tags)) },
-                                onClick = { menuOpen = false; onEditTags() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.scripts_settings)) },
-                                onClick = { menuOpen = false; onEdit() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.common_export)) },
-                                onClick = { menuOpen = false; onExport() },
-                            )
-                            DropdownMenuItem(
-                                text = { Text(stringResource(R.string.common_delete)) },
-                                onClick = { menuOpen = false; onDelete() },
-                            )
-                        }
-                    }
-                }
-            }
-        },
-    )
-}
-
-/** 多选模式底部操作栏；破坏性操作使用错误色，与其它删除入口保持一致。 */
-@Composable
-private fun ScriptSelectionBar(
-    allPinned: Boolean,
-    onTogglePin: () -> Unit,
-    onEditTags: () -> Unit,
-    onExport: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    BottomAppBar {
-        TextButton(onClick = onTogglePin) {
-            Text(stringResource(if (allPinned) R.string.scripts_unpin else R.string.scripts_pin))
-        }
-        TextButton(onClick = onEditTags) {
-            Text(stringResource(R.string.scripts_manage_tags))
-        }
-        TextButton(onClick = onExport) {
-            Text(stringResource(R.string.common_export))
-        }
-        Spacer(Modifier.weight(1f))
-        TextButton(
-            onClick = onDelete,
-            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-        ) {
-            Text(stringResource(R.string.common_delete))
-        }
-    }
-}
-
-internal data class ScriptGroup(
-    val key: String,
-    val tag: String?,
-    val scripts: List<ScriptInfo>,
-)
 
 /**
  * 按标签生成分组。一个脚本有多个标签时会出现在每个标签组中；
@@ -1062,120 +757,8 @@ internal fun buildScriptGroups(
     }
 }
 
-@Composable
-private fun ScriptGroupHeader(tag: String?, count: Int) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = if (tag == null) stringResource(R.string.scripts_untagged) else "#$tag",
-            style = MaterialTheme.typography.titleSmall,
-            color = if (tag == null) {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun CheckedMenuItem(label: String, selected: Boolean, onClick: () -> Unit) {
-    DropdownMenuItem(
-        text = { Text(label) },
-        trailingIcon = {
-            if (selected) Icon(Icons.Filled.Check, contentDescription = null)
-        },
-        onClick = onClick,
-    )
-}
-
-/** 首次加载脚本列表时的骨架屏，缓解冷启动的空白感。 */
-@Composable
-private fun ScriptsSkeleton() {
-    val transition = rememberInfiniteTransition(label = "skeleton")
-    val alpha by transition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.6f,
-        animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
-        label = "skeletonAlpha",
-    )
-    Column(modifier = Modifier.fillMaxSize()) {
-        repeat(5) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ShimmerBox(alpha = alpha, width = 20.dp, height = 20.dp)
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    ShimmerBox(alpha = alpha, width = 140.dp, height = 16.dp)
-                    Spacer(Modifier.height(8.dp))
-                    ShimmerBox(alpha = alpha, width = 88.dp, height = 12.dp)
-                }
-                Spacer(Modifier.width(16.dp))
-                ShimmerBox(alpha = alpha, width = 20.dp, height = 20.dp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ShimmerBox(alpha: Float, width: Dp, height: Dp) {
-    Box(
-        modifier = Modifier
-            .size(width = width, height = height)
-            .background(
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha * 0.5f),
-                RoundedCornerShape(4.dp),
-            ),
-    )
-}
-
 private fun parseTagInput(raw: String): List<String> = raw
     .split(',', '，', ';', '；', '\n')
     .map { it.trim() }
     .filter { it.isNotEmpty() }
 
-private fun writeTextToUri(context: Context, uri: Uri, text: String): Boolean = runCatching {
-    val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false
-    stream.use { it.write(text.toByteArray()) }
-    true
-}.getOrDefault(false)
-
-/** 把多个脚本打包为 zip；单个条目读取失败不会中断导出。 */
-private fun writeZipToUri(
-    context: Context,
-    uri: Uri,
-    entries: List<Pair<String, String>>,
-): Boolean = runCatching {
-    val stream = context.contentResolver.openOutputStream(uri) ?: return@runCatching false
-    ZipOutputStream(stream.buffered()).use { zip ->
-        entries.forEach { (name, content) ->
-            zip.putNextEntry(ZipEntry(name))
-            zip.write(content.toByteArray())
-            zip.closeEntry()
-        }
-    }
-    true
-}.getOrDefault(false)
-
-private const val BATCH_TAG_ADD = "add"
-private const val BATCH_TAG_REMOVE = "remove"
-
-private fun readTextFromUri(context: Context, uri: Uri): String? = runCatching {
-    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
-}.getOrNull()

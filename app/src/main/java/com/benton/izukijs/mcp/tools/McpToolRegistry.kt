@@ -64,33 +64,21 @@ class McpToolRegistry(
     }
 
     private fun buildCatalog(config: McpConfig): List<McpTool> {
-        val agentTools = AgentTools(
-            inputApi = bundle.inputApi,
-            selectorApi = bundle.selectorApi,
-            ocrApi = bundle.ocrApi,
-            appApi = bundle.appApi,
-            shellApi = bundle.shellApi,
-            deviceApi = bundle.deviceApi,
-            notificationApi = bundle.notificationApi,
-            screenshotPathProvider = { null },
-            nodeTreeProvider = nodeTreeProvider,
-            policy = ToolPolicy(
-                allowShell = config.allowShell,
-                allowDangerousShell = config.allowDangerousShell,
-                blockedPackages = config.blockedPackages,
-            ),
+        val policy = ToolPolicy(
+            allowShell = config.allowShell,
+            allowDangerousShell = config.allowDangerousShell,
+            blockedPackages = config.blockedPackages,
         )
-        val mainAgentTools = AgentTools(
-            inputApi = bundle.inputApi,
-            selectorApi = bundle.selectorApi,
-            ocrApi = bundle.mainOcrApi,
-            appApi = bundle.appApi,
-            shellApi = bundle.shellApi,
-            deviceApi = bundle.deviceApi,
-            notificationApi = bundle.notificationApi,
-            screenshotPathProvider = { null },
+        val agentTools = AgentTools.from(
+            bundle = bundle,
+            policy = policy,
+            nodeTreeProvider = nodeTreeProvider,
+        )
+        val mainAgentTools = AgentTools.from(
+            bundle = bundle,
+            policy = policy,
             nodeTreeProvider = mainNodeTreeProvider,
-            policy = agentTools.policy,
+            ocrApi = bundle.mainOcrApi,
         )
         val catalog = buildList {
             addAll(sharedTools(agentTools, mainAgentTools))

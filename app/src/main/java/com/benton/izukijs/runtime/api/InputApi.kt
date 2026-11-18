@@ -14,6 +14,7 @@ import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.core.log.LogBus
+import com.benton.izukijs.runtime.VolumeKeyQuickStop
 import com.benton.izukijs.service.OverlayCoordinator
 import com.benton.izukijs.virtualscreen.VirtualScreenManager
 import org.json.JSONArray
@@ -44,6 +45,15 @@ class InputApi(
 
     /** 连续 back 次数；虚拟屏没有 launcher，连续返回后可能停在空白页，用于给出提示。 */
     private var consecutiveBacks = 0
+
+    /**
+     * 清空跨 run 的输入统计。
+     *
+     * [InputApi] 由脚本与 MCP 共享，不能把上一个脚本的连续返回次数带进下一次运行。
+     */
+    internal fun resetRunState() {
+        consecutiveBacks = 0
+    }
 
     @JavascriptInterface
     fun click(x: Double, y: Double): Boolean {
@@ -296,6 +306,7 @@ class InputApi(
 
     @JavascriptInterface
     fun press(keyCode: Int): Boolean {
+        VolumeKeyQuickStop.noteInjectedKey(keyCode)
         if (keyCode == KeyEvent.KEYCODE_HOME && controllers.targetDisplayId != null) {
             logBus.warn("虚拟屏没有 launcher，home 键不会生效；请改用 back 或 app.launch")
             return false

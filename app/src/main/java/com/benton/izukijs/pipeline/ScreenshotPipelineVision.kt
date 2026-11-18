@@ -337,12 +337,5 @@ class ScreenshotPipelineVision(
 
     private fun fullScreen(): Box = Box(0, 0, screenWidth(), screenHeight())
 
-    private fun stringValue(obj: JSONObject, vararg keys: String): String? {
-        for (key in keys) {
-            val value = obj.opt(key)
-            if (value is String && value.isNotBlank()) return value
-        }
-        return null
-    }
 
 }
