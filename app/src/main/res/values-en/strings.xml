@@ -333,6 +333,8 @@
     <string name="perm_applist_switch">Allow enumerating installed apps</string>
     <string name="perm_allfiles_title">All files access</string>
     <string name="perm_allfiles_desc">Allow scripts to read / write any file on shared storage (e.g. /sdcard paths).</string>
+    <string name="perm_writesettings_title">Modify system settings</string>
+    <string name="perm_writesettings_desc">Allow scripts to adjust screen brightness and other system settings (device.setBrightness).</string>
     <string name="perm_http_title">Script network (HTTP)</string>
     <string name="perm_http_desc">Allow scripts to reach the network via http.request / get / post for webhooks, verification-code services and more. Off by default; an allowlist is recommended.</string>
     <string name="perm_http_enable">Enable script network</string>
@@ -469,7 +471,7 @@
     <string name="settings_unlock">Secure unlock</string>
     <string name="settings_editor">Editor</string>
     <string name="settings_ai_agent">AI Agent</string>
-    <string name="settings_storage">Logs</string>
+    <string name="settings_storage">Storage</string>
     <string name="settings_record">Recordings</string>
     <string name="settings_record_summary">Record user actions or script steps, review timelines, and clean up files</string>
     <string name="settings_backup">Backup &amp; restore</string>
@@ -795,6 +797,38 @@
     <string name="storage_cache_images_clear">Clear cached images</string>
     <string name="storage_cache_images_confirm">Clear all cached images? This cannot be undone.</string>
 
+    <!-- Script directory -->
+    <string name="script_storage_title">Script directory</string>
+    <string name="script_storage_desc">Scripts and multi-file projects are stored under scripts/ and projects/ in the selected directory. An external directory requires all-files access; external edits are not recorded in in-app history.</string>
+    <string name="script_storage_default">Default (app-private)</string>
+    <string name="script_storage_custom">Custom directory</string>
+    <string name="script_storage_choose">Choose directory</string>
+    <string name="script_storage_recommended">Use recommended directory</string>
+    <string name="script_storage_reset">Restore default</string>
+    <string name="script_storage_copy_path">Copy path</string>
+    <string name="script_storage_copied">Path copied</string>
+    <string name="script_storage_running">Stop the running script before switching directories.</string>
+    <string name="script_storage_permission_title">All-files access required</string>
+    <string name="script_storage_permission_desc">The directory cannot be read or written. Grant all-files access or choose a directory the app can write.</string>
+    <string name="script_storage_permission_action">Grant access</string>
+    <string name="script_storage_invalid">Invalid directory; choose an absolute path.</string>
+    <string name="script_storage_nested">The old and new directories cannot contain each other. Choose an independent directory.</string>
+    <string name="script_storage_not_writable">Directory is not writable: %1$s</string>
+    <string name="script_storage_unchanged">This directory is already active.</string>
+    <string name="script_storage_switch_title">Switch script directory</string>
+    <string name="script_storage_switch_message">Scripts and projects will be stored in:\n%1$s</string>
+    <string name="script_storage_switch_copy">Also copy existing scripts (do not overwrite)</string>
+    <string name="script_storage_switch_confirm">Switch</string>
+    <string name="script_storage_switch_result">Directory switched: copied %1$d, skipped %2$d, failed %3$d</string>
+    <string name="script_storage_switch_result_plain">Script directory switched.</string>
+    <string name="script_storage_picker_title">Choose script root directory</string>
+    <string name="script_storage_picker_manual">Enter path manually</string>
+    <string name="script_storage_picker_go">Go</string>
+    <string name="script_storage_picker_up">Parent directory</string>
+    <string name="script_storage_picker_empty">No accessible subdirectories</string>
+    <string name="script_storage_picker_select">Use this directory</string>
+    <string name="script_storage_picker_invalid">Path does not exist or is not a directory</string>
+
     <!-- About -->
     <string name="about_name">IzukiJS</string>
     <string name="about_version">Version %1$s (%2$d)</string>
@@ -1060,6 +1094,13 @@
     <string name="editor_expand_console">Expand console</string>
     <string name="editor_collapse_console">Collapse console</string>
     <string name="editor_placeholder">// Write JS here</string>
+    <string name="editor_compat_hint_title">Auto.js-style script detected</string>
+    <string name="editor_compat_hint_detail">Detected: %1$s. You can mark it as a compatibility script; UI mode and Java interop are still unsupported.</string>
+    <string name="editor_compat_enable">Enable compatibility</string>
+    <string name="editor_compat_dismiss">Dismiss</string>
+    <string name="editor_compat_ui_unsupported">The &quot;ui&quot;; directive is not supported by the compatibility layer yet.</string>
+    <string name="editor_project_files">Project files</string>
+    <string name="editor_project_files_empty">This project has no editable script files</string>
     <string name="editor_undo">Undo</string>
     <string name="editor_redo">Redo</string>
     <string name="editor_find">Find</string>

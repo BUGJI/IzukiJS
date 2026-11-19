@@ -9,7 +9,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.InputStream
 import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+import org.json.JSONObject
 
 /** 脚本内容在一次原子更新中的前后状态。 */
 data class ScriptUpdateResult(
@@ -21,6 +24,12 @@ data class ScriptUpdateResult(
     val changed: Boolean,
 )
 
+/** 批量导出条目：zip 内路径与实际文件，读取失败由写入方跳过。 */
+data class ScriptArchiveEntry(
+    val name: String,
+    val file: File,
+)
+
 /** `expectedSha256` 与当前内容不一致：说明脚本在读取后被其他人改过。 */
 class ScriptStaleException(
     message: String,
@@ -28,12 +37,15 @@ class ScriptStaleException(
 ) : IllegalStateException(message)
 
 /**
- * 基于应用私有目录的脚本仓库。脚本以 .js 文件形式保存在 files/scripts 下。
+ * 脚本仓库。脚本以 `.js` 文件形式保存在当前脚本根目录的 `scripts/` 下，
+ * 多文件项目保存在 `projects/` 下；根目录默认是应用私有目录，可通过
+ * [ScriptStorageRepository] 切换到共享存储。脚本历史始终留在应用私有目录。
  */
 class ScriptRepository(
     private val context: Context,
+    private val storage: ScriptStorageRepository = ScriptStorageRepository(context),
     val history: ScriptHistoryRepository = ScriptHistoryRepository(context),
-) : ScriptSource {
+) : ScriptSource, ScriptModuleResolver {
 
     private val _revision = MutableStateFlow(0)
 
@@ -48,15 +60,43 @@ class ScriptRepository(
     }
 
     private val scriptsDir: File
-        get() = File(context.filesDir, "scripts").apply { if (!exists()) mkdirs() }
+        get() = storage.scriptsDir().apply { if (!exists()) mkdirs() }
 
-    fun list(): List<ScriptInfo> = scriptsDir
-        .listFiles { f -> f.isFile && f.name.endsWith(EXTENSION) }
-        .orEmpty()
-        .sortedByDescending { it.lastModified() }
-        .map { it.toScriptInfo() }
+    private val projectsDir: File
+        get() = storage.projectsDir().apply { if (!exists()) mkdirs() }
 
-    override fun find(id: String): ScriptInfo? = list().firstOrNull { it.id == id }
+    fun list(): List<ScriptInfo> = synchronized(fileLock) {
+        val flat = scriptsDir
+            .listFiles { file -> file.isFile && file.name.endsWith(EXTENSION) }
+            .orEmpty()
+            .map { it.toScriptInfo() }
+        val projects = projectsDir
+            .listFiles { file -> file.isDirectory }
+            .orEmpty()
+            .mapNotNull { projectInfo(it) }
+        (flat + projects).sortedByDescending { it.updatedAt }
+    }
+
+    override fun find(id: String): ScriptInfo? =
+        list().firstOrNull { it.id == id } ?: findProjectFile(id)
+
+    /** 项目内文件列表；入口排在最前。 */
+    fun projectFiles(projectId: String): List<ScriptInfo> {
+        val root = File(projectsDir, projectId)
+        if (!root.isDirectory) return emptyList()
+        val entry = projectInfo(root)?.relativePath
+        return root.walkTopDown()
+            .onEnter { dir -> dir.name !in SKIP_DIRECTORIES }
+            .filter { file ->
+                file.isFile && file.extension.lowercase() in PROJECT_EDITABLE_EXTENSIONS
+            }
+            .map { file ->
+                val relative = file.relativeTo(root).invariantSeparatorsPath
+                file.toProjectFileInfo(root, relative)
+            }
+            .sortedWith(compareBy({ it.relativePath != entry }, { it.relativePath }))
+            .toList()
+    }
 
     /**
      * 首次运行时把打包在 assets/scripts 下的内置脚本释放到脚本目录，供其他脚本 `require`。
@@ -147,7 +187,9 @@ class ScriptRepository(
             bumpRevision()
         }
         ScriptUpdateResult(
-            script = script.file.toScriptInfo(),
+            // 内容更新不改变项目归属与相对路径，沿用调用方传入的元数据，避免项目
+            // 脚本被降级成扁平脚本信息。
+            script = script.copy(updatedAt = script.file.lastModified()),
             previousSha256 = previousHash,
             sha256 = sha256(updated),
             previousLines = lineCount(previous),
@@ -169,8 +211,13 @@ class ScriptRepository(
         return synchronized(fileLock) {
             val deleted = LinkedHashSet<String>()
             scripts.forEach { script ->
+                val target = if (script.isProjectEntry && script.projectRoot != null) {
+                    script.projectRoot
+                } else {
+                    script.file
+                }
                 // 文件已不存在也视为成功，避免重复删除时留下无主的标签 / 运行参数。
-                if (script.file.delete() || !script.file.exists()) {
+                if (target.deleteRecursively() || !target.exists()) {
                     deleted += script.id
                     history.deleteFor(script.id)
                 }
@@ -180,7 +227,122 @@ class ScriptRepository(
         }
     }
 
+    /** 当前脚本根目录；默认是 `context.filesDir`。 */
+    fun storageRoot(): File = storage.root()
+
+    fun storageSettings(): ScriptStorageSettings = storage.current()
+
+    /**
+     * 切换脚本根目录。复制是非破坏性的：目标已存在的文件跳过，旧目录保持不动。
+     *
+     * 调用方负责切到 IO 线程；[isRunning] 在文件锁内复核，避免“检查后到切换前”
+     * 期间有新脚本启动。这里仍重新校验当前根目录，避免并发的两次切换把目录嵌套到一起。
+     */
+    fun switchStorageRoot(
+        newRootPath: String?,
+        copyExisting: Boolean,
+        isRunning: () -> Boolean = { false },
+    ): ScriptStorageSwitchResult {
+        val useDefault = newRootPath.isNullOrBlank()
+        val requestedRaw = if (useDefault) {
+            context.filesDir
+        } else {
+            ScriptStoragePaths.normalizeRoot(newRootPath)
+                ?: return ScriptStorageSwitchResult.InvalidPath
+        }
+        // filesDir 在不同厂商 ROM 上可能是符号链接，比较与保存前统一取 canonical。
+        val requested = runCatching { requestedRaw.canonicalFile }.getOrNull() ?: requestedRaw
+        return synchronized(fileLock) {
+            if (isRunning()) return@synchronized ScriptStorageSwitchResult.Running
+            val currentRoot = storage.root()
+            val currentCanonical = runCatching { currentRoot.canonicalFile }
+                .getOrNull() ?: currentRoot
+            if (requested == currentCanonical) {
+                // 旧版本或手工写入可能把默认目录存成了路径字符串，这里顺手清空。
+                if (useDefault && !storage.current().isDefault) {
+                    storage.saveRoot(null)
+                    bumpRevision()
+                }
+                return@synchronized ScriptStorageSwitchResult.Unchanged
+            }
+            if (ScriptStoragePaths.isSameOrNested(requested, currentCanonical)) {
+                return@synchronized ScriptStorageSwitchResult.NestedRoot
+            }
+            val targetScripts = ScriptStoragePaths.scriptsDir(requested)
+            val targetProjects = ScriptStoragePaths.projectsDir(requested)
+            if (!ensureWritableDir(requested) ||
+                !ensureWritableDir(targetScripts) ||
+                !ensureWritableDir(targetProjects)
+            ) {
+                return@synchronized ScriptStorageSwitchResult.NotWritable(requested.path)
+            }
+            val migration = if (copyExisting) {
+                ScriptStorageMigration.copy(
+                    sourceScripts = scriptsDir,
+                    sourceProjects = projectsDir,
+                    targetScripts = targetScripts,
+                    targetProjects = targetProjects,
+                )
+            } else {
+                ScriptStorageMigration.Result()
+            }
+            // 默认目录必须存 null，否则界面会把它当成自定义目录。
+            storage.saveRoot(if (useDefault) null else requested.path)
+            bumpRevision()
+            ScriptStorageSwitchResult.Success(
+                rootPath = requested.path,
+                copied = migration.copied,
+                skipped = migration.skipped,
+                failed = migration.failed,
+            )
+        }
+    }
+
+    /** 建目录并实际写一个临时文件，避免只读挂载或权限不足被 `isDirectory` 漏判。 */
+    private fun ensureWritableDir(dir: File): Boolean {
+        if (!dir.isDirectory && !dir.mkdirs() && !dir.isDirectory) return false
+        return runCatching {
+            val probe = File.createTempFile(".izuki_write_", ".tmp", dir)
+            probe.delete()
+            true
+        }.getOrDefault(false)
+    }
+
     fun rename(script: ScriptInfo, newName: String): ScriptInfo = synchronized(fileLock) {
+        val projectRoot = script.projectRoot
+        if (projectRoot != null && script.isProjectEntry) {
+            val base = sanitize(newName)
+            val target = if (base == projectRoot.name) {
+                projectRoot
+            } else {
+                File(projectsDir, uniqueProjectId(base))
+            }
+            if (target != projectRoot) {
+                check(projectRoot.renameTo(target)) { "项目重命名失败: ${script.id}" }
+            }
+            updateProjectManifest(target, base, script.relativePath)
+            history.move(script.id, target.name)
+            bumpRevision()
+            return@synchronized projectInfo(target)
+                ?: throw IllegalStateException("项目重命名后无法读取入口: ${target.name}")
+        }
+        if (projectRoot != null) {
+            // 项目内文件：保持在原目录内改名，避免误把文件移到扁平脚本目录。
+            val parent = script.file.parentFile
+                ?: throw IllegalStateException("项目文件缺少父目录: ${script.id}")
+            val desired = sanitize(newName)
+            val filename = if (desired.substringAfterLast('.', "").isEmpty()) {
+                "$desired.${script.file.extension.ifBlank { "js" }}"
+            } else {
+                desired
+            }
+            val target = File(parent, filename)
+            check(script.file.renameTo(target)) { "模块重命名失败: ${script.id}" }
+            val relative = target.relativeTo(projectRoot).invariantSeparatorsPath
+            history.move(script.id, "${projectRoot.name}/$relative")
+            bumpRevision()
+            return@synchronized target.toProjectFileInfo(projectRoot, relative)
+        }
         val id = uniqueId(sanitize(newName))
         val target = File(scriptsDir, id + EXTENSION)
         script.file.renameTo(target)
@@ -188,6 +350,54 @@ class ScriptRepository(
         bumpRevision()
         target.toScriptInfo()
     }
+
+    /**
+     * 批量导出用条目：普通脚本为单个文件，项目脚本展开为完整目录树（含资源文件）。
+     * 路径在这里统一生成，写入方只负责按字节复制。
+     */
+    fun archiveEntries(scripts: List<ScriptInfo>): List<ScriptArchiveEntry> =
+        synchronized(fileLock) {
+            val entries = ArrayList<ScriptArchiveEntry>()
+            val usedNames = HashSet<String>()
+            fun addEntry(name: String, file: File) {
+                var candidate = name
+                var index = 1
+                while (!usedNames.add(candidate)) {
+                    candidate = "${index}_$name"
+                    index++
+                }
+                entries += ScriptArchiveEntry(candidate, file)
+            }
+            scripts.forEach { script ->
+                val root = script.projectRoot
+                if (script.isProjectEntry && root != null) {
+                    val basePrefix = sanitize(script.name.ifBlank { root.name })
+                    var prefix = basePrefix
+                    var index = 1
+                    while (usedNames.any { it == prefix || it.startsWith("$prefix/") }) {
+                        prefix = "${basePrefix}_$index"
+                        index++
+                    }
+                    root.walkTopDown()
+                        .onEnter { it.name !in SKIP_DIRECTORIES }
+                        .filter { it.isFile }
+                        .forEach { file ->
+                            val relative = file.relativeTo(root).invariantSeparatorsPath
+                            addEntry("$prefix/$relative", file)
+                        }
+                } else if (root != null) {
+                    addEntry(script.relativePath ?: script.name, script.file)
+                } else {
+                    val filename = if (script.name.endsWith(EXTENSION)) {
+                        script.name
+                    } else {
+                        script.name + EXTENSION
+                    }
+                    addEntry(filename, script.file)
+                }
+            }
+            entries
+        }
 
     /** 后台线程版本，避免磁盘 IO 阻塞主线程 / 组合。 */
     suspend fun listAsync(): List<ScriptInfo> = withContext(Dispatchers.IO) { list() }
@@ -215,6 +425,257 @@ class ScriptRepository(
     suspend fun renameAsync(script: ScriptInfo, newName: String): ScriptInfo =
         withContext(Dispatchers.IO) { rename(script, newName) }
 
+    /**
+     * 导入 ZIP 项目。条目路径在这里做 zip-slip 防护，入口与项目根在解压后再识别；
+     * 失败时清理临时目录，不会在 projects/ 下留下半成品。
+     */
+    fun importProjectZip(input: InputStream, displayName: String): ScriptInfo? {
+        val staging = File(context.cacheDir, "project_import_${System.currentTimeMillis()}")
+        if (!staging.mkdirs()) return null
+        try {
+            var total = 0L
+            var count = 0
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            ZipInputStream(input.buffered()).use { zip ->
+                while (true) {
+                    val entry = zip.nextEntry ?: break
+                    if (++count > MAX_PROJECT_ENTRIES) return null
+                    val name = entry.name.replace('\\', '/').trimStart('/')
+                    if (name.isBlank() || name.startsWith("__MACOSX/")) continue
+                    if (name.split('/').any { it == ".." }) continue
+                    val target = safeChild(staging, name) ?: continue
+                    if (entry.isDirectory) {
+                        target.mkdirs()
+                        continue
+                    }
+                    // entry.size 不可信时按实际字节数限制，避免单个条目先写满磁盘。
+                    if (entry.size >= 0 && total + entry.size > MAX_PROJECT_BYTES) return null
+                    target.parentFile?.mkdirs()
+                    target.outputStream().use { output ->
+                        while (true) {
+                            val read = zip.read(buffer)
+                            if (read < 0) break
+                            total += read
+                            if (total > MAX_PROJECT_BYTES) return null
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+            }
+
+            return synchronized(fileLock) {
+                val root = detectProjectRoot(staging) ?: return@synchronized null
+                val entry = detectProjectEntry(root) ?: return@synchronized null
+                val name = displayName.substringBeforeLast('.').trim()
+                    .ifBlank { root.name.ifBlank { "project" } }
+                val id = uniqueProjectId(sanitize(name))
+                val target = File(projectsDir, id)
+                // 暂存在内部 cacheDir，外部脚本根目录与其不在同一挂载点时 renameTo 会失败。
+                check(ScriptStorageMigration.move(root, target)) { "项目移动失败: $id" }
+                // 与 CLI import 一致：入口没有标记时补上，运行时才会加载兼容层。
+                ensureCompatHeader(safeChild(target, entry) ?: target)
+                writeProjectManifestIfMissing(target, name, entry)
+                bumpRevision()
+                projectInfo(target)
+            }
+        } finally {
+            staging.deleteRecursively()
+        }
+    }
+
+    /**
+     * 重命名 / 导入时更新项目清单。已有 `project.json` / `izuki.project.json` 时只改
+     * name 与缺失的 entry，保留 compat 等其它字段。
+     */
+    private fun updateProjectManifest(root: File, name: String, entry: String?) {
+        val file = listOf(PROJECT_MANIFEST, LEGACY_MANIFEST)
+            .map { File(root, it) }
+            .firstOrNull { it.isFile }
+            ?: File(root, PROJECT_MANIFEST)
+        val json = runCatching { JSONObject(file.readText()) }.getOrElse { JSONObject() }
+        json.put("name", name)
+        if (!json.has("entry") && !json.has("main") && !entry.isNullOrBlank()) {
+            json.put("entry", entry)
+        }
+        AtomicFile.writeText(file, json.toString(2))
+    }
+
+    /** 兼容标记已存在时不做改动，避免每次导入都叠加一行。 */
+    private fun ensureCompatHeader(file: File) {
+        if (!file.isFile) return
+        val text = runCatching { file.readText() }.getOrNull() ?: return
+        if (text.contains("@compat")) return
+        AtomicFile.writeText(file, COMPAT_HEADER + "\n" + text)
+    }
+
+    // ---- 项目解析 ----
+
+    private fun projectInfo(root: File): ScriptInfo? {
+        val manifest = readProjectManifest(root)
+        val entry = manifest?.entry
+            ?.takeIf { relative -> safeChild(root, relative)?.isFile == true }
+            ?: detectDefaultEntry(root)
+            ?: return null
+        val file = safeChild(root, entry) ?: return null
+        if (!file.isFile) return null
+        return ScriptInfo(
+            id = root.name,
+            name = manifest?.name?.takeIf { it.isNotBlank() } ?: root.name,
+            file = file,
+            updatedAt = file.lastModified(),
+            projectRoot = root,
+            relativePath = file.relativeTo(root).invariantSeparatorsPath,
+            isProjectEntry = true,
+        )
+    }
+
+    private fun findProjectFile(id: String): ScriptInfo? {
+        val slash = id.indexOf('/')
+        if (slash <= 0) return null
+        val root = File(projectsDir, id.substring(0, slash))
+        if (!root.isDirectory) return null
+        val relative = id.substring(slash + 1)
+        val file = safeChild(root, relative) ?: return null
+        if (!file.isFile) return null
+        return file.toProjectFileInfo(root, file.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    private fun File.toProjectFileInfo(root: File, relative: String): ScriptInfo =
+        ScriptInfo(
+            id = "${root.name}/$relative",
+            name = relative,
+            file = this,
+            updatedAt = lastModified(),
+            projectRoot = root,
+            relativePath = relative,
+            isProjectEntry = false,
+        )
+
+    private data class ProjectManifest(val name: String?, val entry: String?)
+
+    private fun readProjectManifest(root: File): ProjectManifest? {
+        for (name in listOf(PROJECT_MANIFEST, LEGACY_MANIFEST)) {
+            val file = File(root, name)
+            if (!file.isFile) continue
+            val json = runCatching { JSONObject(file.readText()) }.getOrNull() ?: continue
+            val entry = json.optString("entry").ifBlank { json.optString("main") }
+                .ifBlank { null }
+            val label = json.optString("name").ifBlank { null }
+            return ProjectManifest(label, entry)
+        }
+        return null
+    }
+
+    private fun detectProjectRoot(staging: File): File? {
+        if (File(staging, PROJECT_MANIFEST).isFile || File(staging, LEGACY_MANIFEST).isFile) {
+            return staging
+        }
+        val children = staging.listFiles()
+            ?.filter { it.isDirectory && it.name !in SKIP_DIRECTORIES }
+            .orEmpty()
+        return if (children.size == 1) children.first() else staging
+    }
+
+    private fun detectProjectEntry(root: File): String? {
+        val manifestEntry = readProjectManifest(root)?.entry
+        if (manifestEntry != null) {
+            val file = safeChild(root, manifestEntry)
+            if (file?.isFile == true) {
+                return file.relativeTo(root).invariantSeparatorsPath
+            }
+        }
+        return detectDefaultEntry(root)
+    }
+
+    private fun detectDefaultEntry(root: File): String? {
+        for (name in listOf("main.js", "index.js", "app.js")) {
+            if (File(root, name).isFile) return name
+        }
+        return root.walkTopDown()
+            .onEnter { it.name !in SKIP_DIRECTORIES }
+            .firstOrNull { it.isFile && it.extension.lowercase() in PROJECT_SCRIPT_EXTENSIONS }
+            ?.relativeTo(root)
+            ?.invariantSeparatorsPath
+    }
+
+    private fun writeProjectManifestIfMissing(root: File, name: String, entry: String) {
+        if (File(root, PROJECT_MANIFEST).isFile || File(root, LEGACY_MANIFEST).isFile) return
+        val json = JSONObject()
+            .put("name", name)
+            .put("entry", entry)
+            .put("compat", "autojs6")
+        AtomicFile.writeText(File(root, PROJECT_MANIFEST), json.toString(2))
+    }
+
+    private fun safeChild(root: File, relative: String): File? {
+        val normalized = relative.replace('\\', '/').removePrefix("./").trimStart('/')
+        if (normalized.isBlank() || normalized.split('/').any { it == ".." }) return null
+        return runCatching {
+            val canonicalRoot = root.canonicalFile
+            val candidate = File(canonicalRoot, normalized).canonicalFile
+            if (candidate == canonicalRoot ||
+                !candidate.path.startsWith(canonicalRoot.path + File.separator)
+            ) {
+                null
+            } else {
+                candidate
+            }
+        }.getOrNull()
+    }
+
+    private fun uniqueProjectId(base: String): String {
+        var candidate = base
+        var index = 1
+        while (File(projectsDir, candidate).exists() ||
+            File(scriptsDir, candidate + EXTENSION).exists()
+        ) {
+            candidate = "${base}_$index"
+            index++
+        }
+        return candidate
+    }
+
+    // ---- 模块解析 ----
+
+    override fun resolve(name: String, from: String): String? {
+        val fromFile = moduleFile(from)
+        return ScriptModulePaths.resolve(name, fromFile, moduleRoot(fromFile), scriptsDir)
+            ?.absolutePath
+    }
+
+    override fun source(name: String, from: String): String? =
+        resolve(name, from)?.let { path ->
+            runCatching { File(path).readText() }.getOrNull()
+        }
+
+    /**
+     * 只做直接路径探测，不走 `list()` 全量扫描。
+     *
+     * `require` 发生在脚本线程上，原实现每次顶层 require 都会读取所有项目的 manifest
+     * 并遍历目录；这里按 id 形状直接定位扁平脚本 / 项目入口 / 项目内文件。
+     */
+    private fun moduleFile(from: String): File? {
+        if (from.isBlank()) return null
+        val direct = File(from)
+        if (direct.isAbsolute && direct.isFile) return direct
+        val flat = File(scriptsDir, from.removeSuffix(EXTENSION) + EXTENSION)
+        if (flat.isFile) return flat
+        if (from.contains('/')) return findProjectFile(from)?.file
+        val projectRoot = File(projectsDir, from)
+        return if (projectRoot.isDirectory) projectInfo(projectRoot)?.file else null
+    }
+
+    private fun moduleRoot(fromFile: File?): File {
+        val file = fromFile ?: return scriptsDir
+        val projectsPath = runCatching { projectsDir.canonicalPath }.getOrNull()
+            ?: return scriptsDir
+        val filePath = runCatching { file.canonicalPath }.getOrNull() ?: return scriptsDir
+        if (!filePath.startsWith(projectsPath + File.separator)) return scriptsDir
+        val relative = filePath.substring(projectsPath.length + 1)
+        val first = relative.substringBefore(File.separator)
+        return if (first.isBlank()) scriptsDir else File(projectsDir, first)
+    }
+
     private fun File.toScriptInfo(): ScriptInfo =
         ScriptInfo(
             id = nameWithoutExtension,
@@ -231,7 +692,9 @@ class ScriptRepository(
     private fun uniqueId(base: String): String {
         var candidate = base
         var index = 1
-        while (File(scriptsDir, candidate + EXTENSION).exists()) {
+        while (File(scriptsDir, candidate + EXTENSION).exists() ||
+            File(projectsDir, candidate).exists()
+        ) {
             candidate = "${base}_$index"
             index++
         }
@@ -253,6 +716,16 @@ class ScriptRepository(
         private const val BUNDLED_DIR = "scripts"
         private const val PREFS = "izukijs_scripts"
         private const val KEY_SEEDED = "bundled_seeded"
+        private const val PROJECT_MANIFEST = "izuki.project.json"
+        private const val LEGACY_MANIFEST = "project.json"
+
+        /** 与 `runtime.CompatMode.HEADER` 保持一致；导入时写进入口脚本首行。 */
+        private const val COMPAT_HEADER = "// @compat autojs6"
+        private const val MAX_PROJECT_ENTRIES = 2_000
+        private const val MAX_PROJECT_BYTES = 50L * 1024 * 1024
+        private val SKIP_DIRECTORIES = ScriptStoragePaths.SKIP_DIRECTORIES
+        private val PROJECT_EDITABLE_EXTENSIONS = setOf("js", "mjs", "cjs", "json")
+        private val PROJECT_SCRIPT_EXTENSIONS = setOf("js", "mjs", "cjs")
 
         val DEFAULT_SCRIPT = """
             // Izuki JS 脚本示例

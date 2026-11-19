@@ -1,10 +1,13 @@
 package com.benton.izukijs.controller.accessibility
 
+import android.graphics.Rect
 import android.os.Build
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.benton.izukijs.controller.DeviceController
 import com.benton.izukijs.controller.GestureStroke
+import com.benton.izukijs.controller.NodeBounds
 import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.developer.DeveloperTuning
 import com.benton.izukijs.model.Capability
@@ -81,6 +84,9 @@ class AccessibilityController(
             root.releaseNode()
         }
     }
+
+    /** 当前可见窗口；调用方负责回收各窗口的 root 节点。 */
+    fun windowList(): List<AccessibilityWindowInfo> = service?.windowList() ?: emptyList()
 
     // ---- 控件查找（供选择器 API 使用） ----
 
@@ -160,55 +166,221 @@ class AccessibilityController(
             visible = isVisibleToUser,
             indexInParent = indexInParent,
             depth = depth,
+            checkable = isCheckable,
+            checked = isChecked,
+            focusable = isFocusable,
+            focused = isFocused,
+            selected = isSelected,
+            longClickable = isLongClickable,
+            password = isPassword,
         )
     }
 
     data class NodeCriteria(
         val viewId: String? = null,
+        val viewIdContains: String? = null,
+        val viewIdStartsWith: String? = null,
+        val viewIdEndsWith: String? = null,
+        val viewIdRegex: String? = null,
         val text: String? = null,
         val textContains: String? = null,
+        val textStartsWith: String? = null,
+        val textEndsWith: String? = null,
         val textRegex: String? = null,
         val desc: String? = null,
         val descContains: String? = null,
+        val descStartsWith: String? = null,
+        val descEndsWith: String? = null,
         val descRegex: String? = null,
         val className: String? = null,
+        val classNameContains: String? = null,
+        val classNameStartsWith: String? = null,
+        val classNameEndsWith: String? = null,
+        val classNameRegex: String? = null,
         val clickable: Boolean? = null,
+        val longClickable: Boolean? = null,
         val editable: Boolean? = null,
         val scrollable: Boolean? = null,
         val enabled: Boolean? = null,
         val visible: Boolean? = null,
+        val checkable: Boolean? = null,
+        val checked: Boolean? = null,
+        val focusable: Boolean? = null,
+        val focused: Boolean? = null,
+        val selected: Boolean? = null,
+        val password: Boolean? = null,
         val packageName: String? = null,
+        val packageNameContains: String? = null,
+        val packageNameStartsWith: String? = null,
+        val packageNameEndsWith: String? = null,
+        val packageNameRegex: String? = null,
+        val bounds: NodeBounds? = null,
+        val boundsInside: NodeBounds? = null,
+        val boundsContains: NodeBounds? = null,
     ) {
+        private val viewIdPattern = viewIdRegex?.let { Regex(it) }
         private val textPattern = textRegex?.let { Regex(it) }
         private val descPattern = descRegex?.let { Regex(it) }
+        private val classNamePattern = classNameRegex?.let { Regex(it) }
+        private val packageNamePattern = packageNameRegex?.let { Regex(it) }
 
         fun matches(node: AccessibilityNodeInfo): Boolean {
-            if (viewId != null && node.viewIdResourceName != viewId) return false
-            if (!matchesNodeValue(node.text?.toString(), text, textContains, textPattern)) return false
+            if (!matchesNodeValue(
+                    node.viewIdResourceName,
+                    viewId,
+                    viewIdContains,
+                    viewIdPattern,
+                    viewIdStartsWith,
+                    viewIdEndsWith,
+                )
+            ) {
+                return false
+            }
+            if (!matchesNodeValue(
+                    node.text?.toString(),
+                    text,
+                    textContains,
+                    textPattern,
+                    textStartsWith,
+                    textEndsWith,
+                )
+            ) {
+                return false
+            }
             val description = node.contentDescription?.toString()
-            if (!matchesNodeValue(description, desc, descContains, descPattern)) return false
-            if (className != null && node.className?.toString() != className) return false
+            if (!matchesNodeValue(
+                    description,
+                    desc,
+                    descContains,
+                    descPattern,
+                    descStartsWith,
+                    descEndsWith,
+                )
+            ) {
+                return false
+            }
+            val nodeClass = node.className?.toString()
+            if (!matchesNodeValue(
+                    nodeClass,
+                    className,
+                    classNameContains,
+                    classNamePattern,
+                    classNameStartsWith,
+                    classNameEndsWith,
+                )
+            ) {
+                return false
+            }
+            val nodePackage = node.packageName?.toString()
+            if (!matchesNodeValue(
+                    nodePackage,
+                    packageName,
+                    packageNameContains,
+                    packageNamePattern,
+                    packageNameStartsWith,
+                    packageNameEndsWith,
+                )
+            ) {
+                return false
+            }
             if (clickable != null && node.isClickable != clickable) return false
+            if (longClickable != null && node.isLongClickable != longClickable) return false
             if (editable != null && node.isEditable != editable) return false
             if (scrollable != null && node.isScrollable != scrollable) return false
             if (enabled != null && node.isEnabled != enabled) return false
             if (visible != null && node.isVisibleToUser != visible) return false
-            if (packageName != null && node.packageName?.toString() != packageName) return false
+            if (checkable != null && node.isCheckable != checkable) return false
+            if (checked != null && node.isChecked != checked) return false
+            if (focusable != null && node.isFocusable != focusable) return false
+            if (focused != null && node.isFocused != focused) return false
+            if (selected != null && node.isSelected != selected) return false
+            if (password != null && node.isPassword != password) return false
+            if (bounds != null || boundsInside != null || boundsContains != null) {
+                val rect = Rect()
+                node.getBoundsInScreen(rect)
+                val actual = NodeBounds(rect.left, rect.top, rect.right, rect.bottom)
+                if (bounds != null && actual != bounds) return false
+                if (boundsInside != null && !actual.inside(boundsInside)) return false
+                if (boundsContains != null && !actual.contains(boundsContains)) return false
+            }
             return true
         }
 
         /** 纯快照匹配，用于 explain / codegen 与 JVM 测试。 */
         fun matchesSnapshot(node: NodeSnapshot): Boolean {
-            if (viewId != null && node.viewId != viewId) return false
-            if (!matchesNodeValue(node.text, text, textContains, textPattern)) return false
-            if (!matchesNodeValue(node.contentDescription, desc, descContains, descPattern)) return false
-            if (className != null && node.className != className) return false
+            if (!matchesNodeValue(
+                    node.viewId,
+                    viewId,
+                    viewIdContains,
+                    viewIdPattern,
+                    viewIdStartsWith,
+                    viewIdEndsWith,
+                )
+            ) {
+                return false
+            }
+            if (!matchesNodeValue(
+                    node.text,
+                    text,
+                    textContains,
+                    textPattern,
+                    textStartsWith,
+                    textEndsWith,
+                )
+            ) {
+                return false
+            }
+            if (!matchesNodeValue(
+                    node.contentDescription,
+                    desc,
+                    descContains,
+                    descPattern,
+                    descStartsWith,
+                    descEndsWith,
+                )
+            ) {
+                return false
+            }
+            if (!matchesNodeValue(
+                    node.className,
+                    className,
+                    classNameContains,
+                    classNamePattern,
+                    classNameStartsWith,
+                    classNameEndsWith,
+                )
+            ) {
+                return false
+            }
+            if (!matchesNodeValue(
+                    node.packageName,
+                    packageName,
+                    packageNameContains,
+                    packageNamePattern,
+                    packageNameStartsWith,
+                    packageNameEndsWith,
+                )
+            ) {
+                return false
+            }
             if (clickable != null && node.clickable != clickable) return false
+            if (longClickable != null && node.longClickable != longClickable) return false
             if (editable != null && node.editable != editable) return false
             if (scrollable != null && node.scrollable != scrollable) return false
             if (enabled != null && node.enabled != enabled) return false
             if (visible != null && node.visible != visible) return false
-            if (packageName != null && node.packageName != packageName) return false
+            if (checkable != null && node.checkable != checkable) return false
+            if (checked != null && node.checked != checked) return false
+            if (focusable != null && node.focusable != focusable) return false
+            if (focused != null && node.focused != focused) return false
+            if (selected != null && node.selected != selected) return false
+            if (password != null && node.password != password) return false
+            if (bounds != null || boundsInside != null || boundsContains != null) {
+                val actual = NodeBounds(node.left, node.top, node.right, node.bottom)
+                if (bounds != null && actual != bounds) return false
+                if (boundsInside != null && !actual.inside(boundsInside)) return false
+                if (boundsContains != null && !actual.contains(boundsContains)) return false
+            }
             return true
         }
     }

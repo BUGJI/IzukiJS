@@ -13,6 +13,72 @@
 
 ### 修复
 
+## [1.2.7] - 2026-11-20
+
+### 新增
+
+- 新增可配置脚本根目录：默认仍为应用私有目录，可在「设置 → 存储 → 脚本目录」切换到
+  共享存储并在其下使用 `scripts/` 与 `projects/`；外部目录需要「全部文件访问」。
+  切换时可选择复制现有脚本，逐文件不覆盖；脚本历史仍留在应用私有目录。
+- 新增 Auto.js / AutoX / AutoJs6 经典 v6 脚本的兼容模式：脚本首行 `// @compat autojs6`
+  后加载加法式门面，支持 `device.width` 属性写法、`toastLog`、`click(text)`、
+  `press(x,y,duration)`、`files.*`、`http` 响应对象、`auto.waitFor()` 等。
+- 兼容模式补齐 `text/desc/id/className/packageName` 选择器链与 `UiObject` 基本属性 /
+  动作，`setTimeout` / `setInterval` 在 `sleep` 与脚本收尾阶段协作执行；`setText`
+  替换、`input` 追加焦点输入框。
+- 兼容模式新增 `Image` 对象（read/save/pixel/getSize/clip/resize/captureScreen）、
+  `storages.create` 命名存储、`dialogs.alert/confirm/prompt/select/multiChoice`、
+  `events.on/once` 轮询桥。
+- 兼容模式补齐 `auto.service` / `auto.windows`（窗口门面）、`auto.dump`
+  （`json` / `text` / `xml`，支持 `maxDepth` / `maxNodes` / `visibleOnly` / `properties`）、
+  `files.getSdcardPath()` 与 `automator.captureScreen()`。
+- 兼容模式继续补齐常用门面：`auto.explain` / `auto.isRunning`、`colors.rgba` / `toInt` /
+  `toHex`（`argb` 支持单参数）、`files.createWithDirs` / `removeDir`、
+  `dialogs.singleChoice` / `rawInput` / `input`、`events.onKeyDown(key, cb)` /
+  `onKeyUp(key, cb)` 按键过滤，以及 `images.requestScreenCaptureAsync`。
+- `device` 新增媒体 / 通知 / 闹钟音量、屏幕亮度与模式、`vibrate` / `cancelVibration`。
+- 新增 `sensors` 命名空间（`// @need sensors`）：`registerRaw` / `pollRaw` /
+  `unregisterRaw` / `unregisterAllRaw` / `listRaw`，兼容层提供
+  `sensors.register(...).on('change')` 轮询桥接与 `sensors.delay`。
+- 「权限与能力」页新增「修改系统设置」卡片，用于授权 `device.setBrightness`。
+- 新增多文件项目：ZIP 导入到应用私有目录，按 `izuki.project.json` / `project.json`
+  识别入口，支持相对 `require`、`index.js`、JSON 模块与 `package.json` main；
+  编辑器「项目文件」可切换入口与模块，批量导出包含完整项目目录。
+- 编辑器检测 Auto.js 风格写法并提示启用兼容层；`"ui";` UI 模式与 Node 引擎指令会
+  明确拒绝，避免静默失败。
+- 新增 `tools/autojs-compat` 诊断 CLI：`analyze` 生成兼容性报告，`lint` 用于 CI，
+  `import` 把目录导入为项目并写入 `izuki.project.json`。
+- 新增 [docs/LEGACY_COMPAT.md](docs/LEGACY_COMPAT.md)，记录支持范围、已知差异与路线图。
+
+### 变更
+
+- 兼容层新增 `colors.*`（32 位有符号 ARGB）；`images.pixel` 与 Auto.js 一样返回有符号整数。
+- 兼容层 `requestScreenCapture()` 明确只查询是否已授权，不会主动弹出录屏授权框。
+- `threads` / `engines`、E4X、Java 互操作等阻断项改为启动时明确拒绝，与诊断 CLI 保持一致。
+- 批量导出改为按原始字节打包项目目录，包含图片等非脚本资源。
+- 兼容脚本即使声明了 `@need`，也会自动注册兼容门面依赖的命名空间（`images` /
+  `storages` / `dialogs` / `sensors` / `fs` / `selector` 等），避免门面静默消失。
+
+### 修复
+
+- ZIP 项目导入时自动给入口补 `// @compat autojs6`，与 CLI 导入保持一致；解压增加单条目
+  字节预算并在移动前加文件锁。
+- 项目重命名会同步 `izuki.project.json` 的 `name`；项目内文件重命名不再移动到扁平脚本目录。
+- `require` 初始化失败会清理模块缓存，避免后续拿到空 `exports`。
+- 模块解析不再每次 `require` 全量扫描脚本与项目目录。
+- 兼容定时器按下一个到期时间休眠，停止请求立即唤醒，避免 16ms 空转。
+- 编辑器兼容性分析改为防抖并离开主线程，避免大文件输入卡顿。
+- 图片像素读取缓存最近解码结果；裁剪整图时不再重复 `recycle`，裁剪 / 缩放临时文件改为唯一命名。
+- 修正模板字符串 `${...}` 内的 API 调用未被兼容性分析识别的问题。
+- 修正比较表达式 `i < list.length` 被误判为 E4X XML 的问题（运行时与诊断 CLI 同步）。
+- 修正兼容层 `device` 方法门面丢弃参数的问题（`setMusicVolume(5)` 等现在能正确转发）。
+- 修复脚本根目录切到共享存储后，ZIP 导入因暂存目录与目标不在同一文件系统而失败的问题
+  （改为复制后删除暂存）。
+- 编辑器检测到 `"ui";` 等阻断指令时禁用「启用兼容」按钮，避免写入标记后仍被运行时拒绝。
+- 切换脚本目录的运行中检查移入仓库文件锁内，避免检查通过后立刻有新脚本启动。
+- 补充选择器诊断摘要中的新增条件（`idContains` / `checked` / `bounds` 等），并下调
+  `auto.dump` 单次节点硬上限。
+
 ## [1.2.6] - 2026-11-18
 
 ### 新增

@@ -68,20 +68,30 @@ class ScriptsViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     suspend fun exportZip(ids: List<String>, uri: Uri): Int = withContext(Dispatchers.IO) {
-        val entries = mutableListOf<Pair<String, String>>()
-        for (id in ids) {
-            val script = container.scriptRepository.findAsync(id) ?: continue
-            val content = runCatching { container.scriptRepository.read(script) }.getOrNull()
-                ?: continue
-            entries += (script.name + ".js") to content
-        }
-        if (entries.isEmpty() || !writeZipToUri(appContext, uri, entries)) 0 else entries.size
+        val scripts = ids.mapNotNull { container.scriptRepository.findAsync(it) }
+        if (scripts.isEmpty()) return@withContext 0
+        val entries = container.scriptRepository.archiveEntries(scripts)
+        if (entries.isEmpty()) return@withContext 0
+        if (writeZipToUri(appContext, uri, entries) > 0) scripts.size else 0
     }
 
     suspend fun importText(uri: Uri): ScriptInfo? = withContext(Dispatchers.IO) {
-        val text = readTextFromUri(appContext, uri) ?: return@withContext null
         val displayName = ScriptNameResolver.queryDisplayName(appContext.contentResolver, uri)
         val name = ScriptNameResolver.fromDocument(displayName, uri.lastPathSegment)
+        val isZip = displayName?.endsWith(".zip", ignoreCase = true) == true ||
+            uri.lastPathSegment?.endsWith(".zip", ignoreCase = true) == true ||
+            appContext.contentResolver.getType(uri)?.contains("zip", ignoreCase = true) == true
+        if (isZip) {
+            val input = runCatching {
+                appContext.contentResolver.openInputStream(uri)
+            }.getOrNull() ?: return@withContext null
+            return@withContext runCatching {
+                input.use { stream ->
+                    container.scriptRepository.importProjectZip(stream, name)
+                }
+            }.getOrNull()
+        }
+        val text = readTextFromUri(appContext, uri) ?: return@withContext null
         runCatching { container.scriptRepository.create(name, text) }.getOrNull()
     }
 

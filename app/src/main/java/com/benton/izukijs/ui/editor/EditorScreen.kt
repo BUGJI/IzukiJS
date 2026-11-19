@@ -92,6 +92,7 @@ import com.benton.izukijs.R
 import com.benton.izukijs.data.ScriptVersion
 import com.benton.izukijs.model.ScriptInfo
 import com.benton.izukijs.core.log.LogEntry
+import com.benton.izukijs.runtime.CompatMode
 import com.benton.izukijs.ui.appViewModel
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.IzukiPageScaffold
@@ -104,8 +105,10 @@ import com.benton.izukijs.ui.console.ConsolePanel
 import com.benton.izukijs.ui.rememberAppContainer
 import com.benton.izukijs.ui.theme.LocalIzukiDarkTheme
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,6 +128,11 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     val haptics = rememberAppHaptics()
 
     var script by remember(scriptId) { mutableStateOf<ScriptInfo?>(null) }
+    // 项目入口与项目内文件共用同一个编辑器路由；activeFile 只影响当前编辑的文档。
+    var activeFile by remember(scriptId) { mutableStateOf<ScriptInfo?>(null) }
+    var activeFileId by rememberSaveable(scriptId) { mutableStateOf<String?>(null) }
+    var projectFilesOpen by remember(scriptId) { mutableStateOf(false) }
+    var projectFiles by remember(scriptId) { mutableStateOf(emptyList<ScriptInfo>()) }
     var notFound by remember(scriptId) { mutableStateOf(false) }
     var loadError by remember(scriptId) { mutableStateOf(false) }
     var reloadToken by remember(scriptId) { mutableStateOf(0) }
@@ -175,17 +183,23 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                 return@LaunchedEffect
             }
             notFound = false
+            val restored = activeFileId?.takeIf { it != found.id }?.let {
+                container.scriptRepository.findAsync(it)
+            }
+            val target = restored ?: found
+            if (activeFile == null) activeFile = target
+            if (restored == null) activeFileId = found.id
             // 若编辑内容已由 SavedState 恢复（配置变更重建），不要再从磁盘覆盖，以免丢失未保存改动。
             if (!loaded) {
-                val text = container.scriptRepository.readAsync(found)
+                val text = container.scriptRepository.readAsync(target)
                 editorValue = TextFieldValue(text)
                 savedCode = text
-                viewModel.bindDocument(found.id, text)
+                viewModel.bindDocument(target.id, text)
                 viewModel.clearHistory()
                 loaded = true
             } else {
                 // 进程回收后 ViewModel 是新的，用恢复出来的保存基准重新绑定。
-                viewModel.bindDocument(found.id, savedCode)
+                viewModel.bindDocument(target.id, savedCode)
             }
         } catch (t: Throwable) {
             if (t is kotlinx.coroutines.CancellationException) throw t
@@ -197,7 +211,7 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         persistedContent?.let { savedCode = it }
     }
 
-    val current = script
+    val current = activeFile ?: script
     if (current == null || !loaded) {
         Scaffold(
             topBar = {
@@ -251,6 +265,16 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 
     val text = editorValue.text
+    // 兼容提示只读分析源码，不改变编辑器内容；用户忽略后本次编辑会话不再打扰。
+    // 分析会复制整份源码并跑多条正则，输入期间防抖到默认线程，避免大文件打字卡顿。
+    var compatAnalysis by remember(current.id) { mutableStateOf<CompatMode.Analysis?>(null) }
+    LaunchedEffect(current.id, text) {
+        val snapshot = text
+        delay(COMPAT_ANALYZE_DELAY_MS)
+        // 已启用兼容的脚本不再需要迁移提示，analyze 会跳过整份源码扫描。
+        compatAnalysis = withContext(Dispatchers.Default) { CompatMode.analyzeForEditor(snapshot) }
+    }
+    var compatHintDismissed by rememberSaveable(current.id) { mutableStateOf(false) }
     // ViewModel 的保存基准优先于本地镜像，避免并发保存完成顺序造成误判。
     val effectiveSaved = persistedContent ?: savedCode
     val dirty = text != effectiveSaved
@@ -496,6 +520,39 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         }
     }
 
+    fun openProjectFile(file: ScriptInfo) {
+        if (file.id == current.id) {
+            projectFilesOpen = false
+            return
+        }
+        scope.launch {
+            if (editorValue.text != effectiveSaved) {
+                when (persist(editorValue.text)) {
+                    is PersistOutcome.Saved -> Unit
+                    is PersistOutcome.Conflict -> return@launch
+                    is PersistOutcome.Failed -> {
+                        snackbar.show(resources.getString(R.string.editor_save_failed))
+                        return@launch
+                    }
+                }
+            }
+            val content = runCatching {
+                container.scriptRepository.readAsync(file)
+            }.getOrNull()
+            if (content == null) {
+                snackbar.show(resources.getString(R.string.editor_load_failed))
+                return@launch
+            }
+            activeFile = file
+            activeFileId = file.id
+            viewModel.bindDocument(file.id, content)
+            viewModel.clearHistory()
+            editorValue = TextFieldValue(content)
+            savedCode = content
+            projectFilesOpen = false
+        }
+    }
+
     fun codeFromCursor(): String {
         val text = editorValue.text
         val cursor = editorValue.selection.min.coerceIn(0, text.length)
@@ -602,6 +659,23 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                                     variablesOpen = true
                                 },
                             )
+                            if (current.projectRoot != null) {
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.editor_project_files)) },
+                                    onClick = {
+                                        historyMenuOpen = false
+                                        scope.launch {
+                                            projectFiles = withContext(Dispatchers.IO) {
+                                                container.scriptRepository.projectFiles(
+                                                    current.projectRoot.name,
+                                                )
+                                            }
+                                            projectFilesOpen = true
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                     if (running) {
@@ -650,6 +724,29 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
                             findVisible = false
                             focusRequester.requestFocus()
                         },
+                    )
+                }
+
+                val analysis = compatAnalysis
+                if (analysis != null && !analysis.enabled && !compatHintDismissed &&
+                    analysis.signals.isNotEmpty()
+                ) {
+                    CompatHintBanner(
+                        signals = analysis.signals,
+                        uiUnsupported = analysis.signals.any { it.code == "ui-mode" },
+                        onEnable = {
+                            val header = CompatMode.HEADER + "\n"
+                            val selection = editorValue.selection
+                            applyEdit(
+                                header + editorValue.text,
+                                TextRange(
+                                    selection.start + header.length,
+                                    selection.end + header.length,
+                                ),
+                            )
+                            compatHintDismissed = true
+                        },
+                        onDismiss = { compatHintDismissed = true },
                     )
                 }
 
@@ -782,6 +879,38 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
         )
     }
 
+    if (projectFilesOpen) {
+        AlertDialog(
+            onDismissRequest = { projectFilesOpen = false },
+            title = { Text(stringResource(R.string.editor_project_files)) },
+            text = {
+                if (projectFiles.isEmpty()) {
+                    Text(stringResource(R.string.editor_project_files_empty))
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(projectFiles, key = { it.id }) { file ->
+                            TextButton(
+                                onClick = { openProjectFile(file) },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(
+                                    file.relativePath ?: file.name,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { projectFilesOpen = false }) {
+                    Text(stringResource(R.string.common_close))
+                }
+            },
+        )
+    }
+
     if (history.open) {
         EditorHistoryDialog(
             history = history,
@@ -894,6 +1023,60 @@ fun EditorScreen(scriptId: String, onBack: () -> Unit) {
     }
 }
 
+@Composable
+private fun CompatHintBanner(
+    signals: List<CompatMode.Signal>,
+    uiUnsupported: Boolean,
+    onEnable: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, top = 8.dp, end = 4.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.editor_compat_hint_title),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                Text(
+                    stringResource(
+                        R.string.editor_compat_hint_detail,
+                        signals.take(3).joinToString(" / ") { it.label },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                if (uiUnsupported) {
+                    Text(
+                        stringResource(R.string.editor_compat_ui_unsupported),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+            // "ui" / Node 引擎指令即使写入标记也会在运行时被拒绝，直接禁用避免误导。
+            TextButton(onClick = onEnable, enabled = !uiUnsupported) {
+                Text(stringResource(R.string.editor_compat_enable))
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = stringResource(R.string.editor_compat_dismiss),
+                )
+            }
+        }
+    }
+}
+
 private const val AUTOSAVE_DELAY_MS = 800L
+private const val COMPAT_ANALYZE_DELAY_MS = 300L
 private const val LINE_HEIGHT_RATIO = 1.4f
 

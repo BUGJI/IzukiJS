@@ -11,6 +11,7 @@ import android.view.Display
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.annotation.RequiresApi
 import com.benton.izukijs.IzukiApp
 import com.benton.izukijs.controller.GesturePoint
@@ -267,6 +268,9 @@ class IzukiAccessibilityService : AccessibilityService(), AccessibilityServiceHa
     }
 
     override fun rootNode(): AccessibilityNodeInfo? = rootInActiveWindow
+
+    override fun windowList(): List<AccessibilityWindowInfo> =
+        runCatching { windows ?: emptyList() }.getOrDefault(emptyList())
 
     fun currentPackage(): String? = rootInActiveWindow?.packageName?.toString()
 

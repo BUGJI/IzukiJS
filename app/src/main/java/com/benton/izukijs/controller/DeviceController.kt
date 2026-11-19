@@ -77,7 +77,28 @@ data class NodeSnapshot(
     val visible: Boolean = true,
     val indexInParent: Int = 0,
     val depth: Int = 0,
+    val checkable: Boolean = false,
+    val checked: Boolean = false,
+    val focusable: Boolean = false,
+    val focused: Boolean = false,
+    val selected: Boolean = false,
+    val longClickable: Boolean = false,
+    val password: Boolean = false,
 )
+
+/** 屏幕坐标矩形，供选择器条件与快照匹配复用。 */
+data class NodeBounds(
+    val left: Int,
+    val top: Int,
+    val right: Int,
+    val bottom: Int,
+) {
+    fun contains(other: NodeBounds): Boolean =
+        left <= other.left && top <= other.top && right >= other.right && bottom >= other.bottom
+
+    fun inside(other: NodeBounds): Boolean =
+        left >= other.left && top >= other.top && right <= other.right && bottom <= other.bottom
+}
 
 /** 坐标点击与滑动能力。 */
 interface PointerController {

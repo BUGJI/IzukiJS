@@ -9,9 +9,13 @@ internal fun matchesNodeValue(
     exact: String?,
     contains: String?,
     regex: Regex?,
+    startsWith: String? = null,
+    endsWith: String? = null,
 ): Boolean {
     if (exact != null && value != exact) return false
     if (contains != null && (value == null || !value.contains(contains))) return false
+    if (startsWith != null && (value == null || !value.startsWith(startsWith))) return false
+    if (endsWith != null && (value == null || !value.endsWith(endsWith))) return false
     if (regex != null && (value == null || !regex.containsMatchIn(value))) return false
     return true
 }

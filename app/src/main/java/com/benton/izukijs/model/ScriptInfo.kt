@@ -15,4 +15,10 @@ data class ScriptInfo(
     val name: String,
     val file: File,
     val updatedAt: Long,
+    /** 项目脚本的根目录；普通脚本为 null。 */
+    val projectRoot: File? = null,
+    /** 相对项目根的文件路径，统一使用 `/`。 */
+    val relativePath: String? = null,
+    /** 是否为项目入口（脚本列表只展示入口）。 */
+    val isProjectEntry: Boolean = false,
 )

@@ -32,6 +32,7 @@ Windows 用 `gradlew.bat`。没有单独的 format 命令；遵循 `.editorconfi
 | 控制后端 / 能力协商 | `model/ControlMode.kt`、`model/Capability.kt`、`controller/DeviceController.kt`、`controller/ControllerManager.kt` |
 | 脚本 API | `runtime/api/ScriptApiCatalog.kt`、`runtime/api/ScriptApiEnvironment.kt`、`assets/runtime/prelude.js` |
 | 脚本运行状态机 | `runtime/ScriptExecutionManager.kt`、`runtime/RunPreparer.kt`、`runtime/JsEngine.kt` |
+| 旧脚本兼容 / Auto.js 迁移 | `runtime/CompatMode.kt`、`assets/runtime/compat/`、`tools/autojs-compat/`、`docs/LEGACY_COMPAT.md` |
 | 截图 / 虚拟屏 | `runtime/api/DeviceApiBundle.kt`、`service/ScreenCapture.kt`、`virtualscreen/VirtualScreenManager.kt` |
 | 识别 / OCR | `vision/VisionEngine.kt`、`ocr/OcrProcessor.kt` |
 | pipeline | `pipeline/PipelineSpec.kt`、`PipelineParser.kt`、`DevicePipelineActions.kt` |

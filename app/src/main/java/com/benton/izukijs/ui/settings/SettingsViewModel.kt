@@ -24,6 +24,8 @@ import com.benton.izukijs.notification.NotifyReport
 import com.benton.izukijs.model.Capability
 import com.benton.izukijs.model.ControlMode
 import com.benton.izukijs.model.ScriptInfo
+import com.benton.izukijs.data.ScriptStorageSettings
+import com.benton.izukijs.data.ScriptStorageSwitchResult
 import com.benton.izukijs.ocr.OcrConfig
 import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.runtime.LogSettings
@@ -70,6 +72,8 @@ data class SettingsUiState(
     val notificationSettings: NotificationSettings = NotificationSettings(),
     val editorSettings: EditorSettings = EditorSettings(),
     val developerSettings: DeveloperSettings = DeveloperSettings(),
+    val scriptStorage: ScriptStorageSettings = ScriptStorageSettings(),
+    val scriptRunning: Boolean = false,
     val recordingActive: Boolean = false,
     val recordingKind: String = "script",
     val recordingInputSource: String = "",
@@ -154,6 +158,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         container.developerSettingsRepository.settings.collectInto { state, value ->
             state.copy(developerSettings = value)
         }
+        container.scriptStorageRepository.settings.collectInto { state, value ->
+            state.copy(scriptStorage = value)
+        }
+        container.scriptExecutionManager.running.collectInto { state, value ->
+            state.copy(scriptRunning = value)
+        }
         container.recordingSession.active.collectInto { state, value ->
             state.copy(recordingActive = value)
         }
@@ -214,6 +224,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun saveLanguage(value: AppLanguage) = container.languageRepository.save(value)
 
     fun saveEditorSettings(value: EditorSettings) = container.editorSettingsRepository.save(value)
+
+    fun currentScriptStorageRoot(): File = container.scriptStorageRepository.root()
+
+    /** 运行中拒绝切换，避免编辑器 / 订阅 / 定时任务在切换瞬间拿到不同目录。 */
+    suspend fun switchScriptStorage(
+        newRootPath: String?,
+        copyExisting: Boolean,
+    ): ScriptStorageSwitchResult = withContext(Dispatchers.IO) {
+        // 运行状态在仓库的文件锁内复核，避免检查后立刻有新脚本启动。
+        container.scriptRepository.switchStorageRoot(
+            newRootPath = newRootPath,
+            copyExisting = copyExisting,
+            isRunning = { container.scriptExecutionManager.running.value },
+        )
+    }
 
     fun saveDeveloperSettings(value: DeveloperSettings) =
         container.developerSettingsRepository.save(value)

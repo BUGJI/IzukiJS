@@ -1,0 +1,12 @@
+{
+  "name": "izuki-autojs-compat",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "autojs-compat": "./bin/autojs-compat.mjs"
+  },
+  "scripts": {
+    "test": "node test/analyze.test.mjs && node test/compat-core.test.mjs"
+  }
+}

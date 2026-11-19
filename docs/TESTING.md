@@ -9,6 +9,7 @@
 |---|---|---|---|
 | JVM 单元测试 | `app/src/test/java/` | 本机 JVM，无 Android 运行时 | 解析器、协议、状态机、纯函数、JSON / 文本处理、录制回放 |
 | Instrumentation | `app/src/androidTest/java/` | 真机 / 模拟器 | 需要 `Context`、系统服务、Binder 的集成验证；目前仅少量原型 |
+| 旧脚本兼容 CLI | `tools/autojs-compat/test/` | Node.js | 兼容性分析、`autojs6-core.js` 门面、项目导入；与 `CompatSignalCorpusTest` 共享 `corpus/signals.json` |
 | 手动矩阵 | 真机 | 多版本 / 多后端 | 无障碍、Shizuku、无线调试、Root、HID、虚拟屏、PiP、权限流程 |
 | 性能基线 | 真机 | 见 [PERF.md](PERF.md) | 帧耗时、截图 / 找图 / OCR 热路径、日志与悬浮窗开销 |
 
@@ -32,6 +33,9 @@
 
 # 构建
 ./gradlew assembleDebug
+
+# 旧脚本兼容 CLI 与 JS 门面自检
+npm --prefix tools/autojs-compat test
 ```
 
 Windows 使用 `gradlew.bat`。测试报告在 `app/build/reports/tests/testDebugUnitTest/index.html`。
@@ -172,6 +176,7 @@ private class FakeActions(
 | 忙时策略 | 拒绝 / 排队 / 终止；覆盖手动、磁贴、定时、编排、MCP；停止时清空排队、后到覆盖 |
 | 音量键快速停止 | 无障碍开 / 关；音量加 / 减 / 任一 × 单击 / 双击 / 长按；脚本 `press()` 注入不触发；音量最小 / 最大；息屏 / 锁屏 |
 | 权限 | 首次授权、已授权、撤销后重进、未授权降级 |
+| 脚本目录 | 默认 / 共享存储（需全部文件访问）；切换时复制 / 不复制；同名冲突、只读目录、运行中切换 |
 
 ### 内置自检脚本
 
@@ -186,6 +191,8 @@ PASS / FAIL / WARN / SKIP 写入应用日志。`ROUNDS` 控制截图 / 识别重
 - 旋转后截图、点击坐标、悬浮窗位置、HID 分辨率是否同步；
 - 虚拟屏与主屏目标切换后，`click` / `ocr` / `captureScreen` 是否打到正确屏幕；
 - 撤销权限后，能力协商是否回退到可用后端，而不是继续报成功；
+- 切换脚本目录后，脚本列表、`require`、定时任务 / 编排 / 订阅是否仍按 id 找到脚本；
+  外部修改文件后返回列表是否自动刷新，编辑器保存是否触发内容冲突提示；
 - 终止策略下旧脚本 15 秒未退出时，新脚本启动后通知、虚拟屏、前台服务与脚本录制是否归新 run
   所有；旧脚本恢复后是否按「停止」收尾且不再操作设备。
 

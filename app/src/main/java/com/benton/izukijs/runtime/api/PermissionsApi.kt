@@ -49,6 +49,10 @@ class PermissionsApi(
     @JavascriptInterface
     fun notifications(): Boolean = SystemPermissionChecks.notificationsEnabled(context)
 
+    /** 修改系统设置（WRITE_SETTINGS）；`device.setBrightness` 等需要。 */
+    @JavascriptInterface
+    fun writeSettings(): Boolean = SystemPermissionChecks.canWriteSettings(context)
+
     @JavascriptInterface
     fun bluetooth(): Boolean = SystemPermissionChecks.bluetoothGranted(context)
 
@@ -146,6 +150,7 @@ class PermissionsApi(
         "usageAccess" to usageAccess(),
         "notificationListener" to notificationListener(),
         "manageStorage" to manageStorage(),
+        "writeSettings" to writeSettings(),
         "localNetwork" to localNetwork(),
         "exactAlarm" to exactAlarm(),
         "installUnknownApps" to installUnknownApps(),

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "legacy-selector",
+    "source": "text('登录').findOne();",
+    "contains": ["legacy-selector", "legacy-selector-chain"]
+  },
+  {
+    "name": "java-interop",
+    "source": "importClass(android.content.Intent);",
+    "contains": ["java-interop"]
+  },
+  {
+    "name": "device-property",
+    "source": "var w = device.width;",
+    "contains": ["legacy-device-property"]
+  },
+  {
+    "name": "timers",
+    "source": "setInterval(function () {}, 1000);",
+    "contains": ["legacy-timers"]
+  },
+  {
+    "name": "template-interpolation",
+    "source": "var s = `x ${text('登录')} y`;",
+    "contains": ["legacy-selector"]
+  },
+  {
+    "name": "relative-require",
+    "source": "var utils = require('./utils');",
+    "contains": ["legacy-require-relative"]
+  },
+  {
+    "name": "e4x",
+    "source": "ui.layout(<vertical><button text=\"ok\"/></vertical>);",
+    "contains": ["legacy-e4x"]
+  },
+  {
+    "name": "comments-ignored",
+    "source": "// text('登录').findOne();\nvar s = \"importClass(x)\";\nlog('ok');",
+    "contains": []
+  }
+]

@@ -35,6 +35,15 @@ class NodeCriteriaMatchTest {
     }
 
     @Test
+    fun startsWithAndEndsWithUseWholeValue() {
+        assertTrue(matchesNodeValue("立即登录", null, null, null, "立即", null))
+        assertTrue(matchesNodeValue("立即登录", null, null, null, null, "登录"))
+        assertFalse(matchesNodeValue("立即登录", null, null, null, "登录", null))
+        assertFalse(matchesNodeValue("立即登录", null, null, null, null, "立即"))
+        assertFalse(matchesNodeValue(null, null, null, null, "立即", null))
+    }
+
+    @Test
     fun conditionsAreCombinedWithAnd() {
         assertTrue(matchesNodeValue("立即登录", "立即登录", "登录", Regex("^立即")))
         assertFalse(matchesNodeValue("立即登录", "登录", "登录", null))

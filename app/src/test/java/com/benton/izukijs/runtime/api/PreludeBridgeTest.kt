@@ -56,6 +56,13 @@ class PreludeBridgeTest {
         val RAW_DEFINITION = Regex("""fun\s+([A-Za-z0-9_]+Raw)\s*\(""")
 
         /** 直接暴露给脚本、但不需要 prelude 包装的便利 Raw 接口。 */
-        val LOW_LEVEL_ALLOWLIST = setOf("findImageRaw", "findImageInRaw", "findColorRaw")
+        val LOW_LEVEL_ALLOWLIST = setOf(
+            "findImageRaw", "findImageInRaw", "findColorRaw",
+            "sizeRaw", "pixelRaw", "saveRaw", "clipRaw", "clipToCacheRaw",
+            "resizeRaw", "resizeToCacheRaw",
+            "putRaw", "removeRaw", "containsRaw", "clearRaw", "keysRaw",
+            "showRaw", "dumpRaw", "windowsRaw",
+            "registerRaw", "pollRaw", "unregisterRaw", "unregisterAllRaw", "listRaw",
+        )
     }
 }

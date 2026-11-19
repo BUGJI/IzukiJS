@@ -135,6 +135,9 @@ fun PermissionScreen(
     val usageAccessGranted = remember(permissionRefresh) { hasUsageAccess(context) }
     val notificationListenerGranted = remember(permissionRefresh) { hasNotificationListener(context) }
     val allFilesGranted = remember(permissionRefresh) { hasAllFilesAccess(context) }
+    val writeSettingsGranted = remember(permissionRefresh) {
+        SystemPermissionChecks.canWriteSettings(context)
+    }
     val ignoringBatteryOptimizations = remember(permissionRefresh) { isIgnoringBatteryOptimizations(context) }
     val notificationsGranted = remember(permissionRefresh) { SystemPermissionChecks.notificationsEnabled(context) }
     val overlayGranted = remember(permissionRefresh) { SystemPermissionChecks.canDrawOverlays(context) }
@@ -229,6 +232,7 @@ fun PermissionScreen(
         usageAccessGranted = usageAccessGranted,
         notificationListenerGranted = notificationListenerGranted,
         allFilesGranted = allFilesGranted,
+        writeSettingsGranted = writeSettingsGranted,
         ignoringBatteryOptimizations = ignoringBatteryOptimizations,
         notificationsGranted = notificationsGranted,
         overlayGranted = overlayGranted,
@@ -284,6 +288,14 @@ fun PermissionScreen(
         },
         saveRuntimeSettings = ::saveRuntimeSettings,
         saveHttpSettings = ::saveHttpSettings,
+        openWriteSettingsSettings = {
+            openSystemSettings(
+                Intent(
+                    Settings.ACTION_MANAGE_WRITE_SETTINGS,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        },
         openBatterySettings = ::openBatterySettings,
         requestNotifications = {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -410,6 +422,8 @@ fun PermissionScreen(
                             UsageAccessCard(state, actions)
                             Spacer(Modifier.height(12.dp))
                             AllFilesCard(state, actions)
+                            Spacer(Modifier.height(12.dp))
+                            WriteSettingsCard(state, actions)
                         }
 
                         PermissionGroup.OPERATE -> {

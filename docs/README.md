@@ -12,6 +12,7 @@
 | [README](../README.md) | 项目介绍、特性、安装、首次使用 |
 | [AGENT_OVERVIEW.md](AGENT_OVERVIEW.md) | 面向 AI Agent 的功能与开关总览（界面布局、各开关作用与影响） |
 | [SCRIPT_API.md](SCRIPT_API.md) | 脚本 API：全局函数、输入、选择器、找图、OCR、AI、pipeline 等 |
+| [LEGACY_COMPAT.md](LEGACY_COMPAT.md) | 从 AutoX / AutoJs6 / Auto.js 迁移旧脚本：兼容模式、诊断 CLI、支持范围 |
 | [TOOLS.md](TOOLS.md) | 界面与工具：权限与能力、录屏、悬浮窗、定时任务、日志、设置项 |
 | [CONTROL_MODES.md](CONTROL_MODES.md) | 控制模式能力矩阵、权限风险、手势 / 按键限制、截图来源 |
 | [MCP.md](MCP.md) | 把设备能力暴露给外部 AI 客户端 |
@@ -39,6 +40,7 @@
 | 我想…… | 先看 |
 |---|---|
 | 写一个能跑起来的脚本 | [README 快速开始](../README.md#快速开始) → [SCRIPT_API.md](SCRIPT_API.md) |
+| 把 Auto.js / AutoX / AutoJs6 旧脚本迁过来 | [LEGACY_COMPAT.md](LEGACY_COMPAT.md) |
 | 把程序介绍给别的 AI Agent / 查某个开关有什么用 | [AGENT_OVERVIEW.md](AGENT_OVERVIEW.md) |
 | 知道某个权限能做什么、有什么风险 | [CONTROL_MODES.md](CONTROL_MODES.md) → [TOOLS.md](TOOLS.md) |
 | 读取通知 / Toast / 无障碍事件 | [SCRIPT_API.md](SCRIPT_API.md#notify通知监听--脚本进度通知) → [SCRIPT_API.md](SCRIPT_API.md#events无障碍事件) |

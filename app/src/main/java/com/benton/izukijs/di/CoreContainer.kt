@@ -13,6 +13,7 @@ import com.benton.izukijs.data.ScriptEnvRepository
 import com.benton.izukijs.data.ScriptImporter
 import com.benton.izukijs.data.ScriptListPreferences
 import com.benton.izukijs.data.ScriptRepository
+import com.benton.izukijs.data.ScriptStorageRepository
 import com.benton.izukijs.data.TileSettingsRepository
 import com.benton.izukijs.data.UnlockSettingsRepository
 import com.benton.izukijs.developer.DeveloperSettingsRepository
@@ -57,7 +58,9 @@ class CoreContainer(val application: Application) {
 
     val cacheImageStore = CacheImageStore(application)
 
-    val scriptRepository = ScriptRepository(application)
+    val scriptStorageRepository = ScriptStorageRepository(application)
+
+    val scriptRepository = ScriptRepository(application, scriptStorageRepository)
 
     val scriptImporter = ScriptImporter(application, scriptRepository, logBus)
 

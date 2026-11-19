@@ -258,11 +258,16 @@ McpServerService（前台服务保活）
 
 ## 数据与持久化
 
+脚本根目录可通过「设置 → 存储 → 脚本目录」配置，默认是 `Context.filesDir`；根目录下固定使用
+`scripts/` 与 `projects/` 两个子目录。外部目录需要「全部文件访问」权限。下表除特别说明外，
+均以默认根目录为例；脚本历史始终留在应用私有目录。
+
 应用私有目录（`Context.filesDir`）：
 
 | 路径 | 内容 |
 |---|---|
-| `scripts/*.js` | 用户脚本；文件名即脚本 id |
+| `scripts/*.js` | 用户脚本；文件名即脚本 id（可被脚本根目录重定向） |
+| `projects/<id>/` | 多文件项目；根目录同样可被重定向 |
 | `script_history/<scriptId>/<timestamp>.js` | 脚本历史版本（10 分钟节流，最多 20 个） |
 | `logs/app.log` | 运行日志，格式 `时间戳|级别|内容` |
 | `recordings/<id>/` | 操作录制：`meta.json` + `events.jsonl` + 帧文件 |
@@ -295,6 +300,7 @@ SharedPreferences（名称即文件）：
 | `izukijs_editor` / `izukijs_appearance` / `izukijs_language` | 编辑器、外观、语言 |
 | `izukijs_developer` | 开发者选项 |
 | `izukijs_update` / `izukijs_tile` / `izukijs_run_history` / `izukijs_script_list` / `izukijs_scripts` / `izukijs_hid` | 其余偏好 |
+| `izukijs_script_storage` | 脚本根目录（为空表示 `filesDir`） |
 
 加密：`security/SecretCipher.kt` 使用 Android Keystore 的 AES-GCM 密钥
 （别名 `izuki_secret_v1`），密文格式 `v1:<base64(iv+ciphertext)>`。Keystore 异常时

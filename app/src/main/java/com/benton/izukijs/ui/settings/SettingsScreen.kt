@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Gamepad
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
@@ -430,6 +431,11 @@ private fun settingsSearchEntries(
         stringResource(R.string.storage_log_title),
         "日志 存储 上限 log storage size",
         Icons.AutoMirrored.Filled.Article,
+    ) { onOpenCategory(SettingsCategory.LOG) },
+    SettingsSearchEntry(
+        stringResource(R.string.script_storage_title),
+        "脚本 目录 存储 外部 script directory storage external",
+        Icons.Filled.Folder,
     ) { onOpenCategory(SettingsCategory.LOG) },
     SettingsSearchEntry(
         stringResource(R.string.storage_retention_days),

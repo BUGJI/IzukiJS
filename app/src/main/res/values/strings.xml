@@ -333,6 +333,8 @@
     <string name="perm_applist_switch">允许枚举已安装应用</string>
     <string name="perm_allfiles_title">全部文件访问</string>
     <string name="perm_allfiles_desc">允许脚本读写共享存储中的任意文件（如 /sdcard 路径）。</string>
+    <string name="perm_writesettings_title">修改系统设置</string>
+    <string name="perm_writesettings_desc">允许脚本调整屏幕亮度等系统设置（device.setBrightness）。</string>
     <string name="perm_http_title">脚本网络（HTTP）</string>
     <string name="perm_http_desc">允许脚本通过 http.request / get / post 访问网络，用于 Webhook、验证码服务等；默认关闭，建议配置域名白名单。</string>
     <string name="perm_http_enable">启用脚本网络</string>
@@ -468,7 +470,7 @@
     <string name="settings_unlock">安全解锁</string>
     <string name="settings_editor">编辑器</string>
     <string name="settings_ai_agent">AI Agent</string>
-    <string name="settings_storage">日志</string>
+    <string name="settings_storage">存储</string>
     <string name="settings_record">录制管理</string>
     <string name="settings_record_summary">录制用户操作或脚本动作，查看时间线并清理文件</string>
     <string name="settings_backup">备份与恢复</string>
@@ -792,6 +794,38 @@
     <string name="storage_cache_images_clear">清理缓存图片</string>
     <string name="storage_cache_images_confirm">确定清理全部缓存图片吗？此操作不可撤销。</string>
 
+    <!-- 脚本目录 -->
+    <string name="script_storage_title">脚本目录</string>
+    <string name="script_storage_desc">脚本与多文件项目保存在所选目录的 scripts/ 与 projects/ 子目录中。外部目录需要「全部文件访问」权限；外部修改不会写入应用内历史版本。</string>
+    <string name="script_storage_default">默认（应用私有目录）</string>
+    <string name="script_storage_custom">自定义目录</string>
+    <string name="script_storage_choose">选择目录</string>
+    <string name="script_storage_recommended">使用推荐目录</string>
+    <string name="script_storage_reset">恢复默认</string>
+    <string name="script_storage_copy_path">复制路径</string>
+    <string name="script_storage_copied">路径已复制</string>
+    <string name="script_storage_running">脚本运行中，请先停止后再切换目录。</string>
+    <string name="script_storage_permission_title">需要全部文件访问</string>
+    <string name="script_storage_permission_desc">无法读取或写入共享存储中的目录。请授予「全部文件访问」，或选择应用可写的目录。</string>
+    <string name="script_storage_permission_action">去授权</string>
+    <string name="script_storage_invalid">目录无效，请选择绝对路径。</string>
+    <string name="script_storage_nested">新旧目录不能互相包含，请选择独立目录。</string>
+    <string name="script_storage_not_writable">目录不可写：%1$s</string>
+    <string name="script_storage_unchanged">当前已经是该目录。</string>
+    <string name="script_storage_switch_title">切换脚本目录</string>
+    <string name="script_storage_switch_message">脚本与项目将保存到：\n%1$s</string>
+    <string name="script_storage_switch_copy">同时复制现有脚本（不覆盖同名文件）</string>
+    <string name="script_storage_switch_confirm">切换</string>
+    <string name="script_storage_switch_result">已切换目录：复制 %1$d 个，跳过 %2$d 个，失败 %3$d 个</string>
+    <string name="script_storage_switch_result_plain">脚本目录已切换。</string>
+    <string name="script_storage_picker_title">选择脚本根目录</string>
+    <string name="script_storage_picker_manual">手动输入路径</string>
+    <string name="script_storage_picker_go">跳转</string>
+    <string name="script_storage_picker_up">上级目录</string>
+    <string name="script_storage_picker_empty">没有可访问的子目录</string>
+    <string name="script_storage_picker_select">使用此目录</string>
+    <string name="script_storage_picker_invalid">路径不存在或不是目录</string>
+
     <!-- 关于 -->
     <string name="about_name">IzukiJS</string>
     <string name="about_version">版本 %1$s (%2$d)</string>
@@ -1057,6 +1091,13 @@
     <string name="editor_expand_console">展开控制台</string>
     <string name="editor_collapse_console">收起控制台</string>
     <string name="editor_placeholder">// 在此编写 JS 脚本</string>
+    <string name="editor_compat_hint_title">检测到 Auto.js 风格脚本</string>
+    <string name="editor_compat_hint_detail">识别到：%1$s。可标记为兼容脚本；UI 模式与 Java 互操作仍不支持。</string>
+    <string name="editor_compat_enable">启用兼容层</string>
+    <string name="editor_compat_dismiss">忽略</string>
+    <string name="editor_compat_ui_unsupported">检测到 &quot;ui&quot;; 指令，兼容层暂不支持 UI 模式。</string>
+    <string name="editor_project_files">项目文件</string>
+    <string name="editor_project_files_empty">项目没有可编辑的脚本文件</string>
     <string name="editor_undo">撤销</string>
     <string name="editor_redo">重做</string>
     <string name="editor_find">查找</string>

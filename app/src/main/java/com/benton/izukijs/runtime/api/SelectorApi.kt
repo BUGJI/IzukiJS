@@ -4,6 +4,7 @@ import android.graphics.Rect
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.webkit.JavascriptInterface
+import com.benton.izukijs.controller.NodeBounds
 import com.benton.izukijs.controller.NodeSnapshot
 import com.benton.izukijs.controller.accessibility.AccessibilityController
 import com.benton.izukijs.controller.accessibility.SelectorCodegen
@@ -326,6 +327,65 @@ class SelectorApi(
         errorJson(it.message ?: "选择器 DSL 解析失败")
     }
 
+    /**
+     * 控件树快照（供兼容层的 `auto.dump` 使用）。
+     * 选项见 [SelectorDump.Options]；无无障碍时返回 `ok:false`。
+     */
+    @JavascriptInterface
+    fun dumpRaw(optionsJson: String): String {
+        val root = runCatching { controller()?.nodeTree() }.getOrNull()
+            ?: return errorJson("无法读取控件树，需开启无障碍")
+        return runCatching {
+            SelectorDump.render(root, SelectorDump.parseOptions(optionsJson)).toString()
+        }.getOrElse {
+            logBus.warn("控件树 dump 失败: ${it.message}")
+            errorJson("控件树 dump 失败: ${it.message ?: "未知原因"}")
+        }
+    }
+
+    /** 可见窗口列表（供兼容层的 `auto.windows` 使用）。 */
+    @JavascriptInterface
+    fun windowsRaw(): String {
+        val windows = runCatching { controller()?.windowList() }.getOrNull() ?: return "[]"
+        val array = JSONArray()
+        windows.forEach { window ->
+            val item = JSONObject().apply {
+                put("type", window.type)
+                put("active", window.isActive)
+                put("focused", window.isFocused)
+                put("accessibilityFocused", window.isAccessibilityFocused)
+                put("layer", window.layer)
+                put("id", window.id)
+            }
+            val root = window.root
+            if (root != null) {
+                try {
+                    item.put("packageName", root.packageName ?: JSONObject.NULL)
+                    val rect = Rect()
+                    root.getBoundsInScreen(rect)
+                    item.put(
+                        "bounds",
+                        JSONArray().apply {
+                            put(rect.left)
+                            put(rect.top)
+                            put(rect.right)
+                            put(rect.bottom)
+                        },
+                    )
+                } catch (t: Throwable) {
+                    logBus.warn("读取窗口根节点失败: ${t.message}")
+                } finally {
+                    root.releaseNode()
+                }
+            } else {
+                item.put("packageName", JSONObject.NULL)
+                item.put("bounds", JSONObject.NULL)
+            }
+            array.put(item)
+        }
+        return array.toString()
+    }
+
     /** 解释选择器在每一层条件上的命中数，定位第一个筛空条件。 */
     @JavascriptInterface
     fun explainRaw(optionsJson: String): String = explainRawWithTree(null, optionsJson)
@@ -496,6 +556,13 @@ class SelectorApi(
             put("editable", isEditable)
             put("scrollable", isScrollable)
             put("enabled", isEnabled)
+            put("visible", isVisibleToUser)
+            put("checkable", isCheckable)
+            put("checked", isChecked)
+            put("focusable", isFocusable)
+            put("focused", isFocused)
+            put("selected", isSelected)
+            put("password", isPassword)
             put("index", index)
         }
     }
@@ -506,25 +573,60 @@ class SelectorApi(
             logBus.warn("选择器参数无效: ${obj.optString("error").ifBlank { "ok=false" }}")
             return null
         }
-        val textRegex = obj.optionalString("textRegex")
-        val descRegex = obj.optionalString("descRegex")
+        val viewIdRegex = obj.optionalString("idRegex", "viewIdRegex", "idMatches", "viewIdMatches")
+        val textRegex = obj.optionalString("textRegex", "textMatches")
+        val descRegex = obj.optionalString("descRegex", "descMatches")
+        val classNameRegex = obj.optionalString("classNameRegex", "classNameMatches")
+        val packageRegex = obj.optionalString("packageNameRegex", "packageNameMatches")
+        validateRegex("idRegex", viewIdRegex)
         validateRegex("textRegex", textRegex)
         validateRegex("descRegex", descRegex)
+        validateRegex("classNameRegex", classNameRegex)
+        validateRegex("packageNameRegex", packageRegex)
         AccessibilityController.NodeCriteria(
             viewId = obj.optionalString("id", "viewId"),
+            viewIdContains = obj.optionalString("idContains", "viewIdContains"),
+            viewIdStartsWith = obj.optionalString("idStartsWith", "viewIdStartsWith"),
+            viewIdEndsWith = obj.optionalString("idEndsWith", "viewIdEndsWith"),
+            viewIdRegex = viewIdRegex,
             text = obj.optionalString("text"),
             textContains = obj.optionalString("textContains", "contains"),
+            textStartsWith = obj.optionalString("textStartsWith"),
+            textEndsWith = obj.optionalString("textEndsWith"),
             textRegex = textRegex,
             desc = obj.optionalString("desc", "description", "contentDescription"),
             descContains = obj.optionalString("descContains"),
+            descStartsWith = obj.optionalString("descStartsWith"),
+            descEndsWith = obj.optionalString("descEndsWith"),
             descRegex = descRegex,
             className = obj.optionalString("className", "class"),
+            classNameContains = obj.optionalString("classNameContains"),
+            classNameStartsWith = obj.optionalString("classNameStartsWith"),
+            classNameEndsWith = obj.optionalString("classNameEndsWith"),
+            classNameRegex = classNameRegex,
             clickable = obj.optionalBoolean("clickable"),
+            longClickable = obj.optionalBoolean("longClickable"),
             editable = obj.optionalBoolean("editable"),
             scrollable = obj.optionalBoolean("scrollable"),
             enabled = obj.optionalBoolean("enabled"),
-            visible = obj.optionalBoolean("visible"),
+            visible = obj.optionalBoolean("visible", "visibleToUser"),
+            checkable = obj.optionalBoolean("checkable"),
+            checked = obj.optionalBoolean("checked"),
+            focusable = obj.optionalBoolean("focusable"),
+            focused = obj.optionalBoolean("focused"),
+            selected = obj.optionalBoolean("selected"),
+            password = obj.optionalBoolean("password"),
             packageName = obj.optionalString("package", "packageName"),
+            packageNameContains = obj.optionalString("packageContains", "packageNameContains"),
+            packageNameStartsWith = obj.optionalString(
+                "packageStartsWith",
+                "packageNameStartsWith",
+            ),
+            packageNameEndsWith = obj.optionalString("packageEndsWith", "packageNameEndsWith"),
+            packageNameRegex = packageRegex,
+            bounds = obj.optionalBounds("bounds"),
+            boundsInside = obj.optionalBounds("boundsInside"),
+            boundsContains = obj.optionalBounds("boundsContains"),
         )
     } catch (t: Throwable) {
         logBus.warn("选择器参数无效: ${t.message}")
@@ -549,26 +651,115 @@ class SelectorApi(
         return null
     }
 
-    private fun JSONObject.optionalBoolean(key: String): Boolean? =
-        if (has(key) && !isNull(key)) optBoolean(key) else null
+    private fun JSONObject.optionalBoolean(vararg keys: String): Boolean? {
+        for (key in keys) {
+            if (has(key) && !isNull(key)) return optBoolean(key)
+        }
+        return null
+    }
+
+    private fun JSONObject.optionalBounds(vararg keys: String): NodeBounds? {
+        for (key in keys) {
+            if (!has(key) || isNull(key)) continue
+            val value = opt(key)
+            when (value) {
+                is JSONObject -> {
+                    if (value.has("left") || value.has("top") ||
+                        value.has("right") || value.has("bottom")
+                    ) {
+                        return NodeBounds(
+                            left = value.optInt("left", 0),
+                            top = value.optInt("top", 0),
+                            right = value.optInt("right", 0),
+                            bottom = value.optInt("bottom", 0),
+                        )
+                    }
+                    if (value.has("x") || value.has("y") ||
+                        value.has("width") || value.has("height")
+                    ) {
+                        val x = value.optInt("x", 0)
+                        val y = value.optInt("y", 0)
+                        return NodeBounds(
+                            left = x,
+                            top = y,
+                            right = x + value.optInt("width", 0),
+                            bottom = y + value.optInt("height", 0),
+                        )
+                    }
+                }
+
+                is JSONArray -> {
+                    if (value.length() >= 4) {
+                        return NodeBounds(
+                            left = value.optInt(0, 0),
+                            top = value.optInt(1, 0),
+                            right = value.optInt(2, 0),
+                            bottom = value.optInt(3, 0),
+                        )
+                    }
+                }
+
+                is String -> {
+                    val parts = value.split(',').map { it.trim().toIntOrNull() }
+                    if (parts.size >= 4 && parts.take(4).all { it != null }) {
+                        return NodeBounds(
+                            left = parts[0]!!,
+                            top = parts[1]!!,
+                            right = parts[2]!!,
+                            bottom = parts[3]!!,
+                        )
+                    }
+                }
+            }
+        }
+        return null
+    }
 
     private fun AccessibilityController.NodeCriteria.summary(): String = buildString {
         append("{")
         val parts = listOfNotNull(
             viewId?.let { "id=$it" },
+            viewIdContains?.let { "idContains=$it" },
+            viewIdStartsWith?.let { "idStartsWith=$it" },
+            viewIdEndsWith?.let { "idEndsWith=$it" },
+            viewIdRegex?.let { "idMatches=$it" },
             text?.let { "text=$it" },
             textContains?.let { "textContains=$it" },
+            textStartsWith?.let { "textStartsWith=$it" },
+            textEndsWith?.let { "textEndsWith=$it" },
             textRegex?.let { "textRegex=$it" },
             desc?.let { "desc=$it" },
             descContains?.let { "descContains=$it" },
+            descStartsWith?.let { "descStartsWith=$it" },
+            descEndsWith?.let { "descEndsWith=$it" },
             descRegex?.let { "descRegex=$it" },
             className?.let { "class=$it" },
+            classNameContains?.let { "classContains=$it" },
+            classNameStartsWith?.let { "classStartsWith=$it" },
+            classNameEndsWith?.let { "classEndsWith=$it" },
+            classNameRegex?.let { "classMatches=$it" },
             clickable?.let { "clickable=$it" },
+            longClickable?.let { "longClickable=$it" },
             editable?.let { "editable=$it" },
             scrollable?.let { "scrollable=$it" },
             enabled?.let { "enabled=$it" },
             visible?.let { "visible=$it" },
+            checkable?.let { "checkable=$it" },
+            checked?.let { "checked=$it" },
+            focusable?.let { "focusable=$it" },
+            focused?.let { "focused=$it" },
+            selected?.let { "selected=$it" },
+            password?.let { "password=$it" },
             packageName?.let { "package=$it" },
+            packageNameContains?.let { "packageContains=$it" },
+            packageNameStartsWith?.let { "packageStartsWith=$it" },
+            packageNameEndsWith?.let { "packageEndsWith=$it" },
+            packageNameRegex?.let { "packageMatches=$it" },
+            bounds?.let { "bounds=${it.left},${it.top},${it.right},${it.bottom}" },
+            boundsInside?.let { "boundsInside=${it.left},${it.top},${it.right},${it.bottom}" },
+            boundsContains?.let {
+                "boundsContains=${it.left},${it.top},${it.right},${it.bottom}"
+            },
         )
         append(parts.joinToString(","))
         append("}")

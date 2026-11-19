@@ -49,6 +49,7 @@ class AppContainer(
     val logFileStore get() = core.logFileStore
     val cacheImageStore get() = core.cacheImageStore
     val scriptRepository get() = core.scriptRepository
+    val scriptStorageRepository get() = core.scriptStorageRepository
     val scriptImporter get() = core.scriptImporter
     val scriptListPreferences get() = core.scriptListPreferences
     val scriptEnvRepository get() = core.scriptEnvRepository

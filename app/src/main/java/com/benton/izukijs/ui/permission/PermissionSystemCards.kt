@@ -83,6 +83,35 @@ internal fun AppListCard(state: PermissionUiState, actions: PermissionActions) {
 }
 
 @Composable
+internal fun WriteSettingsCard(state: PermissionUiState, actions: PermissionActions) {
+    val info = PermissionInfo(
+        title = stringResource(R.string.perm_writesettings_title),
+        description = stringResource(R.string.perm_writesettings_desc),
+        dimensions = listOf(
+            Dimension(stringResource(R.string.dim_risk), stringResource(R.string.rating_medium), Rating.WARN),
+            Dimension(stringResource(R.string.dim_auth), stringResource(R.string.rating_easy), Rating.GOOD),
+        ),
+    )
+    PermissionCard(
+        info = info,
+        status = stringResource(
+            if (state.writeSettingsGranted) {
+                R.string.perm_status_authorized
+            } else {
+                R.string.perm_status_unauthorized
+            },
+        ),
+        ready = state.writeSettingsGranted,
+        onShowInfo = { actions.showInfo(info) },
+        action = {
+            SystemPermissionAction(granted = state.writeSettingsGranted) {
+                actions.openWriteSettingsSettings()
+            }
+        },
+    )
+}
+
+@Composable
 internal fun AllFilesCard(state: PermissionUiState, actions: PermissionActions) {
     val info = PermissionInfo(
         title = stringResource(R.string.perm_allfiles_title),

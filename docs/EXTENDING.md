@@ -175,14 +175,12 @@ class MyApi(
 
 ```kotlin
 if (allowed(needs, "myapi")) {
-    ctx.addJavascriptInterface(
-        MyApi(logBus) { runtimeSettings.current().myApi },
-        "myapi",
-    )
+    registerNamespace(ctx, MyApi(logBus) { runtimeSettings.current().myApi }, "myapi")
 }
 ```
 
-`allowed()` 会从 `ScriptApiCatalog` 查 `need`；未登记的名字不会受 `@need` 控制。
+`allowed()` 会从 `ScriptApiCatalog` 查 `need`；`registerNamespace()` 会拒绝未在目录登记的
+命名空间。未登记的名字不会受 `@need` 控制。
 
 ### 4. 在 `prelude.js` 包装门面（可选）
 

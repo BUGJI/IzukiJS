@@ -13,6 +13,7 @@
 - [`app`](#app)
 - [`notify`（通知监听 + 脚本进度通知）](#notify通知监听--脚本进度通知)
 - [`events`（无障碍事件）](#events无障碍事件)
+- [`sensors`（传感器）](#sensors传感器)
 - [`floaty`（脚本悬浮窗）](#floaty脚本悬浮窗)
 - [`push`（发送通知）](#push发送通知)
 - [`fs`（文件读写）](#fs文件读写)
@@ -30,6 +31,8 @@
 - [能力声明 `@need`](#能力声明-need)
 - [`state`（运行状态）](#state运行状态)
 - [`modules`](#modules)
+- [`storages`（命名键值存储）](#storages命名键值存储)
+- [`dialogs`（兼容对话框）](#dialogs兼容对话框)
 - [模块复用 `require`](#模块复用-require)
 - [`ai`（AI Agent）](#aiai-agent)
 - [截图来源优先级](#截图来源优先级)
@@ -143,6 +146,12 @@ gesture([
 | `device.model()` / `device.brand()` | 机型 / 品牌 |
 | `device.androidVersion()` | SDK 版本号 |
 | `device.batteryLevel()` | 电量百分比 |
+| `device.vibrate(milliseconds)` / `device.cancelVibration()` | 振动 / 取消振动；无马达或被系统拒绝返回 `false` |
+| `device.getMusicVolume()` / `device.setMusicVolume(v)` / `device.getMusicMaxVolume()` | 媒体音量读写（0..max） |
+| `device.getNotificationVolume()` / `device.setNotificationVolume(v)` / `device.getNotificationMaxVolume()` | 通知音量读写 |
+| `device.getAlarmVolume()` / `device.setAlarmVolume(v)` / `device.getAlarmMaxVolume()` | 闹钟音量读写 |
+| `device.getBrightness()` / `device.setBrightness(v)` | 屏幕亮度 0..255；写入需要「修改系统设置」 |
+| `device.getBrightnessMode()` / `device.setBrightnessMode(mode)` | 亮度模式：0 手动 / 1 自动；写入需要「修改系统设置」 |
 
 ## `app`
 
@@ -284,6 +293,39 @@ events.waitIdle({ quietMs: 300, timeoutMs: 5000 });
 // 等待某个包名的窗口事件
 var e = events.wait({ types: ["window_state"], package: "com.example.app", timeoutMs: 8000 });
 ```
+
+## `sensors`（传感器）
+
+使用 `// @need sensors` 时才会暴露。QuickJS 单线程不能从 SensorManager 线程回调，
+原生接口把事件写入缓冲；兼容层用 50ms 定时器轮询并派发 `change` 回调。
+
+| 方法 | 说明 |
+|---|---|
+| `sensors.registerRaw(name, delay)` | 注册传感器，返回 `{ok,id,name,type}`；`delay` 为 Android `SENSOR_DELAY_*`（0..3）或微秒 |
+| `sensors.pollRaw()` | 取出缓冲事件 JSON 数组；`kind` 为 `change` / `accuracy` |
+| `sensors.unregisterRaw(id)` | 按注册返回的 id 注销 |
+| `sensors.unregisterAllRaw()` | 注销本次运行注册的全部传感器 |
+| `sensors.listRaw()` | 设备传感器列表：`[{name,type,stringType,vendor,version}]` |
+
+常用名称：`accelerometer`、`magnetic_field`、`orientation`、`gyroscope`、`light`、
+`pressure`、`temperature`、`proximity`、`gravity`、`linear_acceleration`、
+`rotation_vector`、`relative_humidity`、`step_counter`、`step_detector`、`heart_rate`；
+也可传数值类型或任意 `Sensor.TYPE_*` 字段名。
+
+```js
+// @need sensors
+
+var emitter = sensors.register("accelerometer", 2);
+emitter.on("change", function (event, ax, ay, az) {
+  log(ax, ay, az);
+});
+sleep(5000);
+emitter.unregister();
+```
+
+兼容模式还提供 `sensors.delay`（`normal` / `ui` / `game` / `fastest`）、
+`emitter.once` / `removeListener`、`sensors.on('unsupported_sensor')` 与
+`sensors.ignoresUnsupportedSensor`。
 
 ## `floaty`（脚本悬浮窗）
 
@@ -486,6 +528,8 @@ selector.scrollIntoView({ text: "隐私政策" });
 | `selector.parse(dsl)` | 把选择器 DSL 解析成条件对象 |
 | `selector.explain(criteria)` | 逐条件统计命中数，报告第一个筛空条件与 near miss |
 | `selector.codegen(criteria)` | 为当前匹配项生成更稳定的选择器 DSL / JS 代码 |
+| `selector.dumpRaw(optionsJson)` | 控件树快照 JSON（`maxDepth` / `maxNodes` / `visibleOnly` / `properties`）；兼容层 `auto.dump` 的底层 |
+| `selector.windowsRaw()` | 可见窗口数组 JSON；兼容层 `auto.windows` 的底层 |
 
 元素对象字段：`{id,text,desc,className,package,left,top,right,bottom,x,y,width,height,clickable,longClickable,editable,scrollable,enabled,index}`。
 
@@ -557,6 +601,20 @@ var code = selector.codegen("text=登录");
 | `images.findColorRaw(color, threshold)` | 低层找色，返回 `"x,y"` 字符串或 `null` |
 | `images.findImageRaw(template, threshold)` | 低层找图，返回 `"x,y,confidence"` 字符串或 `null` |
 | `images.saveTemplate(path, x, y, width, height)` | 从当前屏幕裁剪区域保存为 PNG 模板，返回路径；`path` 传 `""` 存到缓存目录 |
+| `images.read(path)` | 读取文件为 Image 对象（兼容模式） |
+| `images.save(image, path, quality=100)` | 保存 Image 到文件 |
+| `images.pixel(image, x, y)` | 读取像素 ARGB 整数 |
+| `images.getSize(image)` | 返回 `{width, height}` |
+| `images.clip(image, x, y, width, height)` | 裁剪到缓存并返回新 Image |
+| `images.resize(image, width, height)` | 缩放到缓存并返回新 Image |
+| `images.captureScreen()` | 截图为 Image（兼容模式） |
+| `images.sizeRaw(path)` | 低层尺寸，返回 `{width,height}` JSON |
+| `images.pixelRaw(path, x, y)` | 低层像素，返回 `#AARRGGBB` |
+| `images.saveRaw(sourcePath, targetPath, quality)` | 低层保存图片 |
+| `images.clipRaw(sourcePath, targetPath, x, y, width, height)` | 低层裁剪图片 |
+| `images.clipToCacheRaw(sourcePath, x, y, width, height)` | 低层裁剪到缓存并返回路径 |
+| `images.resizeRaw(sourcePath, targetPath, width, height)` | 低层缩放图片 |
+| `images.resizeToCacheRaw(sourcePath, width, height)` | 低层缩放到缓存并返回路径 |
 | `images.available()` | OpenCV 是否可用 |
 | `images.recognize(spec)` | 统一识别入口，返回首个结果或 `null` |
 | `images.recognizeAll(spec)` | 统一识别入口，返回全部结果数组 |
@@ -884,6 +942,7 @@ var merged = ocr.dedupeLines(allLines.concat(page.lines), { window: 30 });
 | `permissions.usageAccess()` | 使用情况访问 |
 | `permissions.notificationListener()` | 通知使用权 |
 | `permissions.manageStorage()` | 全部文件访问 |
+| `permissions.writeSettings()` | 修改系统设置（亮度写入所需） |
 | `permissions.localNetwork()` | 本地网络权限（Android 17+） |
 | `permissions.exactAlarm()` | 精确闹钟权限（Android 12+） |
 | `permissions.installUnknownApps()` | 安装未知来源应用 |
@@ -1040,7 +1099,8 @@ virtualScreen.target("virtual");
 
 - 声明后，**只有列出的命名空间会被注册**；未声明的 `shell` / `fs` / `notify` /
   `events` / `floaty` / `push` / `http` / `clipboard` / `ai` / `app` / `selector` /
-  `images` / `ocr` / `pipeline` / `record` / `virtualscreen` 在脚本里不存在。
+  `images` / `ocr` / `pipeline` / `record` / `virtualscreen` / `storages` / `dialogs`
+  在脚本里不存在。
 - 没有 `@need` 时保持旧行为：暴露所有已启用的命名空间。
 - `device` / `console` / `permissions` / `env` / `state` / `modules` 与全局函数始终可用，
   不需要写进 `@need`。
@@ -1080,11 +1140,47 @@ state.set("step", String(step + 1));
 | 方法 | 说明 |
 |---|---|
 | `modules.source(name)` | 读取模块源码字符串；找不到返回 `null` |
+| `modules.sourceFrom(name, from)` | 按调用方模块解析相对路径后读取源码 |
+| `modules.resolve(name, from)` | 解析模块的绝对路径；找不到返回 `null` |
+
+## `storages`（命名键值存储）
+
+持久化在应用私有目录，按 store 名隔离；值以 JSON 字符串保存。原生提供 `*Raw` 方法，
+兼容模式下的 `storages.create(name)` 会返回 Auto.js 风格的 `get/put/remove/contains/clear/keys` 对象。
+
+| 方法 | 说明 |
+|---|---|
+| `storages.create(name)` | 兼容模式：创建 / 获取命名存储对象 |
+| `storages.getRaw(store, key)` | 读取字符串值；不存在返回 `null` |
+| `storages.putRaw(store, key, value)` | 写入字符串值 |
+| `storages.removeRaw(store, key)` | 删除键 |
+| `storages.containsRaw(store, key)` | 是否存在 |
+| `storages.clearRaw(store)` | 清空 store |
+| `storages.keysRaw(store)` | 返回键名 JSON 数组 |
+
+## `dialogs`（兼容对话框）
+
+兼容模式提供阻塞式 `alert` / `confirm` / `prompt` / `select` / `multiChoice`；
+无 Activity（例如后台虚拟屏）时返回 `null`。原生 `showRaw` 返回结果 JSON。
+
+| 方法 | 说明 |
+|---|---|
+| `dialogs.showRaw(type, optionsJson, timeoutMs)` | 原生入口；`type` 为 `alert/confirm/prompt/select/multiChoice` |
+| `dialogs.alert(title, message, callback?)` | 提示框；确认返回 `true` |
+| `dialogs.confirm(title, message, callback?)` | 确认框；确认返回 `true`，取消返回 `false` |
+| `dialogs.prompt(title, message, defaultValue?, callback?)` | 输入框；确认返回文本 |
+| `dialogs.select(title, items, callback?)` | 单选；返回索引 |
+| `dialogs.multiChoice(title, items, selectedIndices?, callback?)` | 多选；返回索引数组 |
 
 ## 模块复用 `require`
 
 用 `require(name)` 引入脚本中心里的另一个脚本（同一运行时内执行，带缓存与循环依赖检测）。
 `name` 为脚本名，可省略结尾的 `.js`；模块用 `module.exports` / `exports` 导出。
+项目脚本支持相对路径、`index.js`、JSON 模块与 `package.json` 的 `main`；普通脚本仍按
+脚本名解析。模块内可使用 `__filename` / `__dirname`。项目通过 ZIP 导入，入口由
+`izuki.project.json` / `project.json` 的 `entry` / `main` 指定；导入时若入口没有
+`// @compat` 标记会自动补上，便于直接运行 Auto.js 项目。批量导出按原始字节打包整个
+项目目录，包含图片等非脚本资源。
 
 ```js
 // common.js
@@ -1188,3 +1284,18 @@ if (ai.available()) {
 
 推荐组合：**无障碍读控件树 + HID / Shizuku / 无线调试 注入输入**。在
 「设置 → 控制后端 → 读取 / 操作优先级」中指定优先后端即可。
+
+## 旧脚本兼容模式
+
+从 Auto.js / AutoX / AutoJs6 迁移的经典 v6 脚本，可在首行加入：
+
+```js
+// @compat autojs6
+```
+
+兼容层会按 Auto.js 语义补齐 `device.width` 属性、`toastLog`、`click(text)`、
+`press(x,y,duration)`、`text()/id()` 选择器链与 `UiObject` 基本动作、
+`setTimeout/setInterval`、`files.*`、`storages.create`、`Image` 对象、
+`events.on/once` 轮询桥、`http` 响应对象、`auto` 等门面。当前仍不支持
+`"ui";` UI 模式、E4X、`Packages`/`importClass`、真线程与 `UiObject` 父子节点；
+完整支持范围、诊断 CLI 与迁移步骤见 [LEGACY_COMPAT.md](LEGACY_COMPAT.md)。

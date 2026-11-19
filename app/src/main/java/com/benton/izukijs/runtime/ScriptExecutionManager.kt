@@ -69,7 +69,7 @@ class ScriptExecutionManager(
     private val virtualScreen: VirtualScreenManager,
     private val virtualScreenSettings: VirtualScreenSettingsRepository,
     private val runPreparer: RunPreparer,
-    private val moduleSourceProvider: (String) -> String?,
+    private val moduleResolver: com.benton.izukijs.data.ScriptModuleResolver,
     private val notificationDispatcher: NotificationDispatcher,
     private val recordingSession: RecordingSession,
 ) : RunControl, ScriptRunner {
@@ -458,7 +458,7 @@ class ScriptExecutionManager(
                 prepared.scriptEnv,
                 runtimeSettings,
                 httpSettingsRepository,
-                moduleSourceProvider,
+                moduleResolver,
                 virtualScreen,
                 effectiveRunMode,
                 scriptId = request.scriptId,

@@ -97,4 +97,13 @@ class SelectorApiWithTreeTest {
         assertFalse(codegen.getBoolean("ok"))
         assertEquals("选择器条件无效", codegen.getString("error"))
     }
+
+    @Test
+    fun dumpWithoutAccessibilityReturnsError() {
+        val result = JSONObject(api.dumpRaw("{}"))
+
+        assertFalse(result.getBoolean("ok"))
+        assertTrue(result.getString("error").contains("无法读取控件树"))
+        assertEquals("[]", api.windowsRaw())
+    }
 }

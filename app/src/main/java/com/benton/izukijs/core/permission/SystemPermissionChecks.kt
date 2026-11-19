@@ -31,6 +31,10 @@ object SystemPermissionChecks {
     /** 「显示在其他应用上层」特殊权限。 */
     fun canDrawOverlays(context: Context): Boolean = Settings.canDrawOverlays(context)
 
+    /** 「修改系统设置」特殊权限；脚本调整亮度等场景使用。 */
+    fun canWriteSettings(context: Context): Boolean =
+        runCatching { Settings.System.canWrite(context) }.getOrDefault(false)
+
     /** 蓝牙扫描 / 连接权限；Android 12 以下扫描依赖定位权限。 */
     fun bluetoothGranted(context: Context): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

@@ -2,26 +2,61 @@
   var __modules = {};
   var __loading = {};
   var __builtins = {};
+  var __requireStack = [];
   global.require = function (name) {
     var key = String(name);
     if (Object.prototype.hasOwnProperty.call(__builtins, key)) return __builtins[key];
-    if (Object.prototype.hasOwnProperty.call(__modules, key)) return __modules[key].exports;
-    if (__loading[key]) throw new Error("检测到循环依赖: " + key);
-    var src = (typeof modules !== 'undefined' && modules.source) ? modules.source(key) : null;
+    var from = __requireStack.length ? __requireStack[__requireStack.length - 1] : "";
+    var resolved = null;
+    if (typeof modules !== 'undefined' && modules.resolve) {
+      resolved = modules.resolve(key, from);
+    }
+    var cacheKey = resolved || (from ? from + "|" + key : key);
+    if (Object.prototype.hasOwnProperty.call(__modules, cacheKey)) {
+      return __modules[cacheKey].exports;
+    }
+    if (__loading[cacheKey]) throw new Error("检测到循环依赖: " + key);
+    var src = null;
+    if (typeof modules !== 'undefined' && modules.sourceFrom) {
+      src = modules.sourceFrom(key, from);
+    } else if (typeof modules !== 'undefined' && modules.source) {
+      src = modules.source(key);
+    }
     if (src == null) throw new Error("找不到脚本模块: " + key);
-    __loading[key] = true;
-    var mod = { exports: {} };
-    __modules[key] = mod;
+    __loading[cacheKey] = true;
+    var slash = cacheKey.lastIndexOf('/');
+    var dirname = slash < 0 ? "." : cacheKey.substring(0, slash);
+    var mod = { exports: {}, filename: cacheKey, path: dirname };
+    __modules[cacheKey] = mod;
     try {
-      var factory;
-      try {
-        factory = new Function("module", "exports", "require", src);
-      } catch (e) {
-        factory = function (module, exports, require) { eval(src); };
+      if (resolved && /\.json$/i.test(resolved)) {
+        try {
+          mod.exports = JSON.parse(src);
+        } catch (e) {
+          throw new Error("JSON 模块解析失败: " + key);
+        }
+      } else {
+        var factory;
+        try {
+          factory = new Function(
+            "module", "exports", "require", "__filename", "__dirname", src
+          );
+        } catch (e) {
+          factory = function (module, exports, require) { eval(src); };
+        }
+        __requireStack.push(resolved || cacheKey);
+        try {
+          factory(mod, mod.exports, global.require, resolved || cacheKey, dirname);
+        } finally {
+          __requireStack.pop();
+        }
       }
-      factory(mod, mod.exports, global.require);
+    } catch (e) {
+      // 初始化失败的模块不能留在缓存里，否则再次 require 会拿到空 exports。
+      delete __modules[cacheKey];
+      throw e;
     } finally {
-      delete __loading[key];
+      delete __loading[cacheKey];
     }
     return mod.exports;
   };

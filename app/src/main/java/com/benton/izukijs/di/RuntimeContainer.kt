@@ -120,10 +120,7 @@ class RuntimeContainer(
         control.virtualScreenManager,
         core.virtualScreenSettingsRepository,
         runPreparer,
-        moduleSourceProvider = { raw ->
-            val id = raw.trim().removePrefix("./").removeSuffix(".js")
-            core.scriptRepository.find(id)?.let(core.scriptRepository::read)
-        },
+        moduleResolver = core.scriptRepository,
         notificationDispatcher = core.notificationDispatcher,
         recordingSession = recordingSession,
     )

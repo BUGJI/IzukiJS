@@ -2,6 +2,7 @@ package com.benton.izukijs.controller.accessibility
 
 import android.graphics.Bitmap
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.benton.izukijs.controller.GestureStroke
 
 /**
@@ -30,4 +31,7 @@ interface AccessibilityServiceHandle {
     fun screenshotBitmap(): Bitmap?
 
     fun rootNode(): AccessibilityNodeInfo?
+
+    /** 当前可见窗口列表；后端不支持时返回空列表。 */
+    fun windowList(): List<AccessibilityWindowInfo> = emptyList()
 }

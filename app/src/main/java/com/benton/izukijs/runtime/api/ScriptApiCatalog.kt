@@ -55,6 +55,11 @@ object ScriptApiCatalog {
             suggestions = listOf(
                 "width(", "height(", "screenWidth(", "screenHeight(", "rotation(",
                 "model(", "brand(", "androidVersion(", "batteryLevel(",
+                "vibrate(", "cancelVibration(",
+                "getMusicVolume(", "setMusicVolume(", "getMusicMaxVolume(",
+                "getNotificationVolume(", "setNotificationVolume(", "getNotificationMaxVolume(",
+                "getAlarmVolume(", "setAlarmVolume(", "getAlarmMaxVolume(",
+                "getBrightness(", "setBrightness(", "getBrightnessMode(", "setBrightnessMode(",
             ),
         ),
         Entry(
@@ -69,7 +74,7 @@ object ScriptApiCatalog {
                 "accessibility(", "shizuku(", "adb(", "root(", "hid(", "overlay(",
                 "screenCapture(", "notifications(", "bluetooth(", "usageAccess(",
                 "notificationListener(", "manageStorage(", "localNetwork(", "exactAlarm(",
-                "installUnknownApps(", "appList(", "http(",
+                "installUnknownApps(", "appList(", "http(", "writeSettings(",
                 "granted(", "all(", "has(", "canControl(", "canScreenshot(",
                 "virtualScreen(", "runMode(",
             ),
@@ -85,9 +90,24 @@ object ScriptApiCatalog {
             suggestions = listOf("get(", "set(", "has(", "remove(", "clear(", "all("),
         ),
         Entry(
+            name = "storages",
+            kind = Kind.NAMESPACE,
+            need = "storages",
+            suggestions = listOf(
+                "create(", "getRaw(", "putRaw(", "removeRaw(", "containsRaw(",
+                "clearRaw(", "keysRaw(",
+            ),
+        ),
+        Entry(
+            name = "dialogs",
+            kind = Kind.NAMESPACE,
+            need = "dialogs",
+            suggestions = listOf("showRaw("),
+        ),
+        Entry(
             name = "modules",
             kind = Kind.NAMESPACE,
-            suggestions = listOf("source("),
+            suggestions = listOf("source(", "sourceFrom(", "resolve("),
         ),
         Entry(
             name = "app",
@@ -159,6 +179,14 @@ object ScriptApiCatalog {
             ),
         ),
         Entry(
+            name = "sensors",
+            kind = Kind.NAMESPACE,
+            need = "sensors",
+            suggestions = listOf(
+                "registerRaw(", "pollRaw(", "unregisterRaw(", "unregisterAllRaw(", "listRaw(",
+            ),
+        ),
+        Entry(
             name = "floaty",
             kind = Kind.NAMESPACE,
             need = "floaty",
@@ -188,6 +216,7 @@ object ScriptApiCatalog {
             need = "selector",
             suggestions = listOf(
                 "find(", "findAll(", "nth(", "exists(", "count(", "click(", "longClick(",
+                "dumpRaw(", "windowsRaw(",
                 "parse(", "explain(", "codegen(",
                 "waitFor(", "waitGone(", "scrollIntoView(", "scrollForward(", "scrollBackward(",
                 "findByText(", "findAllByText(",

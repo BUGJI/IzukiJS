@@ -37,7 +37,7 @@ class ScriptApiEnvironment(
     private val scriptEnv: ScriptEnvSession,
     private val runtimeSettings: RuntimeSettingsRepository,
     private val httpSettingsRepository: HttpSettingsRepository,
-    private val moduleSourceProvider: (String) -> String?,
+    private val moduleResolver: com.benton.izukijs.data.ScriptModuleResolver,
     private val virtualScreen: VirtualScreenManager?,
     private val runMode: RunMode,
     private val scriptId: String,
@@ -80,6 +80,7 @@ class ScriptApiEnvironment(
     }
 
     private var recordApi: RecordApi? = null
+    private var sensorsApi: SensorsApi? = null
 
     fun bind(ctx: JSContext, needs: Set<String>?) {
         val inputApi = runBundle.inputApi
@@ -112,7 +113,13 @@ class ScriptApiEnvironment(
         )
         registerNamespace(ctx, EnvApi(scriptEnv), "env")
         registerNamespace(ctx, StateApi(scriptEnv), "state")
-        registerNamespace(ctx, ModuleApi(moduleSourceProvider), "modules")
+        if (allowed(needs, "storages")) {
+            registerNamespace(ctx, StorageApi(context), "storages")
+        }
+        if (allowed(needs, "dialogs")) {
+            registerNamespace(ctx, DialogApi(context, exitRequested), "dialogs")
+        }
+        registerNamespace(ctx, ModuleApi(moduleResolver, scriptId), "modules")
 
         if (allowed(needs, "virtualScreen") && virtualScreen != null) {
             registerNamespace(
@@ -167,6 +174,12 @@ class ScriptApiEnvironment(
         if (allowed(needs, "events")) {
             registerNamespace(ctx, EventsApi(exitRequested), "events")
         }
+        if (allowed(needs, "sensors")) {
+            runCatching { sensorsApi?.close() }
+            val api = SensorsApi(context, logBus)
+            sensorsApi = api
+            registerNamespace(ctx, api, "sensors")
+        }
         if (allowed(needs, "floaty")) {
             registerNamespace(ctx, FloatyApi(runId, exitRequested), "floaty")
         }
@@ -220,6 +233,8 @@ class ScriptApiEnvironment(
         runCatching { com.benton.izukijs.service.ScriptOverlayManager.closeAll(runId) }
         runCatching { recordApi?.close() }
         recordApi = null
+        runCatching { sensorsApi?.close() }
+        sensorsApi = null
         if (imageApiDelegate.isInitialized()) runCatching { imageApi.close() }
     }
 

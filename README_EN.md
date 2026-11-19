@@ -37,7 +37,19 @@ OCR and AI-Agent recovery.
   priority and the runtime picks the backend that is actually available.
 - **JavaScript script runtime**: based on QuickJS with an isolated runtime per script; exposes input
   and the `device` / `app` / `selector` / `shell` / `images` / `ocr` / `notify` / `push` / `fs` /
-  `http` / `clipboard` / `permissions` / `ai` interfaces, with `// @need` to expose only what a script uses.
+  `http` / `clipboard` / `permissions` / `sensors` / `storages` / `dialogs` / `ai` interfaces, with
+  `// @need` to expose only what a script uses.
+- **Auto.js legacy compatibility**: add `// @compat autojs6` on the first line to load an additive
+  facade for classic v6 AutoX / AutoJs6 / Auto.js scripts (selector chains, `UiObject`, `setTimeout`,
+  `files` / `images` / `storages` / `dialogs` / `auto.*` and more). Blockers such as `"ui";`, E4X
+  and Java interop fail with an explicit error. A `tools/autojs-compat` CLI provides `analyze`,
+  `lint` and `import`.
+- **Multi-file projects**: `projects/<id>/` directories and ZIP import, with `require` resolution
+  for relative paths, `index.js`, JSON modules and `package.json` `main`; the editor switches between
+  entry and project files and can export the whole project.
+- **Configurable script directory**: use the app-private directory by default or switch to shared
+  storage; scripts and projects live under `scripts/` and `projects/`, with an optional copy of
+  existing scripts (never overwriting same-name files) and no switching while a script is running.
 - **Hybrid control**: the recommended setup is "read the view tree via Accessibility + inject input
   via HID/Shizuku" — each backend does what it does best.
 - **Vision**: OpenCV image / color / feature matching with a unified `images.recognize()`
@@ -151,9 +163,8 @@ If installs are blocked as "unknown source", allow that source in system setting
 high-privilege features such as Accessibility / Shizuku / Root, so only install packages from a
 trusted source.
 
-> Release builds fall back to the debug signature when no release signing is configured (see
-> "Build" below) and are for distribution testing only; configure `keystore.properties` as described
-> below to build a properly signed release yourself.
+> `assembleRelease` fails when no release signing is configured; it never falls back to the debug
+> signature. Configure `keystore.properties` as described below to build a release yourself.
 
 ### Option 2: Build from source
 
@@ -174,7 +185,7 @@ cd IzukiJS
 # Build debug
 ./gradlew :app:assembleDebug
 
-# Build release (falls back to debug signing when unsigned; for local verification only)
+# Build release (requires release signing; fails otherwise)
 ./gradlew :app:assembleRelease
 ```
 
@@ -253,6 +264,7 @@ For the full API see [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md).
 | Document | Contents |
 |---|---|
 | [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md) | Script API reference: global functions, input, selectors, image matching, OCR, AI, and more |
+| [`docs/LEGACY_COMPAT.md`](docs/LEGACY_COMPAT.md) | Migrating AutoX / AutoJs6 / Auto.js scripts: compatibility mode, supported surface and diagnostics CLI |
 | [`docs/TOOLS.md`](docs/TOOLS.md) | Tools and permissions: control modes, continuous capture, debug overlay, scheduled tasks, logs |
 | [`docs/CONTROL_MODES.md`](docs/CONTROL_MODES.md) | Capability matrix, authorization risks, gesture / key limitations |
 | [`docs/BLE_HID_PROTOCOL.md`](docs/BLE_HID_PROTOCOL.md) | Bluetooth HID control protocol: GATT services, frame format, coordinate mapping, connection flow |

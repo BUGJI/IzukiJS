@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.benton.izukijs.core.app.CurrentActivity
 import com.benton.izukijs.core.perf.PerfMetrics
 import com.benton.izukijs.core.permission.LocalNetworkPermission
 import com.benton.izukijs.data.ThemeMode
@@ -129,8 +130,20 @@ class MainActivity : ComponentActivity(), PipHost {
         NotificationIntents.routeFrom(intent)?.let { requestedRoute = it }
     }
 
+    // 只有可交互的 Activity 才能安全弹兼容对话框；进入画中画 / 后台时不保留引用。
+    override fun onResume() {
+        super.onResume()
+        CurrentActivity.set(this)
+    }
+
+    override fun onPause() {
+        CurrentActivity.clear(this)
+        super.onPause()
+    }
+
     override fun onDestroy() {
         PerfMetrics.unbindWindow(window)
+        CurrentActivity.clear(this)
         super.onDestroy()
     }
 

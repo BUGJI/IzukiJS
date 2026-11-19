@@ -1,8 +1,23 @@
 package com.benton.izukijs.ui.settings
 
-import com.benton.izukijs.ui.common.SectionGap
+import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -15,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -25,17 +41,23 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.benton.izukijs.R
 import com.benton.izukijs.core.log.LogLevel
 import com.benton.izukijs.core.perf.PerfMetrics
+import com.benton.izukijs.core.permission.SystemPermissionChecks
+import com.benton.izukijs.data.ScriptStoragePaths
+import com.benton.izukijs.data.ScriptStorageSwitchResult
 import com.benton.izukijs.runtime.CacheImageStore
 import com.benton.izukijs.ui.common.ActionButtons
 import com.benton.izukijs.ui.common.ChipFlow
 import com.benton.izukijs.ui.common.ConfirmDialog
 import com.benton.izukijs.ui.common.LocalSnackbarController
 import com.benton.izukijs.ui.common.SectionCard
+import com.benton.izukijs.ui.common.SectionGap
 import com.benton.izukijs.ui.common.SwitchRow
 import com.benton.izukijs.ui.common.formatFileSize
 import com.benton.izukijs.ui.common.newCacheExportFile
 import com.benton.izukijs.ui.common.shareFile
 import com.benton.izukijs.ui.appViewModel
+import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @Composable
@@ -52,6 +74,125 @@ internal fun StorageSettings() {
     var confirmClearCacheImages by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val snackbar = LocalSnackbarController.current
+
+    val currentRoot = remember(ui.scriptStorage) { viewModel.currentScriptStorageRoot() }
+    var showStoragePicker by remember { mutableStateOf(false) }
+    var pendingStorageRoot by remember { mutableStateOf<String?>(null) }
+    var showStorageSwitch by remember { mutableStateOf(false) }
+    var copyStorageScripts by remember { mutableStateOf(true) }
+    var showStoragePermission by remember { mutableStateOf(false) }
+    var switchingStorage by remember { mutableStateOf(false) }
+
+    val allFilesPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (!granted) {
+            scope.launch {
+                snackbar.show(resources.getString(R.string.script_storage_permission_desc))
+            }
+        }
+    }
+
+    fun showMessage(message: String) {
+        scope.launch { snackbar.show(message) }
+    }
+
+    fun requestAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            runCatching {
+                context.startActivity(
+                    Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                        .setData(Uri.parse("package:${context.packageName}"))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                )
+            }.onFailure {
+                showMessage(resources.getString(R.string.script_storage_permission_desc))
+            }
+        } else {
+            allFilesPermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
+
+    fun withStorageAccess(action: () -> Unit) {
+        if (SystemPermissionChecks.hasAllFilesAccess(context)) {
+            action()
+        } else {
+            showStoragePermission = true
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    fun recommendedStorageRoot(): String =
+        File(Environment.getExternalStorageDirectory(), "IzukiJS").absolutePath
+
+    fun requestStorageSwitch(path: String?) {
+        pendingStorageRoot = path
+        copyStorageScripts = true
+        showStorageSwitch = true
+    }
+
+    fun performStorageSwitch(path: String?, copy: Boolean) {
+        showStorageSwitch = false
+        switchingStorage = true
+        scope.launch {
+            try {
+                when (val result = viewModel.switchScriptStorage(path, copy)) {
+                    ScriptStorageSwitchResult.Unchanged ->
+                        snackbar.show(resources.getString(R.string.script_storage_unchanged))
+
+                    ScriptStorageSwitchResult.Running ->
+                        snackbar.show(resources.getString(R.string.script_storage_running))
+
+                    ScriptStorageSwitchResult.InvalidPath ->
+                        snackbar.show(resources.getString(R.string.script_storage_invalid))
+
+                    ScriptStorageSwitchResult.NestedRoot ->
+                        snackbar.show(resources.getString(R.string.script_storage_nested))
+
+                    is ScriptStorageSwitchResult.NotWritable -> {
+                        snackbar.show(
+                            resources.getString(
+                                R.string.script_storage_not_writable,
+                                result.path,
+                            ),
+                        )
+                        if (!SystemPermissionChecks.hasAllFilesAccess(context)) {
+                            showStoragePermission = true
+                        }
+                    }
+
+                    is ScriptStorageSwitchResult.Success -> {
+                        val message = if (result.copied == 0 && result.skipped == 0 &&
+                            result.failed == 0
+                        ) {
+                            resources.getString(R.string.script_storage_switch_result_plain)
+                        } else {
+                            resources.getString(
+                                R.string.script_storage_switch_result,
+                                result.copied,
+                                result.skipped,
+                                result.failed,
+                            )
+                        }
+                        snackbar.show(message)
+                    }
+                }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                snackbar.show(resources.getString(R.string.record_page_failed))
+            } finally {
+                switchingStorage = false
+                pendingStorageRoot = null
+            }
+        }
+    }
+
+    fun copyStoragePath() {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        clipboard?.setPrimaryClip(ClipData.newPlainText("IzukiJS", currentRoot.absolutePath))
+        showMessage(resources.getString(R.string.script_storage_copied))
+    }
+
 
     fun refreshLogSize() {
         scope.launch {
@@ -78,6 +219,65 @@ internal fun StorageSettings() {
         refreshCacheImages()
     }
 
+    SectionCard(stringResource(R.string.script_storage_title)) {
+        Text(
+            stringResource(
+                if (ui.scriptStorage.isDefault) {
+                    R.string.script_storage_default
+                } else {
+                    R.string.script_storage_custom
+                },
+            ),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            currentRoot.absolutePath,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.script_storage_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+        ActionButtons {
+            OutlinedButton(
+                enabled = !busy && !switchingStorage && !ui.scriptRunning,
+                onClick = { withStorageAccess { showStoragePicker = true } },
+            ) { Text(stringResource(R.string.script_storage_choose)) }
+            OutlinedButton(
+                enabled = !busy && !switchingStorage && !ui.scriptRunning,
+                onClick = {
+                    withStorageAccess { requestStorageSwitch(recommendedStorageRoot()) }
+                },
+            ) { Text(stringResource(R.string.script_storage_recommended)) }
+        }
+        Spacer(Modifier.height(4.dp))
+        ActionButtons {
+            OutlinedButton(
+                enabled = !busy && !switchingStorage && !ui.scriptRunning &&
+                    !ui.scriptStorage.isDefault,
+                onClick = { requestStorageSwitch(null) },
+            ) { Text(stringResource(R.string.script_storage_reset)) }
+            TextButton(onClick = { copyStoragePath() }) {
+                Text(stringResource(R.string.script_storage_copy_path))
+            }
+        }
+        if (ui.scriptRunning) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.script_storage_running),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+
+    Spacer(Modifier.height(SectionGap))
     SectionCard(stringResource(R.string.storage_log_title)) {
         SwitchRow(
             label = stringResource(R.string.storage_auto_clean),
@@ -268,6 +468,94 @@ internal fun StorageSettings() {
                 scope.launch {
                     viewModel.clearCacheImages()
                     cacheImages = viewModel.cacheImageStats()
+                }
+            },
+        )
+    }
+
+    if (showStoragePicker) {
+        ScriptDirectoryPicker(
+            // 默认目录位于应用私有路径，直接打开无法浏览共享存储；从推荐目录开始更实用。
+            initialPath = if (ui.scriptStorage.isDefault) {
+                recommendedStorageRoot()
+            } else {
+                currentRoot.absolutePath
+            },
+            onDismiss = { showStoragePicker = false },
+            onConfirm = { path ->
+                showStoragePicker = false
+                requestStorageSwitch(path)
+            },
+        )
+    }
+
+    if (showStorageSwitch) {
+        val targetRoot = remember(pendingStorageRoot) {
+            if (pendingStorageRoot.isNullOrBlank()) {
+                context.filesDir
+            } else {
+                File(pendingStorageRoot!!)
+            }
+        }
+        val preview = remember(targetRoot) {
+            buildString {
+                appendLine(ScriptStoragePaths.scriptsDir(targetRoot).absolutePath)
+                append(ScriptStoragePaths.projectsDir(targetRoot).absolutePath)
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { showStorageSwitch = false },
+            title = { Text(stringResource(R.string.script_storage_switch_title)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.script_storage_switch_message, preview),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = copyStorageScripts,
+                            onCheckedChange = { copyStorageScripts = it },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            stringResource(R.string.script_storage_switch_copy),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !switchingStorage,
+                    onClick = { performStorageSwitch(pendingStorageRoot, copyStorageScripts) },
+                ) { Text(stringResource(R.string.script_storage_switch_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStorageSwitch = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    if (showStoragePermission) {
+        AlertDialog(
+            onDismissRequest = { showStoragePermission = false },
+            title = { Text(stringResource(R.string.script_storage_permission_title)) },
+            text = { Text(stringResource(R.string.script_storage_permission_desc)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showStoragePermission = false
+                        requestAllFilesAccess()
+                    },
+                ) { Text(stringResource(R.string.script_storage_permission_action)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStoragePermission = false }) {
+                    Text(stringResource(R.string.common_cancel))
                 }
             },
         )

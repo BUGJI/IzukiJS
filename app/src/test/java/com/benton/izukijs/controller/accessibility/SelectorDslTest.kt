@@ -53,6 +53,20 @@ class SelectorDslTest {
     }
 
     @Test
+    fun parsesExtendedFilterFields() {
+        val criteria = SelectorDsl.parse(
+            "id^=login class~=Button package=com.example " +
+                "checked=true longClickable visible",
+        )
+        assertEquals("login", criteria.viewIdStartsWith)
+        assertEquals("Button", criteria.classNameContains)
+        assertEquals("com.example", criteria.packageName)
+        assertEquals(true, criteria.checked)
+        assertEquals(true, criteria.longClickable)
+        assertEquals(true, criteria.visible)
+    }
+
+    @Test
     fun snapshotMatchingUsesAllConditions() {
         val node = NodeSnapshot(
             className = "android.widget.TextView",
@@ -71,5 +85,38 @@ class SelectorDslTest {
         assertTrue(SelectorDsl.parse("text~=登录 clickable=true").matchesSnapshot(node))
         assertFalse(SelectorDsl.parse("text~=注册").matchesSnapshot(node))
         assertFalse(SelectorDsl.parse("text~=登录 clickable=false").matchesSnapshot(node))
+    }
+
+    @Test
+    fun snapshotMatchingSupportsExtendedFields() {
+        val node = NodeSnapshot(
+            className = "android.widget.CheckBox",
+            text = "记住我",
+            viewId = "com.example:id/remember",
+            contentDescription = null,
+            left = 10,
+            top = 20,
+            right = 110,
+            bottom = 70,
+            clickable = true,
+            editable = false,
+            children = emptyList(),
+            packageName = "com.example",
+            checkable = true,
+            checked = true,
+            focusable = true,
+            focused = false,
+            selected = false,
+            longClickable = true,
+            password = false,
+        )
+        assertTrue(
+            SelectorDsl.parse(
+                "id~=remember class~=CheckBox package=com.example " +
+                    "checkable=true checked=true boundsInside=0,0,200,100",
+            ).matchesSnapshot(node),
+        )
+        assertFalse(SelectorDsl.parse("checked=false").matchesSnapshot(node))
+        assertFalse(SelectorDsl.parse("bounds=0,0,100,50").matchesSnapshot(node))
     }
 }

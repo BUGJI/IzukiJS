@@ -36,7 +36,15 @@
   可全局或按能力指定优先级，自动选择当前真正可用的后端。
 - **JavaScript 脚本运行时**：基于 QuickJS，每个脚本独立运行时；提供输入、`device` / `app` /
   `selector` / `shell` / `images` / `ocr` / `notify` / `push` / `fs` / `http` / `clipboard` /
-  `permissions` / `ai` 等接口，并支持用 `// @need` 只暴露脚本真正需要的能力。
+  `permissions` / `sensors` / `storages` / `dialogs` / `ai` 等接口，并支持用 `// @need` 只暴露脚本真正需要的能力。
+- **Auto.js 旧脚本兼容**：在脚本首行加 `// @compat autojs6`，即可为 AutoX / AutoJs6 / Auto.js
+  经典 v6 脚本加载加法式门面（选择器链、`UiObject`、`setTimeout`、`files` / `images` /
+  `storages` / `dialogs` / `auto.*` 等）；`"ui";`、E4X 与 Java 互操作等阻断项会明确报错；
+  另含 `tools/autojs-compat` 诊断 CLI，支持 `analyze` / `lint` / `import`。
+- **多文件项目**：支持 `projects/<id>/` 目录与 ZIP 导入，按相对路径、`index.js`、JSON 模块与
+  `package.json` 的 `main` 解析 `require`；编辑器可切换入口与项目文件，并支持整体导出。
+- **可配置脚本目录**：默认使用应用私有目录，也可切换到共享存储；脚本与项目分别位于
+  `scripts/` 与 `projects/` 子目录，切换时可选复制现有脚本（不覆盖同名文件），运行中禁止切换。
 - **混合控制**：推荐「无障碍读控件树 + HID/Shizuku/无线调试 注入输入」——读界面与发指令各取所长。
 - **视觉能力**：OpenCV 找图 / 找色 / 特征匹配，统一 `images.recognize()` 参数模型支持
   ROI、绿色掩码、HSV、排序与 And/Or 链式识别；本地 MLKit 中文 OCR 或在线 OCR
@@ -131,8 +139,8 @@ Izuki JS 是一个面向个人设备自动化与无障碍场景的实验性运�
 安装时若提示「未知来源」，需在系统设置中允许该来源。本 App 会用到无障碍 / Shizuku / 无线调试 / Root
 等较高权限，请只安装可信来源的包。
 
-> Release 包未配置正式签名时会回退为 debug 签名（见下方「构建」），仅用于分发验证；
-> 自行构建正式签名版请按下文配置 `keystore.properties`。
+> 未配置正式签名时 `assembleRelease` 会直接失败，不会回退为 debug 签名；
+> 自行构建 Release 请按下文配置 `keystore.properties`。
 
 ### 方式二：从源码构建
 
@@ -152,7 +160,7 @@ cd IzukiJS
 # 构建 Debug
 ./gradlew :app:assembleDebug
 
-# 构建 Release（未配置签名时回退 debug 签名，仅用于本地验证）
+# 构建 Release（必须先配置正式签名，否则直接失败）
 ./gradlew :app:assembleRelease
 ```
 
@@ -224,6 +232,7 @@ if (ai.available()) {
 |---|---|
 | [`docs/AGENT_OVERVIEW.md`](docs/AGENT_OVERVIEW.md) | 面向 AI Agent 的功能与开关总览：界面布局、各开关作用与影响 |
 | [`docs/SCRIPT_API.md`](docs/SCRIPT_API.md) | 脚本 API 速查：全局函数、输入、选择器、找图、OCR、AI 等 |
+| [`docs/LEGACY_COMPAT.md`](docs/LEGACY_COMPAT.md) | AutoX / AutoJs6 / Auto.js 旧脚本迁移：兼容模式、支持范围与诊断 CLI |
 | [`docs/TOOLS.md`](docs/TOOLS.md) | 工具与权限说明：控制模式、持续录屏、调试悬浮窗、定时任务、日志 |
 | [`docs/CONTROL_MODES.md`](docs/CONTROL_MODES.md) | 控制模式能力矩阵、授权风险、手势 / 按键限制 |
 | [`docs/MCP.md`](docs/MCP.md) | MCP 服务器：启用、客户端配置、工具与资源、安全说明 |
